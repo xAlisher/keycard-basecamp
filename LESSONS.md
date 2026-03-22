@@ -380,3 +380,114 @@ Lessons learned during building keycard-basecamp. Update this after corrections,
 - Don't add other platforms until testing on them
 
 **Evidence:** After removing darwin-arm64 key, module loaded successfully
+
+## Issue #2 - Core Module Implementation
+
+### Session State Overlay Must Clear on Card State Changes
+**Date:** 2026-03-22
+**Context:** Senty Round 3 review - session transition semantics violation
+
+**What went wrong:**
+- After `deriveKey()` set `SessionState::Active`, card removal still showed `SESSION_ACTIVE`
+- After `closeSession()` set `SessionState::Closed`, `discoverCard()` didn't reset to show `CARD_PRESENT`
+- Session overlay took precedence but wasn't cleared on physical card state changes
+
+**Why it happened:**
+- Session state was only set in `authorize()`, `deriveKey()`, and `closeSession()`
+- `getState()` checked overlay first without validating card still present
+- `discoverCard()` didn't manage session lifecycle
+
+**How to prevent:**
+- Session overlay must be conditional on card presence, not absolute
+- `getState()` must check bridge state and clear overlay if card gone
+- `discoverCard()` must clear overlay on state transitions (found/not-found)
+- Session states are logical overlays over physical states, not replacements
+
+**Evidence:** 
+- Senty Round 3 review identified security risk (SESSION_ACTIVE persisting after card removal)
+- Fixed in commit 19277ee with dual clearing approach (discoverCard + getState)
+
+**Fix pattern:**
+```cpp
+// In discoverCard()
+if (card_found && m_sessionState == Closed) {
+    m_sessionState = NoSession;  // Allow CARD_PRESENT to show
+}
+if (!card_found && m_sessionState != NoSession) {
+    m_sessionState = NoSession;  // Clear stale session
+}
+
+// In getState()
+if (bridge_reports_card_gone && m_sessionState != NoSession) {
+    m_sessionState = NoSession;  // Proactive clearing
+}
+```
+
+---
+
+### Plugin Icons: manifest.json vs metadata.json
+**Date:** 2026-03-22
+**Context:** Icon showing as "keyc" text instead of image
+
+**What went wrong:**
+- Set `"icon": "keycard.svg"` only in metadata.json
+- manifest.json had `"icon": ""`
+- Icon displayed as text fallback
+
+**Why it happened:**
+- Assumed metadata.json was sufficient (where other UI settings live)
+- Didn't notice counter_qml has icon references in BOTH files
+- UI framework loads icons from manifest.json, not metadata.json
+
+**How to prevent:**
+- BOTH manifest.json and metadata.json need icon fields populated
+- manifest.json: `"icon": "keycard.png"` (root-level reference)
+- metadata.json: `"icon": "icons/keycard.png"` (can be subdirectory)
+- Check working plugin structure (counter_qml) before assuming
+
+**Evidence:** After updating manifest.json icon field, icon displayed correctly
+
+---
+
+### Plugin Icon Format: PNG Required, Not SVG
+**Date:** 2026-03-22
+**Context:** Icon still not displaying after setting paths
+
+**What went wrong:**
+- Created SVG icon (text-based, good for version control)
+- Icon still showed as text fallback
+
+**Why it happened:**
+- Assumed SVG would work (modern format, scalable)
+- Working plugins all use PNG (counter_qml, etc.)
+- UI framework expects raster format
+
+**Required format:**
+- 28x28 PNG, 8-bit RGBA
+- Must be in both root and icons/ subdirectory
+- No SVG support (at least not verified working)
+
+**Evidence:** After converting to PNG, icon displayed correctly
+
+---
+
+### Icon Design: Must Have Contrast for Inactive Gray State
+**Date:** 2026-03-22
+**Context:** User observation about counter icon gray/color transition
+
+**What we learned:**
+- UI framework applies desaturation filter to inactive icons (gray)
+- Shows full color when plugin is active/selected
+- Light/white icons become invisible when desaturated
+- Counter icon works because it has strong colors (blue, orange)
+
+**Design guideline:**
+- Use colors with good saturation and contrast
+- Avoid white/light colors as primary elements
+- Test how icon looks in grayscale (inactive state)
+- Icon should be visible on both light and dark backgrounds
+
+**Evidence:** User-designed icon from Figma with proper contrast worked correctly
+
+---
+
