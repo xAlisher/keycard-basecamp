@@ -143,6 +143,10 @@ Rectangle {
                     if (pin.length === 0) {
                         return '{"error":"PIN required"}'
                     }
+                    // Validate PIN format: exactly 6 digits
+                    if (pin.length !== 6 || !/^\d+$/.test(pin)) {
+                        return '{"error":"Wrong PIN format - should be 6 digits"}'
+                    }
                     var result = logos.callModule("keycard", "authorize", [pin])
                     authorizeRow.clearInput()
                     return result
