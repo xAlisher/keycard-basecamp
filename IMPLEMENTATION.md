@@ -188,3 +188,17 @@ Implements: #1"
 **Prerequisites:** Phase 1 manual testing complete
 
 (TBD)
+
+### Senty Review - Round 1 Fixes
+
+**Finding #1: UI plugin path/name mismatch**
+- **Issue:** Installing to `keycard_ui/` but spec expects `keycard-ui/`  
+- **Fix:** Renamed all references from underscore to hyphen
+- **Files changed:** Directory name, CMakeLists.txt, metadata, verify script
+
+**Finding #2: Missing UI scaffolding**
+- **Decision:** Keep pure-QML approach (no C++ scaffolding)
+- **Rationale:** Phase 1-3 don't need C++ UI plugin; QML can call core directly
+- **When C++ needed:** Only if we need complex models/types exposed to QML
+- **Updated:** Issue #1 will be updated to reflect pure-QML approach
+
