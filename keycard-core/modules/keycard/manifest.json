@@ -1,0 +1,14 @@
+{
+  "author": "alisher",
+  "category": "security",
+  "dependencies": [],
+  "description": "Keycard module for Basecamp app",
+  "icon": "",
+  "main": {
+    "linux-amd64": "keycard_plugin.so"
+  },
+  "manifestVersion": "0.1.0",
+  "name": "keycard",
+  "type": "core",
+  "version": "1.0.0"
+}
