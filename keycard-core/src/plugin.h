@@ -36,7 +36,14 @@ signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
 
 private:
+    enum class SessionState {
+        NoSession,        // No active session
+        Active,          // SESSION_ACTIVE - key derived
+        Closed           // SESSION_CLOSED - explicitly closed
+    };
+
     QString mapBridgeStateToSpec(KeycardBridge::State state);
 
     KeycardBridge* m_bridge = nullptr;
+    SessionState m_sessionState = SessionState::NoSession;
 };

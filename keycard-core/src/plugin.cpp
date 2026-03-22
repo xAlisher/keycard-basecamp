@@ -99,6 +99,9 @@ QString KeycardPlugin::authorize(const QString& pin)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Reset session state on new authorization
+    m_sessionState = SessionState::NoSession;
+
     QJsonObject authResult = m_bridge->authorize(pin);
     return QJsonDocument(authResult).toJson(QJsonDocument::Compact);
 }
@@ -131,6 +134,9 @@ QString KeycardPlugin::deriveKey(const QString& domain)
 
     QByteArray derivedKey(reinterpret_cast<const char*>(hash), 32);
 
+    // Enter SESSION_ACTIVE state
+    m_sessionState = SessionState::Active;
+
     QJsonObject result;
     result["key"] = QString::fromUtf8(derivedKey.toHex());
 
@@ -146,7 +152,15 @@ QString KeycardPlugin::getState()
     }
 
     QJsonObject result;
-    result["state"] = mapBridgeStateToSpec(m_bridge->state());
+
+    // Session state takes precedence over bridge state
+    if (m_sessionState == SessionState::Active) {
+        result["state"] = "SESSION_ACTIVE";
+    } else if (m_sessionState == SessionState::Closed) {
+        result["state"] = "SESSION_CLOSED";
+    } else {
+        result["state"] = mapBridgeStateToSpec(m_bridge->state());
+    }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
@@ -155,9 +169,8 @@ QString KeycardPlugin::closeSession()
 {
     qDebug() << "KeycardPlugin::closeSession() called";
 
-    if (m_bridge) {
-        m_bridge->stop();
-    }
+    // Enter SESSION_CLOSED state (keep bridge running for re-auth)
+    m_sessionState = SessionState::Closed;
 
     QJsonObject result;
     result["closed"] = true;
