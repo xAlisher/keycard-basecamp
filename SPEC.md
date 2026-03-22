@@ -229,8 +229,8 @@ QString getLastError()            → {"error": string}
 // Core module (keycard-core/src/plugin.h):
 Q_PLUGIN_METADATA(IID "org.logos.KeycardModuleInterface" FILE "plugin_metadata.json")
 
-// UI module (keycard-ui/src/plugin.h):
-Q_PLUGIN_METADATA(IID "org.logos.KeycardUIModuleInterface" FILE "plugin_metadata.json")
+// UI module uses pure-QML approach (no C++ plugin)
+// QML calls core module directly via: logos.callModule("keycard", "method")
 ```
 
 ### Manifest Files
@@ -363,16 +363,13 @@ logos-keycard/
 │       └── keycard/
 │           └── manifest.json
 └── keycard-ui/
-    ├── CMakeLists.txt
-    ├── src/
-    │   ├── plugin.h
-    │   ├── plugin.cpp
-    │   └── plugin_metadata.json
+    ├── CMakeLists.txt                ← installs QML + metadata (no C++ build)
     ├── qml/
-    │   └── Main.qml                  ← debug panel
+    │   └── Main.qml                  ← debug panel (pure QML)
     └── plugins/
         └── keycard-ui/
-            └── metadata.json
+            ├── manifest.json         ← module manifest
+            └── metadata.json         ← UI plugin metadata
 ```
 
 ---
@@ -511,3 +508,22 @@ pkill -9 -f "logos_host.elf"  # NOT pkill -9 logos_host
 - Debug UI is **not** for production — it's a test harness
 - Production UIs (like notes) will hide the state machine behind UX
 - The core module should remain **minimal** — no business logic, just smartcard primitives
+
+## Pure-QML UI Approach (Phase 1-3)
+
+The `keycard-ui` plugin uses a **pure-QML approach** with no C++ scaffolding. This is simpler and sufficient for the debug UI requirements.
+
+**How it works:**
+- QML calls core module directly: `logos.callModule("keycard", "getState", [])`
+- Core module returns JSON strings
+- QML parses and displays results
+- No C++ types need to be exposed to QML
+
+**When C++ UI plugin would be needed:**
+- Complex data models (QAbstractListModel, custom QObject types)
+- Real-time event pushing from core to UI
+- Heavy computation in UI layer
+- Direct manipulation of core module's C++ objects
+
+For Phases 1-3, none of these apply. The pure-QML approach is maintained.
+
