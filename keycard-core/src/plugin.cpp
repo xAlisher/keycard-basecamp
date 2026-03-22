@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDebug>
+#include <sodium.h>
 
 KeycardPlugin::KeycardPlugin(QObject* parent)
     : QObject(parent)
@@ -53,12 +54,10 @@ QString KeycardPlugin::discoverReader()
     bool success = m_bridge->start();
 
     QJsonObject result;
+    result["found"] = success;
     if (success) {
-        result["readerFound"] = true;
-        result["state"] = stateToString(m_bridge->state());
-    } else {
-        result["readerFound"] = false;
-        result["error"] = m_bridge->lastError();
+        // Get reader name from state
+        result["name"] = "Smart card reader";
     }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
@@ -70,6 +69,7 @@ QString KeycardPlugin::discoverCard()
 
     if (!m_bridge) {
         QJsonObject result;
+        result["found"] = false;
         result["error"] = "Bridge not initialized - call discoverReader first";
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
@@ -80,12 +80,10 @@ QString KeycardPlugin::discoverCard()
     KeycardBridge::State state = m_bridge->state();
 
     if (state == KeycardBridge::State::Ready || state == KeycardBridge::State::Authorized) {
-        result["cardPresent"] = true;
-        result["state"] = stateToString(state);
-        result["keyUID"] = m_bridge->keyUID();
+        result["found"] = true;
+        result["uid"] = m_bridge->keyUID();
     } else {
-        result["cardPresent"] = false;
-        result["state"] = stateToString(state);
+        result["found"] = false;
     }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
@@ -115,18 +113,26 @@ QString KeycardPlugin::deriveKey(const QString& domain)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Export the encryption key
-    QByteArray key = m_bridge->exportKey();
+    // Export base encryption key
+    QByteArray baseKey = m_bridge->exportKey();
+
+    if (baseKey.isEmpty()) {
+        QJsonObject result;
+        result["error"] = m_bridge->lastError();
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Derive domain-specific key: SHA256(baseKey || domain)
+    QByteArray domainBytes = domain.toUtf8();
+    QByteArray combined = baseKey + domainBytes;
+
+    unsigned char hash[32];
+    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(combined.constData()), combined.size());
+
+    QByteArray derivedKey(reinterpret_cast<const char*>(hash), 32);
 
     QJsonObject result;
-    if (!key.isEmpty()) {
-        result["derived"] = true;
-        result["domain"] = domain;
-        result["keyHex"] = QString::fromUtf8(key.toHex());
-    } else {
-        result["derived"] = false;
-        result["error"] = m_bridge->lastError();
-    }
+    result["key"] = QString::fromUtf8(derivedKey.toHex());
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
@@ -135,21 +141,12 @@ QString KeycardPlugin::getState()
 {
     if (!m_bridge) {
         QJsonObject result;
-        result["state"] = "NOT_STARTED";
+        result["state"] = "READER_NOT_FOUND";
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
     QJsonObject result;
-    result["state"] = stateToString(m_bridge->state());
-    result["statusText"] = m_bridge->statusText();
-
-    if (m_bridge->remainingPINAttempts() >= 0) {
-        result["remainingPINAttempts"] = m_bridge->remainingPINAttempts();
-    }
-
-    if (!m_bridge->keyUID().isEmpty()) {
-        result["keyUID"] = m_bridge->keyUID();
-    }
+    result["state"] = mapBridgeStateToSpec(m_bridge->state());
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
@@ -181,21 +178,33 @@ QString KeycardPlugin::getLastError()
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::stateToString(KeycardBridge::State state)
+QString KeycardPlugin::mapBridgeStateToSpec(KeycardBridge::State state)
 {
+    // Map KeycardBridge states to SPEC.md 7-state model
     switch (state) {
-    case KeycardBridge::State::Unknown:          return "UNKNOWN";
-    case KeycardBridge::State::NoPCSC:           return "NO_PCSC";
-    case KeycardBridge::State::WaitingForReader: return "WAITING_FOR_READER";
-    case KeycardBridge::State::WaitingForCard:   return "WAITING_FOR_CARD";
-    case KeycardBridge::State::ConnectingCard:   return "CONNECTING_CARD";
-    case KeycardBridge::State::ConnectionError:  return "CONNECTION_ERROR";
-    case KeycardBridge::State::NotKeycard:       return "NOT_KEYCARD";
-    case KeycardBridge::State::EmptyKeycard:     return "EMPTY_KEYCARD";
-    case KeycardBridge::State::BlockedPIN:       return "BLOCKED_PIN";
-    case KeycardBridge::State::BlockedPUK:       return "BLOCKED_PUK";
-    case KeycardBridge::State::Ready:            return "READY";
-    case KeycardBridge::State::Authorized:       return "AUTHORIZED";
+    case KeycardBridge::State::Unknown:
+    case KeycardBridge::State::NoPCSC:
+    case KeycardBridge::State::WaitingForReader:
+        return "READER_NOT_FOUND";
+
+    case KeycardBridge::State::WaitingForCard:
+        return "CARD_NOT_PRESENT";
+
+    case KeycardBridge::State::ConnectingCard:
+    case KeycardBridge::State::Ready:
+    case KeycardBridge::State::EmptyKeycard:
+    case KeycardBridge::State::NotKeycard:
+        return "CARD_PRESENT";
+
+    case KeycardBridge::State::Authorized:
+        return "AUTHORIZED";
+
+    case KeycardBridge::State::BlockedPIN:
+    case KeycardBridge::State::BlockedPUK:
+        return "BLOCKED";
+
+    case KeycardBridge::State::ConnectionError:
+        return "CARD_NOT_PRESENT";
     }
-    return "UNKNOWN";
+    return "READER_NOT_FOUND";
 }

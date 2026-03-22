@@ -36,7 +36,7 @@ signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
 
 private:
-    QString stateToString(KeycardBridge::State state);
+    QString mapBridgeStateToSpec(KeycardBridge::State state);
 
     KeycardBridge* m_bridge = nullptr;
 };
