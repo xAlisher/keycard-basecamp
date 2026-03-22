@@ -168,24 +168,37 @@ sodium_memzero(cardKey.data(), cardKey.size());  // Wipe intermediate
 ### Development Build
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev
+# Use Nix for reproducible builds with PC/SC support
+source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+nix develop --command bash -c "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build"
 ```
 
-### Kill Basecamp (if running)
+### Install to LogosApp (CRITICAL)
 
 ```bash
-pkill -9 -f "LogosApp.elf"
-pkill -9 -f "logos_host.elf"
+# Install to LogosApp, NOT LogosBasecamp or LogosBasecampDev
+cmake --install build --prefix ~/.local/share/Logos/LogosApp
+```
+
+**Why LogosApp?**
+- `LogosApp/` - Regular mode, discovers new plugins ✅
+- `LogosBasecamp/` - Dev mode, plugin discovery frozen ❌
+- Launch WITHOUT `--dev-mode` for new plugin testing
+
+### Kill Basecamp + Clear Cache
+
+```bash
+pkill -9 -f "Logos"
+rm -rf ~/.cache/Logos/LogosApp/qmlcache/*
 ```
 
 Use `-f` flag because AppImage wraps processes (Lesson #31).
 
-### Launch Basecamp Dev
+### Launch Basecamp (Regular Mode)
 
 ```bash
-# User will provide command - usually from AppImage
+~/logos-app/logos-app.AppImage
+# NO --dev-mode flag for plugin development!
 ```
 
 ### Package LGX

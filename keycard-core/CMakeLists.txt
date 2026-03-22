@@ -15,11 +15,8 @@ endif()
 set(PLUGIN_SOURCES
     src/plugin.h
     src/plugin.cpp
-    src/secure_buffer.h
-    src/secure_buffer.cpp
-    src/keycard_types.h
-    src/keycard_manager.h
-    src/keycard_manager.cpp
+    src/KeycardBridge.h
+    src/KeycardBridge.cpp
 )
 
 # Copy metadata to build dir (so moc can find it)
@@ -47,27 +44,15 @@ target_include_directories(keycard_plugin PRIVATE
     "${LOGOS_CPP_SDK}/include/core"
 )
 
-# Add PC/SC include path (from Nix or system)
-execute_process(
-    COMMAND pkg-config --cflags-only-I libpcsclite
-    OUTPUT_VARIABLE PCSCLITE_INCLUDE_FLAGS
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-if(PCSCLITE_INCLUDE_FLAGS)
-    string(REPLACE "-I" "" PCSCLITE_INCLUDE_DIR "${PCSCLITE_INCLUDE_FLAGS}")
-    target_include_directories(keycard_plugin PRIVATE "${PCSCLITE_INCLUDE_DIR}")
-endif()
-
-# Link Qt + Logos SDK (static) + libsodium + libpcsclite
+# Link Qt + Logos SDK (static) + libkeycard.so
 target_link_libraries(keycard_plugin PRIVATE
     Qt6::Core
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
-    PkgConfig::sodium
-    ${PCSCLITE_LIBRARY}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libkeycard.so
 )
 
-# Install paths
-set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecampDev")
+# Install paths (use LogosBasecamp for development)
+set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
 set(KEYCARD_MODULE_DIR "${LOGOS_APP_DATA}/modules/keycard")
 
 # Cleanup stale backups (Lesson #33)
@@ -85,5 +70,10 @@ install(TARGETS keycard_plugin
     LIBRARY DESTINATION "${KEYCARD_MODULE_DIR}"
 )
 install(FILES modules/keycard/manifest.json
+    DESTINATION "${KEYCARD_MODULE_DIR}"
+)
+
+# Install libkeycard.so (Go library)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../libkeycard.so
     DESTINATION "${KEYCARD_MODULE_DIR}"
 )

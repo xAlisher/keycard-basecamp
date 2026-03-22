@@ -1,6 +1,6 @@
 #pragma once
 
-#include "keycard_manager.h"
+#include "KeycardBridge.h"
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -14,6 +14,7 @@ class KeycardPlugin : public QObject, public PluginInterface
 
 public:
     explicit KeycardPlugin(QObject* parent = nullptr);
+    ~KeycardPlugin() override;
 
     QString name()    const override { return QStringLiteral("keycard"); }
     QString version() const override { return QStringLiteral("1.0.0"); }
@@ -35,5 +36,7 @@ signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
 
 private:
-    Keycard::KeycardManager* m_manager = nullptr;
+    QString stateToString(KeycardBridge::State state);
+
+    KeycardBridge* m_bridge = nullptr;
 };
