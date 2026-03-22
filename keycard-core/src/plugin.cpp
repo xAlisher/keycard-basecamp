@@ -82,8 +82,20 @@ QString KeycardPlugin::discoverCard()
     if (state == KeycardBridge::State::Ready || state == KeycardBridge::State::Authorized) {
         result["found"] = true;
         result["uid"] = m_bridge->keyUID();
+
+        // Clear session overlay when card rediscovered after closeSession()
+        // Allows CARD_PRESENT/AUTHORIZED to show through (SPEC.md transition semantics)
+        if (m_sessionState == SessionState::Closed) {
+            m_sessionState = SessionState::NoSession;
+        }
     } else {
         result["found"] = false;
+
+        // Card removed/not present - clear any active session state
+        // Ensures SESSION_ACTIVE doesn't persist after card removal
+        if (m_sessionState == SessionState::Active || m_sessionState == SessionState::Closed) {
+            m_sessionState = SessionState::NoSession;
+        }
     }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
@@ -153,13 +165,25 @@ QString KeycardPlugin::getState()
 
     QJsonObject result;
 
-    // Session state takes precedence over bridge state
+    // Check bridge state first - clear session overlay if card is gone
+    KeycardBridge::State bridgeState = m_bridge->state();
+    bool cardGone = (bridgeState == KeycardBridge::State::WaitingForCard ||
+                     bridgeState == KeycardBridge::State::WaitingForReader ||
+                     bridgeState == KeycardBridge::State::NoPCSC ||
+                     bridgeState == KeycardBridge::State::Unknown ||
+                     bridgeState == KeycardBridge::State::ConnectionError);
+
+    if (cardGone && (m_sessionState == SessionState::Active || m_sessionState == SessionState::Closed)) {
+        m_sessionState = SessionState::NoSession;
+    }
+
+    // Session state takes precedence over bridge state (only if card still present)
     if (m_sessionState == SessionState::Active) {
         result["state"] = "SESSION_ACTIVE";
     } else if (m_sessionState == SessionState::Closed) {
         result["state"] = "SESSION_CLOSED";
     } else {
-        result["state"] = mapBridgeStateToSpec(m_bridge->state());
+        result["state"] = mapBridgeStateToSpec(bridgeState);
     }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
