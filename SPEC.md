@@ -259,7 +259,7 @@ Q_PLUGIN_METADATA(IID "org.logos.KeycardModuleInterface" FILE "plugin_metadata.j
 **plugins/keycard-ui/metadata.json** (UI plugin):
 ```json
 {
-  "name": "keycard_ui",
+  "name": "keycard-ui",
   "version": "1.0.0",
   "description": "Keycard debug UI and test harness",
   "author": "Logos Keycard",
