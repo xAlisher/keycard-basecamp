@@ -1,0 +1,35 @@
+# Build artifacts
+build/
+*.so
+*.dylib
+*.o
+*.a
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Qt
+*.qrc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.autogen/
+
+# Nix
+result
+result-*
+
+# Logs
+*.log
