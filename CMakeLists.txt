@@ -12,4 +12,4 @@ pkg_check_modules(sodium REQUIRED IMPORTED_TARGET libsodium)
 
 # Include subdirectories
 add_subdirectory(keycard-core)
-add_subdirectory(keycard_ui)
+add_subdirectory(keycard-ui)

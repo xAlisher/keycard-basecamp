@@ -68,6 +68,6 @@ echo
 echo "To test with Logos Basecamp:"
 echo "  1. Launch LogosBasecampDev (via AppImage or installed binary)"
 echo "  2. Check logs for: '[INFO] Loading module: keycard'"
-echo "  3. Navigate to keycard_ui plugin in the UI"
+echo "  3. Navigate to keycard-ui plugin in the UI"
 echo "  4. Click 'Test getState()' button"
 echo "  5. Should see: {\"state\":\"READER_NOT_FOUND\"}"

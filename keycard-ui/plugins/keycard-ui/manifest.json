@@ -8,7 +8,7 @@
     "linux-amd64": "Main.qml"
   },
   "manifestVersion": "0.1.0",
-  "name": "keycard_ui",
+  "name": "keycard-ui",
   "type": "ui_qml",
   "version": "1.0.0"
 }
