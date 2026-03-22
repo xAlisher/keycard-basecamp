@@ -3,7 +3,7 @@
   "category": "security",
   "dependencies": ["keycard"],
   "description": "Keycard debug UI and test harness",
-  "icon": "",
+  "icon": "keycard.png",
   "main": {
     "linux-amd64": "Main.qml"
   },

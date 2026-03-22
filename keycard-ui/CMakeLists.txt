@@ -10,5 +10,11 @@ install(FILES
 
 install(FILES
     qml/Main.qml
+    keycard.png
     DESTINATION "${KEYCARD_UI_DIR}"
+)
+
+install(FILES
+    icons/keycard.png
+    DESTINATION "${KEYCARD_UI_DIR}/icons"
 )
