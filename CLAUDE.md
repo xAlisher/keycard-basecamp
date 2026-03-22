@@ -443,10 +443,11 @@ After Senty's review, address findings and comment again starting with "Fergie:"
 ## Documentation Management
 
 **When user says "remember this":**
-1. Save to appropriate memory file (feedback/user/project/reference)
-2. ALSO update relevant project .md file (CLAUDE.md, LESSONS.md, PROJECT_KNOWLEDGE.md)
+1. Update existing memory file if topic exists, or create new file for new topics
+2. ALWAYS update relevant project .md file (CLAUDE.md, LESSONS.md, PROJECT_KNOWLEDGE.md)
 3. Commit the .md changes to git
 
+Don't create separate memory files for every statement - consolidate related items.
 Documentation should be both in memory AND discoverable in the repo.
 
 This repo has three levels of documentation:
