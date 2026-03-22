@@ -21,6 +21,53 @@ This is **keycard-basecamp** — a standalone Keycard smartcard authentication m
 
 **Source:** Extracted from [logos-notes](https://github.com/xAlisher/logos-notes) KeycardBridge implementation.
 
+## Planning Protocol
+
+### When to Enter Plan Mode
+
+**Always plan first for:**
+- Issues with 10+ checklist items
+- Architectural decisions (state machine design, API contracts)
+- Cross-module changes (core + UI coordination)
+- Security-critical implementation (key handling, state transitions)
+
+**Before implementing Issue #1, #2, or #3:** Enter plan mode. Create implementation order, identify dependencies, flag design decisions.
+
+### When Blocked
+
+**If stuck for >10 minutes or something unexpected happens:**
+1. STOP pushing forward
+2. Re-assess the approach
+3. Use Explore agent to research
+4. Ask user for clarification
+5. Re-plan if needed
+
+**Don't:** Keep trying variations, guess at solutions, or push through mysterious errors.
+
+### Before Marking Complete
+
+**Ask yourself:**
+- Does this work? (tested, verified)
+- Is there a simpler way? (elegance check)
+- Would Senty approve? (security review mindset)
+- Did I document lessons learned?
+
+## Subagent Strategy
+
+**Use Explore agent liberally for:**
+- Finding patterns across multiple files in logos-notes
+- Researching PC/SC integration details
+- Comparing KeycardBridge implementation patterns
+- Understanding libsodium usage patterns
+
+**Keep main context focused on:**
+- Implementation
+- Testing
+- Documentation
+- Responding to user and Senty
+
+**Don't:** Fill main context with exploratory grepping and file reads when a subagent can do it.
+
 ## Critical Security Context
 
 ⚠️ **This is security-critical code.** All key handling must be audited.
@@ -336,13 +383,31 @@ Overall: LGTM / needs fixes
 
 After Senty's review, address findings and comment again starting with "Fergie:"
 
-## Memory Management
+## Documentation Management
 
-This repo has its own PROJECT_KNOWLEDGE.md. When you learn new lessons:
+This repo has three levels of documentation:
 
-1. Update PROJECT_KNOWLEDGE.md in this repo (not just global memory)
-2. Follow existing format (lesson number, description, code examples)
-3. Security lessons are especially important to document
+### PROJECT_KNOWLEDGE.md
+**What:** Architectural patterns, extracted lessons from logos-notes, security checklists
+**When to update:** When learning new architectural patterns or porting proven solutions
+**Format:** Numbered lessons with ✅ correct vs ❌ wrong examples
+
+### LESSONS.md
+**What:** Implementation-specific lessons learned during building this repo
+**When to update:** After ANY correction from user or Senty, when something goes wrong, when you discover a better approach
+**Format:** Organized by issue number, describes what went wrong and how it was fixed
+**Purpose:** Self-improvement loop - prevent repeating mistakes
+
+**After corrections, always update LESSONS.md with:**
+1. What went wrong
+2. Why it happened
+3. How to prevent it next time
+4. Evidence (commit SHA, file reference)
+
+### Global Memory
+**What:** User preferences, cross-project patterns (like Fergie/Senty protocol)
+**When to update:** When learning about user workflow preferences
+**Location:** `~/.claude/projects/-tmp/memory/`
 
 ---
 
