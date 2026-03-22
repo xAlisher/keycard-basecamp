@@ -1,5 +1,6 @@
 #pragma once
 
+#include "keycard_manager.h"
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -21,7 +22,7 @@ public:
     Q_INVOKABLE void    initLogos(LogosAPI* api);
     Q_INVOKABLE QString initialize();
 
-    // Stub methods for Phase 1 (will return JSON errors)
+    // Core keycard operations
     Q_INVOKABLE QString discoverReader();
     Q_INVOKABLE QString discoverCard();
     Q_INVOKABLE QString authorize(const QString& pin);
@@ -32,4 +33,7 @@ public:
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
+
+private:
+    Keycard::KeycardManager* m_manager = nullptr;
 };

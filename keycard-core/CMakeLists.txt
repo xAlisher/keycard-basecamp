@@ -11,10 +11,15 @@ else()
     set(LOGOS_LIBLOGOS_HEADERS "/nix/store/092zxk8qbm9zxqigq1z0a5l901a068cz-logos-liblogos-headers-0.1.0/include")
 endif()
 
-# Plugin sources (stub only for Phase 1)
+# Plugin sources
 set(PLUGIN_SOURCES
     src/plugin.h
     src/plugin.cpp
+    src/secure_buffer.h
+    src/secure_buffer.cpp
+    src/keycard_types.h
+    src/keycard_manager.h
+    src/keycard_manager.cpp
 )
 
 # Copy metadata to build dir (so moc can find it)
@@ -33,7 +38,7 @@ set_target_properties(keycard_plugin PROPERTIES
     INSTALL_RPATH "$ORIGIN"
 )
 
-# Include Logos SDK headers
+# Include Logos SDK headers + PC/SC headers
 target_include_directories(keycard_plugin PRIVATE
     src
     "${LOGOS_LIBLOGOS_HEADERS}"
@@ -42,10 +47,23 @@ target_include_directories(keycard_plugin PRIVATE
     "${LOGOS_CPP_SDK}/include/core"
 )
 
-# Link Qt + Logos SDK (static)
+# Add PC/SC include path (from Nix or system)
+execute_process(
+    COMMAND pkg-config --cflags-only-I libpcsclite
+    OUTPUT_VARIABLE PCSCLITE_INCLUDE_FLAGS
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+if(PCSCLITE_INCLUDE_FLAGS)
+    string(REPLACE "-I" "" PCSCLITE_INCLUDE_DIR "${PCSCLITE_INCLUDE_FLAGS}")
+    target_include_directories(keycard_plugin PRIVATE "${PCSCLITE_INCLUDE_DIR}")
+endif()
+
+# Link Qt + Logos SDK (static) + libsodium + libpcsclite
 target_link_libraries(keycard_plugin PRIVATE
     Qt6::Core
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
+    PkgConfig::sodium
+    ${PCSCLITE_LIBRARY}
 )
 
 # Install paths
