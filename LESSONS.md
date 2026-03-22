@@ -491,3 +491,131 @@ if (bridge_reports_card_gone && m_sessionState != NoSession) {
 
 ---
 
+
+## Issue #3 - Debug UI Implementation
+
+### QML Signals Don't Return Values
+**Date:** 2026-03-22
+**Context:** Execute buttons not posting results
+
+**What went wrong:**
+- Defined `signal execute()` in ActionRow component
+- Button's onClicked called `var result = row.execute()`
+- Nothing happened - execute button didn't show results
+
+**Why it happened:**
+- In QML, signals are for notifications, not function calls
+- Signals emit but don't return values
+- Can't do `var result = someSignal()` - syntax works but returns undefined
+
+**How to prevent:**
+- Use `property var executeFunc: function() { ... }` instead of signals when return value needed
+- Signals: for notifications (onStateChanged, onClicked)
+- Function properties: for callbacks that return values
+
+**Evidence:** After changing to executeFunc property, all buttons posted results correctly
+
+---
+
+### State-Based UI vs Flag-Based UI
+**Date:** 2026-03-22
+**Context:** Row status showing stale "not discovered yet" when state was CARD_PRESENT
+
+**What went wrong:**
+- Maintained separate `readerFound`, `cardFound` flags
+- Updated flags in executeFunc callbacks
+- Prerequisite text checked flags: `root.readerFound ? "✓ Reader found" : "Not found"`
+- Flags weren't updating reactively, showed stale status
+
+**Why it happened:**
+- Flags only updated when Execute button clicked
+- Didn't account for state changes from other sources (polling, card insertion)
+- State already tracked via 500ms Timer polling `getState()`
+- Duplicated state in flags created synchronization issues
+
+**How to prevent:**
+- Use single source of truth: `root.currentState` (already being polled)
+- Check state instead of flags: `root.currentState !== "READER_NOT_FOUND" ? "✓ Reader found" : ...`
+- State updates automatically from Timer, always current
+- No manual flag management needed
+
+**Evidence:** After switching to state-based checks, all status text updated correctly and reactively
+
+**Pattern:**
+```qml
+// ❌ Wrong - flag-based
+property bool cardFound: false
+prereqText: root.cardFound ? "✓ Card found" : "Not found"
+executeFunc: function() {
+    var result = logos.callModule("keycard", "discoverCard", [])
+    root.cardFound = JSON.parse(result).found  // Manual sync
+}
+
+// ✅ Right - state-based
+property string currentState: "READER_NOT_FOUND"  // Auto-updated by Timer
+prereqText: {
+    if (root.currentState === "CARD_PRESENT" ||
+        root.currentState === "AUTHORIZED" ||
+        root.currentState === "SESSION_ACTIVE") {
+        return "✓ Card found"
+    }
+    return "Not found"
+}
+```
+
+---
+
+### Prerequisites Must Account for All Relevant States
+**Date:** 2026-03-22
+**Context:** Multiple issues with button enabling after state transitions
+
+**What went wrong:**
+- closeSession only enabled for SESSION_ACTIVE, disabled in AUTHORIZED
+- authorize only enabled for CARD_PRESENT, disabled in SESSION_CLOSED
+- discoverCard showed "Ready to discover" in SESSION_CLOSED
+
+**Why it happened:**
+- Prerequisites checked narrow state conditions
+- Didn't consider full state machine transitions
+- SESSION_CLOSED means card present but session ended - should allow re-auth
+- AUTHORIZED means authorized but key not derived - should allow closeSession
+
+**How to prevent:**
+- Check SPEC.md state machine diagram
+- For each action, list ALL valid source states, not just primary one
+- closeSession: enable for AUTHORIZED || SESSION_ACTIVE (both are session states)
+- authorize: enable for CARD_PRESENT || SESSION_CLOSED (re-auth use case)
+- Card-present checks: include SESSION_CLOSED (card still there, session just closed)
+
+**Evidence:** 
+- User couldn't close session in AUTHORIZED state (had to derive key first)
+- User couldn't re-authorize in SESSION_CLOSED (had to remove/reinsert card)
+- Fixed by adding missing states to prereqMet conditions
+
+---
+
+### UI Polish: Less is More
+**Date:** 2026-03-22
+**Context:** User feedback on visual design
+
+**What we learned:**
+- Initially: colored borders (green/red), long UID in status text
+- User: "don't show colored borders - color of status is enough"
+- User: "don't show UID after card found in status - showing it in text field is enough"
+
+**Why it matters:**
+- Redundant visual indicators add clutter without value
+- Green/red borders duplicated status text color
+- Long UID (64 hex chars) in status duplicated result field below
+- Simpler UI is easier to scan and read
+
+**Design guideline:**
+- One indicator per piece of information (not multiple redundant ones)
+- Status text color + text is sufficient (borders were redundant)
+- Show details once in appropriate place (UID in result field, not status)
+- Ask "what information does this add?" before adding visual elements
+
+**Evidence:** User said "cool we good" after simplification, not before
+
+---
+

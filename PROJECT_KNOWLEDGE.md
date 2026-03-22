@@ -428,3 +428,150 @@ install(FILES
 - Light colors that disappear when desaturated
 - Wrong size (must be exactly 28x28)
 
+
+## Phase 3 Completion (Issue #3)
+
+**Status:** ✅ Merged to master (commit 04e472e)
+**Review rounds:** 2 (Round 2 LGTM)
+**Branch:** issue-3-debug-ui
+
+### What Was Built
+
+**Comprehensive Debug UI Test Harness** - 7 action rows testing full state machine:
+
+1. **Discover Reader** - Always enabled, shows reader found status
+2. **Discover Card** - Enabled if reader found, shows card present/found
+3. **Authorize** - Enabled for CARD_PRESENT or SESSION_CLOSED (re-auth), PIN input
+4. **Derive Key** - Enabled for AUTHORIZED or SESSION_ACTIVE, domain input
+5. **Get State** - Always enabled, returns current state JSON
+6. **Get Last Error** - Always enabled, returns error message
+7. **Close Session** - Enabled for AUTHORIZED or SESSION_ACTIVE
+
+**Live State Indicator:**
+- Large text display at top showing current state
+- Color-coded by state (red → yellow → green spectrum)
+- Auto-updates every 500ms via Timer polling `getState()`
+
+**Prerequisites System:**
+- Each row shows green ✓ or red ✗ based on prerequisites
+- Execute buttons disabled when prerequisites not met
+- Status text explains why button is disabled
+
+**Per-Row Result Displays:**
+- Each row has its own result field showing JSON response
+- Color-coded: green (success), red (error), orange (parse error)
+- Selectable text for copying results
+
+### Key Implementation Decisions
+
+**Polling vs Signals (LOW note from Senty):**
+- Uses 500ms Timer polling `getState()` instead of signal-based updates
+- Simpler implementation, works reliably
+- Trade-off: 500ms latency vs complexity of signal wiring
+- Acceptable for test harness (not production UI)
+
+**State-Based Prerequisites:**
+- Single source of truth: `root.currentState` (auto-polled)
+- No manual flag management (`readerFound`, `cardFound` removed in fixes)
+- Prerequisites check state machine, not local flags
+- Reactive to all state changes (not just button clicks)
+
+**Function Properties vs Signals:**
+- Uses `property var executeFunc: function() { ... }` for row actions
+- QML signals don't return values, functions do
+- Pattern: `executeFunc: function() { return logos.callModule(...) }`
+- Button calls `var result = row.executeFunc()` to get response
+
+**UI Polish:**
+- Removed colored borders (green/red) - status text color sufficient
+- Styled buttons to match dark theme (gray background, white text)
+- Simplified status text (no long UIDs, details in result field)
+- Clean, scannable layout
+
+### Testing Results
+
+**Flows verified with real hardware:**
+- ✅ Discover reader → "found: true" with reader name
+- ✅ Discover card → "found: true" with card UID
+- ✅ Authorize with PIN → transitions to AUTHORIZED
+- ✅ Derive key (multiple domains) → unique keys per domain
+- ✅ Close session → transitions to SESSION_CLOSED
+- ✅ Re-authorize after close → SESSION_CLOSED allows re-auth
+- ✅ Card removal during SESSION_ACTIVE → state updates correctly
+- ✅ Card reinsertion → state updates to CARD_PRESENT
+- ✅ Reader removal → state updates (Note: Issue #9 about cached result is UI-level, backend detects removal)
+- ✅ State changes reflected live (500ms update)
+- ✅ Prerequisites gate buttons correctly
+
+**Issues found and fixed during testing:**
+1. Execute buttons not posting results (signal → function fix)
+2. Status showing stale state (flag-based → state-based fix)
+3. closeSession disabled in AUTHORIZED (added to prereqMet)
+4. Re-auth blocked in SESSION_CLOSED (added to authorize prereqMet)
+5. Card status wrong after closeSession (SESSION_CLOSED → card-present states)
+6. UI clutter (removed borders, simplified status text)
+
+**Backend issue discovered:**
+- Issue #9: discoverReader returns cached result after reader removal
+- Backend does detect removal (getState works), but discoverReader result is cached
+- UI works correctly - shows live state updates
+
+### Success Criteria Status
+
+From Issue #3 original requirements:
+
+✅ All 7 action rows render correctly  
+✅ State indicator updates live via polling  
+✅ Prerequisites gating works (buttons disabled when prereqs not met)  
+✅ Full flow works: discover → authorize → derive (multiple domains) → close  
+✅ Card removal/reinsertion triggers state changes (tested with real hardware)  
+⚠️ PIN lockout flow not tested (requires wrong PIN attempts, not critical for test harness)  
+
+**Overall:** All core functionality complete and verified with real hardware.
+
+### QML Patterns Established
+
+**Action Row Component Pattern:**
+```qml
+component ActionRow: Rectangle {
+    property string title: ""
+    property string prereqText: ""
+    property bool prereqMet: false
+    property bool alwaysEnabled: false
+    property bool showPinInput: false
+    property bool showDomainInput: false
+    property string inputPlaceholder: ""
+    property var executeFunc: function() { return '{"error":"Not implemented"}' }
+
+    // Layout: title, prereq status, execute button, input field, result display
+}
+```
+
+**State Polling Pattern:**
+```qml
+property string currentState: "READER_NOT_FOUND"
+
+Timer {
+    interval: 500
+    running: true
+    repeat: true
+    onTriggered: {
+        var result = logos.callModule("keycard", "getState", [])
+        try {
+            var obj = JSON.parse(result)
+            if (obj.state) root.currentState = obj.state
+        } catch (e) {}
+    }
+}
+```
+
+**State-Based Prerequisites:**
+```qml
+prereqText: {
+    if (root.currentState === "TARGET_STATE") return "✓ Ready"
+    if (root.currentState === "BLOCKED_STATE") return "✗ Blocked"
+    return "Waiting..."
+}
+prereqMet: root.currentState === "TARGET_STATE" || root.currentState === "ALSO_VALID"
+```
+
