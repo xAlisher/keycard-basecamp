@@ -96,7 +96,143 @@ Lessons learned during building keycard-basecamp. Update this after corrections,
 
 ## Issue #2 - Core Module
 
-*Lessons will be added here during implementation*
+### PC/SC Protocol Version Mismatch Prevented Direct Integration
+**Date:** 2026-03-22
+**Context:** Tried direct PC/SC implementation with libpcsclite, reader not detected
+
+**What went wrong:**
+- Plugin linked against Nix libpcsclite 2.3.0 (protocol 4:5)
+- System pcscd daemon version 2.0.3 (protocol 4:4)
+- pcscd logs showed: "Communication protocol mismatch!"
+- No readers found despite ACR39U being present and working
+
+**Why it happened:**
+- Nix environment provides newer libpcsclite than system pcscd
+- Protocol versions must match between client library and daemon
+- Direct PC/SC implementation harder to maintain than proven Go library
+
+**How to prevent:**
+- Use libkeycard.so (status-keycard-go) instead of direct PC/SC
+- Port KeycardBridge wrapper from logos-notes (proven working)
+- Let Go library handle PC/SC compatibility issues
+- Smaller codebase (wrapper vs full PC/SC implementation)
+
+**Evidence:**
+- pcscd logs at 20:22:11 showing protocol 4:5 vs 4:4 mismatch
+- Switching to libkeycard.so fixed issue immediately
+- `/home/alisher/keycard-basecamp/keycard-core/src/KeycardBridge.{h,cpp}`
+
+---
+
+### Plugin Must Have Execute Permission to Load
+**Date:** 2026-03-22
+**Context:** Module not appearing in app's module stats despite correct files
+
+**What went wrong:**
+- keycard_plugin.so installed with `-rw-r--r--` (not executable)
+- Module not loaded by app (only capability_module and package_manager visible)
+- No error messages, silently ignored
+
+**Why it happened:**
+- CMake install doesn't preserve executable permissions by default
+- Working modules have `-rwxr-xr-x` permissions
+
+**How to prevent:**
+- After install, run: `chmod +x ~/.local/share/Logos/LogosBasecamp/modules/keycard/keycard_plugin.so`
+- Check working module permissions and match them
+- Verify with: `ls -la ~/.local/share/Logos/LogosBasecamp/modules/*/`
+
+**Evidence:** Module appeared in stats after chmod +x
+
+---
+
+### LogosApp vs LogosBasecamp Directory Confusion
+**Date:** 2026-03-22
+**Context:** CMake installed to LogosApp but app loaded from LogosBasecamp
+
+**What went wrong:**
+- CMakeLists.txt set `LOGOS_APP_DATA` to LogosApp
+- App actually ran from LogosBasecamp directory
+- Had to manually copy files between directories
+
+**Why it happened:**
+- Earlier testing used regular mode (LogosApp)
+- Current session app using dev mode data (LogosBasecamp)
+- Install path hardcoded without checking app runtime path
+
+**How to prevent:**
+- Check which directory app is actually using: `ps aux | grep logos_host`
+- Match CMake install path to runtime path
+- For development: install to LogosBasecamp
+- For production: install to LogosApp
+
+**Evidence:** Changed CMakeLists.txt line 54 to use LogosBasecamp
+
+---
+
+### Bundled libpcsclite.so Breaks PC/SC Communication
+**Date:** 2026-03-22
+**Context:** Removed Nix libpcsclite, copied system version to module dir
+
+**What went wrong:**
+- Tried to bundle system libpcsclite.so.1 (2.0.3) in module directory
+- This is the same mistake from logos-notes (Lesson #36)
+- Bundled library can't communicate with pcscd properly
+
+**Why it happened:**
+- Thought bundling system version would fix protocol mismatch
+- Forgot the lesson from logos-notes about not bundling libpcsclite
+
+**How to prevent:**
+- NEVER bundle libpcsclite.so in module packages
+- Always use system libpcsclite dynamically
+- Remember: libkeycard.so is OK to bundle, but not libpcsclite
+
+**Evidence:** Removed libpcsclite.so.1 from module directory after realizing error
+
+---
+
+### KeycardBridge is the Proven Pattern
+**Date:** 2026-03-22
+**Context:** After protocol mismatch, switched from direct PC/SC to KeycardBridge
+
+**What went right:**
+- Copied KeycardBridge.{h,cpp} from logos-notes
+- Uses libkeycard.so (Go library) via JSON-RPC
+- Works immediately with no modifications
+- Detects reader and card: `{"readerFound":true,"state":"READY"}`
+
+**Why it matters:**
+- libkeycard.so handles all PC/SC complexity
+- Proven to work across different pcscd versions
+- Simpler code (RPC calls vs APDU commands)
+- Same library used by Status desktop wallet
+
+**How to repeat:**
+- Port KeycardBridge as thin wrapper over libkeycard.so
+- Bundle libkeycard.so (14MB) with module
+- Use KeycardBridge API: start(), authorize(), exportKey()
+- Update plugin to call bridge methods instead of direct PC/SC
+
+**Evidence:** Working integration showing READY state with actual hardware
+
+---
+
+### QML Text Must Be TextEdit for Copy/Paste
+**Date:** 2026-03-22
+**Context:** User couldn't copy JSON errors from debug UI
+
+**What went wrong:**
+- Used `Text` component for result display
+- Text is read-only and not selectable
+
+**How to fix:**
+- Change `Text` to `TextEdit`
+- Add `selectByMouse: true` and `selectByKeyboard: true`
+- Keep `readOnly: true` to prevent editing
+- User can now select and copy JSON results
+
+**Evidence:** `/home/alisher/keycard-basecamp/keycard-ui/qml/Main.qml`
 
 ---
 
