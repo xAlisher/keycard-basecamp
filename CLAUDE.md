@@ -17,7 +17,9 @@ This is **keycard-basecamp** — a standalone Keycard smartcard authentication m
 
 **Purpose:** Provide smartcard authentication primitives that any Logos app can consume via `logos.callModule("keycard", ...)`.
 
-**Status:** 🚧 In development
+**Status:**
+- ✅ Phase 1: Scaffolding complete (merged to master)
+- 🚧 Phase 2: PC/SC integration (next)
 
 **Source:** Extracted from [logos-notes](https://github.com/xAlisher/logos-notes) KeycardBridge implementation.
 
@@ -243,6 +245,61 @@ QString initLogos(QObject* parent) {  // Called reflectively
 
 See Lesson #19.
 
+### ❌ Missing eventResponse signal
+
+Plugin must have eventResponse signal or ModuleProxy can't connect:
+
+```cpp
+// ❌ Wrong - no signal
+class MyPlugin : public QObject, public PluginInterface {
+    // Missing signal!
+};
+
+// ✅ Correct
+class MyPlugin : public QObject, public PluginInterface {
+signals:
+    void eventResponse(const QString& eventName, const QVariantList& data);
+};
+```
+
+### ❌ Hiding base class logosAPI member
+
+```cpp
+// ❌ Wrong - hides PluginInterface::logosAPI
+private:
+    LogosAPI* logosAPI = nullptr;
+
+// ✅ Correct - use base class member
+// No private logosAPI needed - PluginInterface already has it
+```
+
+### ❌ UI plugins missing manifest.json
+
+UI plugins need BOTH manifest.json AND metadata.json:
+
+```
+// ❌ Wrong
+plugins/keycard-ui/
+└── metadata.json  (only metadata)
+
+// ✅ Correct
+plugins/keycard-ui/
+├── manifest.json   (required!)
+└── metadata.json   (required!)
+```
+
+### ❌ Directory name mismatch
+
+Plugin directory name must exactly match the "name" field:
+
+```bash
+# ❌ Wrong
+plugins/keycard_ui/metadata.json → {"name": "keycard-ui"}
+
+# ✅ Correct
+plugins/keycard-ui/metadata.json → {"name": "keycard-ui"}
+```
+
 ### ❌ Logging key material
 
 Never log keys, even for debugging:
@@ -287,23 +344,23 @@ keycard-basecamp/
 │   │   └── plugin_metadata.json
 │   └── modules/keycard/
 │       └── manifest.json             ← Module manifest
-└── keycard-ui/                ← Debug UI (test harness)
-    ├── CMakeLists.txt
-    ├── src/
-    │   ├── plugin.{h,cpp}
-    │   └── plugin_metadata.json
+└── keycard-ui/                ← Debug UI (pure QML, no C++)
+    ├── CMakeLists.txt                ← Install-only (no build)
     ├── qml/
     │   └── Main.qml                  ← Debug panel
     └── plugins/keycard-ui/
-        └── metadata.json             ← UI plugin metadata
+        ├── manifest.json             ← Module manifest (required!)
+        └── metadata.json             ← UI plugin metadata (required!)
 ```
 
 ## When Working on Issues
 
-### Issue #1 (Scaffolding)
-- Create empty files per structure above
-- Populate all metadata/manifest files (never leave `{}`)
-- Test that Basecamp loads without errors
+### Issue #1 (Scaffolding) ✅ COMPLETE
+- ✅ Core module with eventResponse signal
+- ✅ Pure-QML UI (no C++ scaffolding needed)
+- ✅ Both manifest.json AND metadata.json for UI plugins
+- ✅ Hyphen naming (keycard-ui) not underscore
+- ✅ Don't hide base class logosAPI member
 
 ### Issue #2 (Core Module)
 - Port SecureBuffer first (foundation)
