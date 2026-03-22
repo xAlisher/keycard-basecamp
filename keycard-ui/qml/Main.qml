@@ -9,6 +9,9 @@ Rectangle {
     color: "#2b2b2b"
 
     property string currentState: "READER_NOT_FOUND"
+    property bool readerFound: false
+    property bool cardFound: false
+    property string cardUID: ""
 
     // Poll state every 500ms for live updates
     Timer {
@@ -76,31 +79,66 @@ Rectangle {
 
             // Action Rows
             ActionRow {
+                id: discoverReaderRow
                 title: "1. Discover Reader"
                 alwaysEnabled: true
-                prereqText: "No prerequisites"
+                prereqText: root.currentState !== "READER_NOT_FOUND" ? "✓ Reader found" : "Reader not found yet"
                 prereqMet: true
-                onExecute: function() {
-                    return logos.callModule("keycard", "discoverReader", [])
+                executeFunc: function() {
+                    var result = logos.callModule("keycard", "discoverReader", [])
+                    try {
+                        var obj = JSON.parse(result)
+                        root.readerFound = obj.found === true
+                    } catch (e) {}
+                    return result
                 }
             }
 
             ActionRow {
+                id: discoverCardRow
                 title: "2. Discover Card"
-                prereqText: root.currentState !== "READER_NOT_FOUND" ? "✓ Reader found" : "✗ Reader not found"
+                prereqText: {
+                    // Check current state for card presence
+                    if (root.currentState === "CARD_PRESENT" ||
+                        root.currentState === "AUTHORIZED" ||
+                        root.currentState === "SESSION_ACTIVE" ||
+                        root.currentState === "SESSION_CLOSED") {
+                        return "✓ Card found"
+                    }
+
+                    if (root.currentState === "CARD_NOT_PRESENT") return "✗ Card not present"
+                    if (root.currentState === "READER_NOT_FOUND") return "✗ Reader not found"
+
+                    return "Ready to discover"
+                }
                 prereqMet: root.currentState !== "READER_NOT_FOUND"
-                onExecute: function() {
-                    return logos.callModule("keycard", "discoverCard", [])
+                executeFunc: function() {
+                    var result = logos.callModule("keycard", "discoverCard", [])
+                    try {
+                        var obj = JSON.parse(result)
+                        root.cardFound = obj.found === true
+                        if (obj.uid) root.cardUID = obj.uid
+                        else root.cardUID = ""
+                    } catch (e) {}
+                    return result
                 }
             }
 
             ActionRow {
                 id: authorizeRow
                 title: "3. Authorize"
-                prereqText: root.currentState === "CARD_PRESENT" ? "✓ Card present" : "✗ Card not present"
-                prereqMet: root.currentState === "CARD_PRESENT"
+                prereqText: {
+                    if (root.currentState === "CARD_PRESENT") return "✓ Card present"
+                    if (root.currentState === "SESSION_CLOSED") return "✓ Card present (re-auth allowed)"
+                    if (root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE") return "Already authorized"
+                    if (root.currentState === "CARD_NOT_PRESENT") return "✗ Card not present"
+                    if (root.currentState === "READER_NOT_FOUND") return "✗ Reader not found"
+                    if (root.currentState === "BLOCKED") return "✗ Card blocked"
+                    return "✗ Not authorized"
+                }
+                prereqMet: root.currentState === "CARD_PRESENT" || root.currentState === "SESSION_CLOSED"
                 showPinInput: true
-                onExecute: function() {
+                executeFunc: function() {
                     var pin = authorizeRow.inputValue
                     if (pin.length === 0) {
                         return '{"error":"PIN required"}'
@@ -119,7 +157,7 @@ Rectangle {
                 prereqMet: root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE"
                 showDomainInput: true
                 inputPlaceholder: "logos-notes-encryption"
-                onExecute: function() {
+                executeFunc: function() {
                     var domain = deriveKeyRow.inputValue || "logos-notes-encryption"
                     return logos.callModule("keycard", "deriveKey", [domain])
                 }
@@ -130,7 +168,7 @@ Rectangle {
                 alwaysEnabled: true
                 prereqText: "No prerequisites"
                 prereqMet: true
-                onExecute: function() {
+                executeFunc: function() {
                     return logos.callModule("keycard", "getState", [])
                 }
             }
@@ -140,16 +178,20 @@ Rectangle {
                 alwaysEnabled: true
                 prereqText: "No prerequisites"
                 prereqMet: true
-                onExecute: function() {
+                executeFunc: function() {
                     return logos.callModule("keycard", "getLastError", [])
                 }
             }
 
             ActionRow {
                 title: "7. Close Session"
-                prereqText: root.currentState === "SESSION_ACTIVE" ? "✓ Session active" : "✗ No active session"
-                prereqMet: root.currentState === "SESSION_ACTIVE"
-                onExecute: function() {
+                prereqText: {
+                    if (root.currentState === "SESSION_ACTIVE") return "✓ Session active"
+                    if (root.currentState === "AUTHORIZED") return "✓ Authorized (can close)"
+                    return "✗ No active session"
+                }
+                prereqMet: root.currentState === "SESSION_ACTIVE" || root.currentState === "AUTHORIZED"
+                executeFunc: function() {
                     return logos.callModule("keycard", "closeSession", [])
                 }
             }
@@ -201,7 +243,7 @@ Rectangle {
         Layout.fillWidth: true
         Layout.preferredHeight: showPinInput || showDomainInput ? 140 : 100
         color: "#1a1a1a"
-        border.color: prereqMet || alwaysEnabled ? "#00aa00" : "#aa0000"
+        border.color: "#555555"
         border.width: 1
         radius: 5
 
@@ -213,8 +255,7 @@ Rectangle {
         property bool showDomainInput: false
         property string inputPlaceholder: ""
         property alias inputValue: inputField.text
-
-        signal execute()
+        property var executeFunc: function() { return '{"error":"Not implemented"}' }
 
         function clearInput() {
             inputField.text = ""
@@ -250,7 +291,7 @@ Rectangle {
                     enabled: row.prereqMet || row.alwaysEnabled
                     Layout.preferredWidth: 100
                     onClicked: {
-                        var result = row.execute()
+                        var result = row.executeFunc()
                         resultDisplay.text = result
                         try {
                             var obj = JSON.parse(result)
@@ -262,6 +303,21 @@ Rectangle {
                         } catch (e) {
                             resultDisplay.color = "#ffaa00"
                         }
+                    }
+
+                    background: Rectangle {
+                        color: parent.enabled ? (parent.down ? "#555555" : "#3a3a3a") : "#2a2a2a"
+                        border.color: parent.enabled ? "#666666" : "#444444"
+                        border.width: 1
+                        radius: 3
+                    }
+
+                    contentItem: Text {
+                        text: parent.text
+                        color: parent.enabled ? "#ffffff" : "#666666"
+                        font.pixelSize: 13
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
                     }
                 }
             }
