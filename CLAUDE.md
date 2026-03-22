@@ -496,3 +496,7 @@ git checkout -b issue-2-pcsc-integration
 3. LGTM → merge to master
 4. Delete feature branch
 
+**When user posts issue number:**
+- If path is clear → create branch and start immediately
+- Only ask if issue is ambiguous or multiple approaches exist
+
