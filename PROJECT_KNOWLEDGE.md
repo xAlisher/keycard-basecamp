@@ -1,0 +1,306 @@
+# Project Knowledge: keycard-basecamp
+
+Lessons learned and critical knowledge for Keycard module development.
+
+## Extracted Lessons from logos-notes
+
+### 2. Q_INVOKABLE methods must return JSON strings, not raw values
+When exposing methods to QML via `Q_INVOKABLE`, always return `QString` containing JSON, never raw types like `bool` or `int`. QML can parse JSON but type mismatches cause silent failures.
+
+**Example:**
+```cpp
+// ✅ Correct
+Q_INVOKABLE QString authorize(const QString& pin) {
+    return QJsonDocument(QJsonObject{
+        {"authorized", true},
+        {"remainingAttempts", 2}
+    }).toJson(QJsonDocument::Compact);
+}
+
+// ❌ Wrong
+Q_INVOKABLE bool authorize(const QString& pin) {
+    return true;  // QML can't parse this reliably
+}
+```
+
+### 10. Empty `{}` plugin metadata means shell never registers the plugin
+If `plugin_metadata.json` contains only `{}`, the Logos shell silently ignores the plugin. Must have complete metadata matching manifest.json.
+
+**Required fields:**
+- `name` (must match manifest.json)
+- `version`
+- `description`
+- `author`
+- `type` (`"core"` for modules, `"ui_qml"` for UI plugins)
+- `main` (library name or QML file)
+- `dependencies`
+- `category`
+
+### 19. initLogos must NOT use override keyword — called reflectively
+The PluginInterface's `initLogos()` method is invoked via Qt's reflection system (`QMetaObject::invokeMethod`). Using `override` keyword can cause issues with method resolution.
+
+**Correct:**
+```cpp
+class KeycardPlugin : public QObject, public PluginInterface {
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.logos.KeycardModuleInterface" FILE "plugin_metadata.json")
+    Q_INTERFACES(PluginInterface)
+
+public:
+    QString initLogos(QObject* parent) {  // No override keyword
+        // ...
+    }
+};
+```
+
+### 20. Consider logos-module-builder for shared build infrastructure
+The [logos-module-builder](https://github.com/logos-innovation-lab/logos-module-builder) provides standardized Nix flakes and CMake templates for Basecamp modules. Consider migrating after initial version works to reduce build boilerplate.
+
+**Benefits:**
+- Shared dependency management
+- Consistent packaging patterns
+- Reduced flake.nix complexity
+
+### 31. AppImage wraps processes via ld-linux — use full command in pkill
+When killing Basecamp processes launched from AppImage, use `pkill -9 -f "logos_host.elf"` not `pkill -9 logos_host`. AppImage wraps executables via ld-linux dynamic linker, so process name isn't what you expect.
+
+**Commands:**
+```bash
+# ✅ Correct
+pkill -9 -f "LogosApp.elf"
+pkill -9 -f "logos_host.elf"
+
+# ❌ Wrong (won't match AppImage processes)
+pkill -9 LogosApp
+pkill -9 logos_host
+```
+
+### 33. CMake install must clean stale backups before installing
+Logos shell creates `.bak` and `.bak.old` backups of modules. These can accumulate and cause conflicts. Clean them before installing new builds.
+
+**CMake install code:**
+```cmake
+install(CODE "
+    file(GLOB _old \"${CMAKE_INSTALL_PREFIX}/modules/keycard.*\")
+    foreach(_dir \${_old})
+        file(REMOVE_RECURSE \"\${_dir}\")
+    endforeach()
+")
+```
+
+### 36. libpcsclite must NOT be bundled — use system library
+**Critical:** Never bundle `libpcsclite.so` in LGX packages. It must communicate with system pcscd daemon. Bundling breaks smartcard detection.
+
+**Fix in package-lgx.sh:**
+```bash
+# After creating LGX with bundler, remove pcsclite:
+tar -xzf keycard-core.lgx -C temp/
+find temp/ -name "libpcsclite.so*" -delete
+(cd temp && tar -czf keycard-core.lgx *)
+```
+
+**Why:** pcsclite uses IPC with pcscd daemon. Bundled version has wrong socket paths and version mismatches.
+
+## Keycard-Specific Knowledge
+
+### Hybrid Key Derivation Architecture
+
+**On-card operations:**
+1. PIN verification (never leaves card)
+2. BIP32 derivation at `m/43'/60'/1581'/1'/0`
+3. Returns 32-byte secp256k1 private key
+
+**Host-side operations:**
+1. Domain separation: `SHA256(secp256k1_key || domain_string)`
+2. Result = 256-bit AES-256-GCM master key
+3. Immediate wipe of secp256k1_key via `sodium_memzero`
+
+**Why hybrid:**
+- Card firmware is fixed — can't add new domain strings per consumer
+- Host-side hashing provides infinite domain namespace
+- No card firmware changes needed for new Logos apps
+
+**Security properties preserved:**
+- PIN never leaves card ✅
+- BIP32 derivation on-card ✅
+- Domain separation prevents cross-app key reuse ✅
+
+### State Machine Semantics
+
+**BLOCKED** = 3 failed PINs, card is locked, requires PUK recovery
+- Card removal/reinsertion does NOT clear BLOCKED
+- `authorize()` must refuse to attempt (don't waste remaining attempts)
+- UI: "Card is locked. Use PUK to recover."
+
+**SESSION_CLOSED** = voluntary closeSession() or card removed during active session
+- Key wiped via `sodium_memzero` on entry
+- Card reinsertion → CARD_PRESENT (ready for re-auth)
+- UI: "Session ended. Reinsert card to authenticate."
+
+**CARD_NOT_PRESENT** = no card detected, reader is functioning
+- Physical state, not security state
+- UI: "No card detected."
+
+**Critical distinction:** These three states have different re-entry paths. UI must distinguish them clearly.
+
+### Card UID Verification (Security)
+
+**Purpose:** Prevent card-swap attacks during active session.
+
+**Implementation:**
+```cpp
+QString m_expectedUID;  // Set on first successful authorize()
+
+// On card re-detection during SESSION_ACTIVE or AUTHORIZED:
+if (currentUID != m_expectedUID && state >= AUTHORIZED) {
+    transitionTo(SESSION_CLOSED);
+    return errorJson("Card changed during session. Re-authenticate.");
+}
+```
+
+**Attack prevented:** Attacker removes authorized card, inserts their own card, attempts to use derived key.
+
+### Multi-Key Derivation
+
+`deriveKey()` can be called multiple times from `AUTHORIZED` or `SESSION_ACTIVE` state with different domain strings. Each call returns a fresh key for that domain.
+
+**Use case:** Consumer needs multiple keys (e.g., encryption key + signing key):
+```cpp
+// logos-notes might call:
+QString encKey = logos.callModule("keycard", "deriveKey", ["logos-notes-encryption"]);
+QString signKey = logos.callModule("keycard", "deriveKey", ["logos-notes-signing"]);
+// Two different keys from same card session
+```
+
+**Determinism:** Same card + same domain = same key across sessions (BIP32 ensures this).
+
+### Memory Safety Patterns
+
+**SecureBuffer (RAII):**
+```cpp
+class SecureBuffer {
+    QByteArray data;
+public:
+    SecureBuffer(const QByteArray& d) : data(d) {}
+    ~SecureBuffer() {
+        sodium_memzero(data.data(), data.size());
+    }
+    const QByteArray& get() const { return data; }
+};
+```
+
+**Usage:**
+```cpp
+SecureBuffer masterKey = deriveKeycardMasterKey(cardKey);
+sodium_memzero(cardKey.data(), cardKey.size());  // Wipe intermediate key
+// masterKey automatically wiped when out of scope
+```
+
+**Never:**
+- Log key material
+- Store keys in member variables without RAII
+- Return keys as QByteArray without caller wiping
+- Skip sodium_memzero on error paths
+
+### Card Presence Polling
+
+**Pattern:** QTimer at 500ms calling `SCardGetStatusChange` with 0 timeout (non-blocking).
+
+**Why not background thread:** Polling is lightweight, 500ms is responsive enough, avoids thread synchronization complexity.
+
+**Poller responsibilities:**
+- Detect card removal during `SESSION_ACTIVE` → `SESSION_CLOSED` (key wipe)
+- Detect card removal during `CARD_PRESENT` → `CARD_NOT_PRESENT`
+- Detect card insertion → `CARD_PRESENT`
+- Does NOT fire during `BLOCKED` (card state irrelevant when locked)
+
+**Implementation:**
+```cpp
+QTimer* m_pollTimer = new QTimer(this);
+m_pollTimer->setInterval(500);
+connect(m_pollTimer, &QTimer::timeout, this, &KeycardManager::pollCardPresence);
+
+void KeycardManager::pollCardPresence() {
+    SCARD_READERSTATE readerState = { /* ... */ };
+    LONG rv = SCardGetStatusChange(m_context, 0, &readerState, 1);
+
+    if (readerState.dwEventState & SCARD_STATE_EMPTY) {
+        // Card removed
+        if (m_state == SESSION_ACTIVE) {
+            transitionTo(SESSION_CLOSED);  // Wipes key
+        }
+    }
+    // ... handle other states
+}
+```
+
+## Build & Development Patterns
+
+### Install Paths
+
+**Development:** `~/.local/share/Logos/LogosBasecampDev/`
+- Modules: `modules/keycard/`
+- UI plugins: `plugins/keycard-ui/`
+
+**Production:** `~/.local/share/Logos/LogosBasecamp/`
+
+**CMake configuration:**
+```cmake
+set(LOGOS_INSTALL_PREFIX "$ENV{HOME}/.local/share/Logos/LogosBasecampDev")
+install(TARGETS keycard_plugin LIBRARY DESTINATION "${LOGOS_INSTALL_PREFIX}/modules/keycard")
+```
+
+### Module vs Plugin Terminology
+
+**Module** = Core C++ library (`.so` file)
+- Lives in `modules/<name>/`
+- Has `manifest.json`
+- Provides `Q_INVOKABLE` methods via `logos.callModule()`
+- IID pattern: `org.logos.<Name>ModuleInterface`
+
+**Plugin** = UI component (QML + optional C++)
+- Lives in `plugins/<name>/`
+- Has `metadata.json`
+- Provides QML interface
+- IID pattern: `org.logos.<Name>UIModuleInterface`
+
+**This repo contains both:**
+- `keycard-core` → Basecamp module
+- `keycard-ui` → Basecamp UI plugin (debug harness)
+
+### Porting from logos-notes
+
+**Source files to port:**
+- `src/core/SecureBuffer.h` → `keycard-core/src/secure_buffer.{h,cpp}`
+- `src/core/KeycardBridge.{h,cpp}` → `keycard-core/src/keycard_manager.{h,cpp}`
+
+**Adaptations needed:**
+- Remove NotesBackend dependencies
+- Expose methods via `Q_INVOKABLE` (not internal calls)
+- Return JSON strings from all methods
+- Add `stateChanged` signal
+- Make state machine explicit (logos-notes had implicit states)
+
+**Do not rewrite from scratch** — the PC/SC integration and key handling patterns are proven. Extract and adapt.
+
+## Security Checklist
+
+Before releasing any version, verify:
+
+- [ ] PIN never leaves card (verified by code inspection)
+- [ ] secp256k1 key only exported after PIN verified
+- [ ] secp256k1 key wiped immediately after domain separation
+- [ ] AES master key wiped on `SESSION_CLOSED` entry
+- [ ] Card UID mismatch during active session → `SESSION_CLOSED` + error
+- [ ] No key material in logs or error messages
+- [ ] SecureBuffer destructor fires correctly (test with valgrind)
+- [ ] `sodium_memzero` verified with memory inspection (gdb/core dump analysis)
+- [ ] Different domains produce different keys (test with 2+ domains)
+- [ ] Same domain + same card produces same key across sessions
+
+## References
+
+- [logos-notes](https://github.com/xAlisher/logos-notes) - Original Keycard implementation
+- [logos-cpp-sdk](https://github.com/logos-innovation-lab/logos-cpp-sdk) - Basecamp plugin SDK
+- [logos-module-builder](https://github.com/logos-innovation-lab/logos-module-builder) - Shared build infrastructure
+- [PC/SC Lite](https://pcsclite.apdu.fr/) - Smartcard middleware (use system library, never bundle)
