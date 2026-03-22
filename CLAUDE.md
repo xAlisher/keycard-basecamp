@@ -477,3 +477,22 @@ This repo has three levels of documentation:
 ---
 
 **Remember:** This module handles cryptographic keys. Be paranoid about security. When in doubt, consult SPEC.md security sections and ask the user.
+
+## Branch Workflow
+
+**Always create a feature branch for new issues:**
+
+```bash
+# When starting work on issue #N
+git checkout -b issue-N-brief-description
+
+# Example:
+git checkout -b issue-2-pcsc-integration
+```
+
+**Never work directly on master.** All work goes through:
+1. Feature branch
+2. Senty review (multiple rounds if needed)
+3. LGTM → merge to master
+4. Delete feature branch
+
