@@ -44,11 +44,12 @@ target_include_directories(keycard_plugin PRIVATE
     "${LOGOS_CPP_SDK}/include/core"
 )
 
-# Link Qt + Logos SDK (static) + libkeycard.so
+# Link Qt + Logos SDK (static) + libkeycard.so + libsodium
 target_link_libraries(keycard_plugin PRIVATE
     Qt6::Core
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
     ${CMAKE_CURRENT_SOURCE_DIR}/../libkeycard.so
+    PkgConfig::sodium
 )
 
 # Install paths (use LogosBasecamp for development)
