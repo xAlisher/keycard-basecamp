@@ -996,3 +996,32 @@ qDebug() << "KeycardBridge::onCardReady() signal received, uid length:" << uid.l
 - Issue #14: Private key logging (fixed in same PR, commit 8534328)
 - Issue #15: Session state enforcement (fixed in same PR, commit fa0a203)
 - SECURITY_REVIEW.md: Findings 14-16 all addressed in PR #20
+
+
+## Test Release v1.0.0-test.2
+
+**Released:** 2026-03-23
+**URL:** https://github.com/xAlisher/keycard-basecamp/releases/tag/v1.0.0-test.2
+**Status:** Pre-release (testing only)
+
+### Release Contents
+
+**LGX Packages:**
+- `keycard-core.lgx` (3.3 MB) - Core module with keycard-qt, pcscd-compatible
+- `keycard-ui.lgx` (5.3 KB) - QML debug UI
+
+**Included Changes:**
+- Phase 5: Nix flake and LGX packaging (PR #17)
+- Security fixes: Issues #14, #15, #16 (PR #20)
+- All SECURITY_REVIEW.md findings addressed
+
+### Purpose
+
+Test release for validating:
+- LGX package distribution workflow
+- Security hardening effectiveness
+- Reader/card discovery and pairing
+- On-card BIP32 key derivation (EIP-1581)
+- Session management and state transitions
+
+**Not for production use** - implementation testing only.
