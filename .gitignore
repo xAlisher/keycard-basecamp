@@ -30,6 +30,8 @@ ui_*.h
 # Nix
 result
 result-*
+*.lgx
+*-lgx-*
 
 # Logs
 *.log
