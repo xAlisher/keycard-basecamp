@@ -33,7 +33,7 @@ else()
     FetchContent_Declare(
         keycard-qt
         GIT_REPOSITORY https://github.com/status-im/keycard-qt.git
-        GIT_TAG        main  # Use specific commit hash in production
+        GIT_TAG        3c01bc114f0a38e91147793e96d7a4ebd68301a6  # Pin to specific commit for reproducibility
         GIT_SHALLOW    TRUE
     )
     FetchContent_MakeAvailable(keycard-qt)
