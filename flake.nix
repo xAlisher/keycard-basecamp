@@ -80,17 +80,13 @@
           cmakeFlags = [
             "-GNinja"
             "-DCMAKE_BUILD_TYPE=Release"
+            "-DKEYCARD_QT_SOURCE_DIR=${keycard-qt-src}"
           ];
           # This is a library (plugin), not an application
           dontWrapQtApps = true;
           preConfigure = ''
             export LOGOS_CPP_SDK_ROOT="${logosSdk}"
             export LOGOS_LIBLOGOS_HEADERS="${logosHeaders}/include"
-
-            # Copy keycard-qt source to expected location
-            mkdir -p external
-            cp -r ${keycard-qt-src} external/keycard-qt
-            chmod -R u+w external/keycard-qt
           '';
           # Only build the core plugin target
           buildPhase = ''
@@ -150,16 +146,12 @@
             cmakeFlags = [
               "-GNinja"
               "-DCMAKE_BUILD_TYPE=Release"
+              "-DKEYCARD_QT_SOURCE_DIR=${keycard-qt-src}"
             ];
             dontWrapQtApps = true;
             preConfigure = ''
               export LOGOS_CPP_SDK_ROOT="${logosSdk}"
               export LOGOS_LIBLOGOS_HEADERS="${logosHeaders}/include"
-
-              # Copy keycard-qt source to expected location
-              mkdir -p external
-              cp -r ${keycard-qt-src} external/keycard-qt
-              chmod -R u+w external/keycard-qt
             '';
             buildPhase = ''
               cmake --build . --target keycard_plugin -j$NIX_BUILD_CORES
