@@ -29,7 +29,7 @@ public:
     Q_INVOKABLE QString checkPairing();
     Q_INVOKABLE QString pairCard(const QString& pairingPassword);
     Q_INVOKABLE QString authorize(const QString& pin);
-    Q_INVOKABLE QString deriveKey(const QString& domain, int version = 1);
+    Q_INVOKABLE QString deriveKey(const QString& domain);
     Q_INVOKABLE QString getState();
     Q_INVOKABLE QString closeSession();
     Q_INVOKABLE QString getLastError();
@@ -46,7 +46,6 @@ private:
     };
 
     QString mapBridgeStateToSpec(KeycardBridge::State state);
-    QString domainToEIP1581Path(const QString& domain);
 
     KeycardBridge* m_bridge = nullptr;
     SessionState m_sessionState = SessionState::NoSession;

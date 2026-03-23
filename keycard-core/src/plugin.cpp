@@ -172,23 +172,31 @@ QString KeycardPlugin::deriveKey(const QString& domain)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Export base encryption key
-    QByteArray baseKey = m_bridge->exportKey();
+    // Map domain to EIP-1581 BIP32 path: m/43'/60'/1581'/<key_type>'/<key_index>'
+    // Hash domain to get deterministic path components
+    QByteArray domainBytes = domain.toUtf8();
+    unsigned char hash[32];
+    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(domainBytes.constData()), domainBytes.size());
 
-    if (baseKey.isEmpty()) {
+    // Extract key_type and key_index from hash (use hardened derivation)
+    uint32_t keyType = (uint32_t(hash[0]) << 24 | uint32_t(hash[1]) << 16 |
+                        uint32_t(hash[2]) << 8 | uint32_t(hash[3])) & 0x7FFFFFFF;  // Ensure < 2^31
+    uint32_t keyIndex = (uint32_t(hash[4]) << 24 | uint32_t(hash[5]) << 16 |
+                         uint32_t(hash[6]) << 8 | uint32_t(hash[7])) & 0x7FFFFFFF;
+
+    // Construct EIP-1581 path
+    QString eip1581Path = QString("m/43'/60'/1581'/%1'/%2'").arg(keyType).arg(keyIndex);
+
+    qDebug() << "KeycardPlugin::deriveKey() - domain:" << domain << "→ path:" << eip1581Path;
+
+    // Derive key on-card at custom EIP-1581 path (real BIP32 derivation)
+    QByteArray derivedKey = m_bridge->exportKey(eip1581Path);
+
+    if (derivedKey.isEmpty()) {
         QJsonObject result;
         result["error"] = m_bridge->lastError();
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
-
-    // Derive domain-specific key: SHA256(baseKey || domain)
-    QByteArray domainBytes = domain.toUtf8();
-    QByteArray combined = baseKey + domainBytes;
-
-    unsigned char hash[32];
-    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(combined.constData()), combined.size());
-
-    QByteArray derivedKey(reinterpret_cast<const char*>(hash), 32);
 
     // Enter SESSION_ACTIVE state
     m_sessionState = SessionState::Active;
