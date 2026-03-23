@@ -68,8 +68,20 @@ cmake --build build
 
 ### Package LGX
 
+Create distributable LGX packages:
+
 ```bash
 nix run .#package-lgx
+```
+
+Produces:
+- `keycard-core.lgx` - Core module with dependencies (libpcsclite removed for system compatibility)
+- `keycard-ui.lgx` - QML UI plugin
+
+**Individual packages:**
+```bash
+nix build .#lib  # Build core module only
+nix build .#ui   # Build UI plugin only
 ```
 
 ### Install to Basecamp Dev
