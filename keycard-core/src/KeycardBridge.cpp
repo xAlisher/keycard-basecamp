@@ -12,16 +12,13 @@
 #include <QDateTime>
 #include <QStandardPaths>
 
-// Debug logging helper
-static void debugLog(const QString& msg) {
-    QFile file("/tmp/keycard-debug.log");
-    if (file.open(QIODevice::Append | QIODevice::Text)) {
-        QTextStream out(&file);
-        out << QDateTime::currentDateTime().toString("hh:mm:ss.zzz") << " " << msg << "\n";
-        file.flush();
-    }
-    qDebug() << msg;  // Also try qDebug
-}
+// Debug logging - only enabled with KEYCARD_DEBUG build flag
+// No file logging to /tmp - qDebug() output only
+#ifdef KEYCARD_DEBUG
+    #define KEYCARD_LOG(msg) qDebug() << "[KEYCARD]" << QDateTime::currentDateTime().toString("hh:mm:ss.zzz") << msg
+#else
+    #define KEYCARD_LOG(msg) do {} while(0)
+#endif
 
 KeycardBridge::KeycardBridge(QObject *parent)
     : QObject(parent)
@@ -383,12 +380,12 @@ QJsonObject KeycardBridge::unpairCard()
 
 QJsonObject KeycardBridge::authorize(const QString &pin)
 {
-    debugLog("========================================");
-    debugLog("KeycardBridge::authorize() START");
-    debugLog(QString("PIN length: %1").arg(pin.length()));
-    debugLog(QString("m_cardReady: %1").arg(m_cardReady));
-    debugLog(QString("m_keyUID: %1").arg(m_keyUID));
-    debugLog("========================================");
+    KEYCARD_LOG("========================================");
+    KEYCARD_LOG("KeycardBridge::authorize() START");
+    KEYCARD_LOG(QString("PIN length: %1").arg(pin.length()));
+    KEYCARD_LOG(QString("m_cardReady: %1").arg(m_cardReady));
+    KEYCARD_LOG(QString("m_keyUID present: %1").arg(!m_keyUID.isEmpty()));
+    KEYCARD_LOG("========================================");
 
     QJsonObject result;
 
@@ -396,55 +393,55 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
         result["authorized"] = false;
         result["error"] = "Card not ready";
         m_lastError = "Card not ready";
-        debugLog(QString("ERROR: Card not ready - m_commandSet: %1 m_cardReady: %2").arg(m_commandSet != nullptr).arg(m_cardReady));
+        KEYCARD_LOG(QString("ERROR: Card not ready - m_commandSet: %1 m_cardReady: %2").arg(m_commandSet != nullptr).arg(m_cardReady));
         return result;
     }
 
     try {
-        debugLog("STEP 1: Loading pairing from storage...");
+        KEYCARD_LOG("STEP 1: Loading pairing from storage...");
         // Check if we have pairing, if not, try to load it
         auto pairing = m_pairingStorage->load(m_keyUID);
-        debugLog(QString("STEP 1: Pairing loaded - index: %1").arg(pairing.index));
+        KEYCARD_LOG(QString("STEP 1: Pairing loaded - index: %1").arg(pairing.index));
 
         if (pairing.index == -1) {
             // No pairing stored - need to pair first
             result["authorized"] = false;
             result["error"] = "Card not paired - pairing required";
             m_lastError = "Not paired";
-            debugLog(QString("ERROR: Card not paired, instanceUID: %1").arg(m_keyUID));
+            KEYCARD_LOG("ERROR: Card not paired (pairing required)");
             return result;
         }
 
         // Re-select applet to ensure fresh connection
-        debugLog("STEP 2: Calling select() to re-select applet...");
-        debugLog("STEP 2: BEFORE select() call");
+        KEYCARD_LOG("STEP 2: Calling select() to re-select applet...");
+        KEYCARD_LOG("STEP 2: BEFORE select() call");
         m_commandSet->select();
-        debugLog("STEP 2: AFTER select() call - SUCCESS");
+        KEYCARD_LOG("STEP 2: AFTER select() call - SUCCESS");
 
-        debugLog("STEP 3: Opening secure channel...");
-        debugLog("STEP 3: BEFORE openSecureChannel() call");
+        KEYCARD_LOG("STEP 3: Opening secure channel...");
+        KEYCARD_LOG("STEP 3: BEFORE openSecureChannel() call");
 
         // Open secure channel
         bool scOpened = m_commandSet->openSecureChannel(pairing);
 
-        debugLog(QString("STEP 3: AFTER openSecureChannel() call - result: %1").arg(scOpened));
+        KEYCARD_LOG(QString("STEP 3: AFTER openSecureChannel() call - result: %1").arg(scOpened));
 
         if (!scOpened) {
             QString err = m_commandSet->lastError();
             result["authorized"] = false;
             result["error"] = "Failed to open secure channel: " + err;
             m_lastError = "Secure channel failed: " + err;
-            debugLog(QString("ERROR: Secure channel failed: %1").arg(err));
+            KEYCARD_LOG(QString("ERROR: Secure channel failed: %1").arg(err));
             return result;
         }
 
-        debugLog("STEP 4: Verifying PIN...");
-        debugLog("STEP 4: BEFORE verifyPIN() call");
+        KEYCARD_LOG("STEP 4: Verifying PIN...");
+        KEYCARD_LOG("STEP 4: BEFORE verifyPIN() call");
 
         // Verify PIN
         bool success = m_commandSet->verifyPIN(pin);
 
-        debugLog(QString("STEP 4: AFTER verifyPIN() call - result: %1").arg(success));
+        KEYCARD_LOG(QString("STEP 4: AFTER verifyPIN() call - result: %1").arg(success));
 
         if (success) {
             result["authorized"] = true;
@@ -456,7 +453,7 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
                 m_remainingPIN = status.pinRetryCount;
                 m_remainingPUK = status.pukRetryCount;
                 m_keyInitialized = status.keyInitialized;
-                debugLog(QString("KeycardBridge: Authorized! PIN: %1 PUK: %2 Initialized: %3")
+                KEYCARD_LOG(QString("KeycardBridge: Authorized! PIN: %1 PUK: %2 Initialized: %3")
                          .arg(m_remainingPIN).arg(m_remainingPUK).arg(m_keyInitialized));
             }
         } else {
@@ -467,7 +464,7 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
             if (status.valid) {
                 m_remainingPIN = status.pinRetryCount;
                 result["remainingAttempts"] = m_remainingPIN;
-                debugLog(QString("KeycardBridge: PIN verification failed, remaining: %1").arg(m_remainingPIN));
+                KEYCARD_LOG(QString("KeycardBridge: PIN verification failed, remaining: %1").arg(m_remainingPIN));
 
                 if (m_remainingPIN == 0) {
                     setState(State::BlockedPIN);
@@ -487,10 +484,10 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
         result["authorized"] = false;
         result["error"] = e.what();
         m_lastError = e.what();
-        debugLog(QString("KeycardBridge::authorize() exception: %1").arg(e.what()));
+        KEYCARD_LOG(QString("KeycardBridge::authorize() exception: %1").arg(e.what()));
     }
 
-    debugLog("KeycardBridge::authorize() END");
+    KEYCARD_LOG("KeycardBridge::authorize() END");
     return result;
 }
 
