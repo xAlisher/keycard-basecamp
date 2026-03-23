@@ -797,7 +797,7 @@ QByteArray KeycardBridge::parsePrivateKeyFromTLV(const QByteArray& tlv)
     //   Tag 0x80 (private key - 32 bytes)
     //   Tag 0x82 (chain code - 32 bytes)
 
-    qDebug() << "KeycardBridge: Parsing TLV, size:" << tlv.size() << "hex:" << tlv.toHex();
+    qDebug() << "KeycardBridge: Parsing TLV, size:" << tlv.size() << "bytes";
 
     if (tlv.size() < 10) {
         qWarning() << "TLV too short:" << tlv.size();
@@ -815,7 +815,7 @@ QByteArray KeycardBridge::parsePrivateKeyFromTLV(const QByteArray& tlv)
             // Private key is always 32 bytes
             if (length == 32 && i + 2 + length <= tlv.size()) {
                 QByteArray key = tlv.mid(i + 2, length);
-                qDebug() << "Extracted private key:" << key.toHex();
+                qDebug() << "Extracted private key of length:" << key.size();
                 return key;
             } else if (length != 32) {
                 // Might be public key (65 bytes), skip it
@@ -826,6 +826,5 @@ QByteArray KeycardBridge::parsePrivateKeyFromTLV(const QByteArray& tlv)
     }
 
     qWarning() << "Private key tag (0x80 or 0x81 with 32 bytes) not found in TLV";
-    qDebug() << "TLV dump: First 40 bytes:" << tlv.left(40).toHex();
     return QByteArray();
 }
