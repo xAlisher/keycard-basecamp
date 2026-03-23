@@ -1,0 +1,10 @@
+{
+  "name": "keycard",
+  "version": "1.0.0",
+  "description": "Keycard module for Basecamp app",
+  "author": "alisher",
+  "type": "core",
+  "category": "security",
+  "main": "keycard_plugin.so",
+  "dependencies": []
+}

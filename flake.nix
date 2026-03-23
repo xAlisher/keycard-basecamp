@@ -99,6 +99,7 @@
           installPhase = ''
             mkdir -p $out/lib
             cp keycard-core/keycard_plugin.so $out/lib/
+            cp ${./metadata.json} $out/lib/metadata.json
             cp ${./keycard-core/modules/keycard/manifest.json} $out/lib/manifest.json
           '';
 
@@ -166,6 +167,7 @@
             installPhase = ''
               mkdir -p $out/lib
               cp keycard-core/keycard_plugin.so $out/lib/
+              cp ${./metadata.json} $out/lib/metadata.json
               cp ${./keycard-core/modules/keycard/manifest.json} $out/lib/manifest.json
             '';
           };
