@@ -138,6 +138,20 @@ QString KeycardPlugin::pairCard(const QString& pairingPassword)
     return QJsonDocument(pairResult).toJson(QJsonDocument::Compact);
 }
 
+QString KeycardPlugin::unpairCard()
+{
+    qDebug() << "KeycardPlugin::unpairCard() called";
+
+    if (!m_bridge) {
+        QJsonObject result;
+        result["error"] = "Bridge not initialized - call discoverReader first";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject unpairResult = m_bridge->unpairCard();
+    return QJsonDocument(unpairResult).toJson(QJsonDocument::Compact);
+}
+
 QString KeycardPlugin::authorize(const QString& pin)
 {
     qDebug() << "KeycardPlugin::authorize() called";

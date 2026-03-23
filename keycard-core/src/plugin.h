@@ -28,6 +28,7 @@ public:
     Q_INVOKABLE QString discoverCard();
     Q_INVOKABLE QString checkPairing();
     Q_INVOKABLE QString pairCard(const QString& pairingPassword);
+    Q_INVOKABLE QString unpairCard();
     Q_INVOKABLE QString authorize(const QString& pin);
     Q_INVOKABLE QString deriveKey(const QString& domain);
     Q_INVOKABLE QString getState();

@@ -17,6 +17,8 @@ set(PLUGIN_SOURCES
     src/plugin.cpp
     src/KeycardBridge.h
     src/KeycardBridge.cpp
+    src/FilePairingStorage.h
+    src/FilePairingStorage.cpp
 )
 
 # Copy metadata to build dir (so moc can find it)

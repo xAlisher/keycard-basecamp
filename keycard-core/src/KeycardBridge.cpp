@@ -1,4 +1,5 @@
 #include "KeycardBridge.h"
+#include "FilePairingStorage.h"
 #include <keycard-qt/keycard_channel.h>
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/types.h>
@@ -9,6 +10,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
+#include <QStandardPaths>
 
 // Debug logging helper
 static void debugLog(const QString& msg) {
@@ -20,30 +22,6 @@ static void debugLog(const QString& msg) {
     }
     qDebug() << msg;  // Also try qDebug
 }
-
-// Simple in-memory pairing storage
-class MemoryPairingStorage : public Keycard::IPairingStorage {
-public:
-    bool save(const QString& instanceUID, const Keycard::PairingInfo& pairing) override {
-        m_pairings[instanceUID] = pairing;
-        return true;
-    }
-
-    Keycard::PairingInfo load(const QString& instanceUID) override {
-        auto it = m_pairings.find(instanceUID);
-        if (it != m_pairings.end()) {
-            return it->second;
-        }
-        return Keycard::PairingInfo();  // Invalid pairing (index=-1)
-    }
-
-    bool remove(const QString& instanceUID) override {
-        return m_pairings.erase(instanceUID) > 0;
-    }
-
-private:
-    std::map<QString, Keycard::PairingInfo> m_pairings;
-};
 
 KeycardBridge::KeycardBridge(QObject *parent)
     : QObject(parent)
@@ -69,8 +47,10 @@ bool KeycardBridge::start()
         // Create channel (PC/SC backend on desktop, NFC on mobile)
         m_channel = std::make_shared<Keycard::KeycardChannel>(this);
 
-        // Create pairing storage
-        m_pairingStorage = std::make_shared<MemoryPairingStorage>();
+        // Create persistent pairing storage
+        QString dataDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+        QString pairingFile = dataDir + "/Logos/LogosBasecamp/keycard-pairings.json";
+        m_pairingStorage = std::make_shared<FilePairingStorage>(pairingFile);
 
         // Pairing password provider (returns empty - no auto-pairing for now)
         auto passwordProvider = [](const QString&) -> QString {
@@ -152,6 +132,11 @@ QString KeycardBridge::statusText() const
 
 void KeycardBridge::pollStatus()
 {
+    static int pollCount = 0;
+    if (++pollCount % 20 == 0) {  // Log every 20th call to avoid spam
+        qDebug() << "pollStatus() called" << pollCount << "times, state:" << static_cast<int>(m_state);
+    }
+
     if (!m_commandSet) {
         return;
     }
@@ -187,7 +172,10 @@ void KeycardBridge::pollStatus()
         } else if (m_state == State::WaitingForReader) {
             // Reader was gone, check if it's back
             if (isReaderPresent()) {
-                qDebug() << "KeycardBridge::pollStatus: Reader detected, reinitializing channel";
+                qDebug() << "========================================";
+                qDebug() << "KeycardBridge::pollStatus: Reader detected after disconnect, reinitializing channel";
+                qDebug() << "This should ONLY happen after physical reader reconnection";
+                qDebug() << "========================================";
                 // Recreate channel and CommandSet - old channel has stale PC/SC handles
                 try {
                     // Stop old detection if running
@@ -301,6 +289,72 @@ QJsonObject KeycardBridge::pairCard(const QString &pairingPassword)
         result["error"] = e.what();
         m_lastError = e.what();
         qWarning() << "KeycardBridge::pairCard() exception:" << e.what();
+    }
+
+    return result;
+}
+
+QJsonObject KeycardBridge::unpairCard()
+{
+    qDebug() << "KeycardBridge::unpairCard() called";
+
+    QJsonObject result;
+
+    if (!m_commandSet || !m_cardReady) {
+        result["unpaired"] = false;
+        result["error"] = "Card not ready";
+        m_lastError = "Card not ready";
+        return result;
+    }
+
+    if (m_keyUID.isEmpty()) {
+        result["unpaired"] = false;
+        result["error"] = "No card UID available";
+        m_lastError = "No card UID available";
+        return result;
+    }
+
+    try {
+        // Load current pairing to get slot index
+        auto pairing = m_pairingStorage->load(m_keyUID);
+        if (pairing.index == -1) {
+            result["unpaired"] = false;
+            result["error"] = "Card not paired";
+            m_lastError = "Card not paired";
+            return result;
+        }
+
+        qDebug() << "KeycardBridge: Unpairing card, slot:" << pairing.index;
+
+        // Select applet
+        m_commandSet->select();
+
+        // Unpair on card (clears the pairing slot)
+        bool success = m_commandSet->unpair(pairing.index);
+
+        if (!success) {
+            QString lastErr = m_commandSet->lastError();
+            result["unpaired"] = false;
+            result["error"] = "Unpair failed on card: " + lastErr;
+            m_lastError = "Unpair failed: " + lastErr;
+            qWarning() << "KeycardBridge: Unpair failed on card, error:" << lastErr;
+            return result;
+        }
+
+        // Remove from local storage
+        bool removed = m_pairingStorage->remove(m_keyUID);
+        if (!removed) {
+            qWarning() << "KeycardBridge: Failed to remove pairing from storage (but card unpaired)";
+        }
+
+        qDebug() << "KeycardBridge: Unpaired successfully";
+        result["unpaired"] = true;
+
+    } catch (const std::exception& e) {
+        result["unpaired"] = false;
+        result["error"] = e.what();
+        m_lastError = e.what();
+        qWarning() << "KeycardBridge::unpairCard() exception:" << e.what();
     }
 
     return result;

@@ -69,6 +69,10 @@ public:
     // Pair with card using pairing password. Returns JSON: {"paired":true} or {"paired":false,"error":"..."}
     QJsonObject pairCard(const QString &pairingPassword);
 
+    // Unpair card: removes pairing from storage AND clears slot on physical card
+    // Returns JSON: {"unpaired":true} or {"unpaired":false,"error":"..."}
+    QJsonObject unpairCard();
+
     // Authorize with PIN. Returns JSON: {"authorized":true} or {"authorized":false,"remainingAttempts":N}
     QJsonObject authorize(const QString &pin);
 
