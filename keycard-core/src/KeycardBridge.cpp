@@ -272,7 +272,7 @@ QJsonObject KeycardBridge::pairCard(const QString &pairingPassword)
         }
 
         qDebug() << "KeycardBridge: Pairing successful, index:" << pairingInfo.index;
-        qDebug() << "KeycardBridge: Saving pairing for UID:" << m_keyUID;
+        qDebug() << "KeycardBridge: Saving pairing (UID length:" << m_keyUID.length() << ")";
 
         // Save pairing - CRITICAL: must persist to disk
         bool saved = m_pairingStorage->save(m_keyUID, pairingInfo);
@@ -354,7 +354,7 @@ QJsonObject KeycardBridge::unpairCard()
         }
 
         // Remove from local storage
-        qDebug() << "KeycardBridge: Removing pairing from storage for UID:" << m_keyUID;
+        qDebug() << "KeycardBridge: Removing pairing from storage (UID length:" << m_keyUID.length() << ")";
         bool removed = m_pairingStorage->remove(m_keyUID);
         qDebug() << "KeycardBridge: Storage remove result:" << removed;
 
@@ -559,7 +559,7 @@ QByteArray KeycardBridge::loginFlow(const QString &pin)
 
 void KeycardBridge::onCardReady(const QString& uid)
 {
-    qDebug() << "KeycardBridge::onCardReady() signal received, uid from signal:" << uid;
+    qDebug() << "KeycardBridge::onCardReady() signal received, uid length:" << uid.length();
 
     m_cardReady = true;
 
@@ -735,7 +735,7 @@ bool KeycardBridge::isCardPresent()
                     try {
                         auto appInfo = m_commandSet->select();
                         QString uid = QString::fromUtf8(appInfo.instanceUID.toHex());
-                        qDebug() << "KeycardBridge::isCardPresent: Select successful, UID:" << uid << "initialized:" << appInfo.initialized;
+                        qDebug() << "KeycardBridge::isCardPresent: Select successful, UID present:" << !uid.isEmpty() << "initialized:" << appInfo.initialized;
 
                         if (!uid.isEmpty()) {
                             // Set card info from ApplicationInfo (doesn't need secure channel)
