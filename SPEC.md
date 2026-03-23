@@ -132,41 +132,34 @@ if (currentUID != m_expectedUID && state >= AUTHORIZED) {
 - Returns: `{"authorized": bool, "remainingAttempts": N}`
 - On 3rd failure → state = BLOCKED
 
-### 2. deriveKey(domain, version=1)
+### 2. deriveKey(domain)
 - **Prerequisite:** state == AUTHORIZED or SESSION_ACTIVE
-- **Version parameter:** Controls derivation approach (default: 1)
+- **Standards-compliant:** EIP-1581 BIP32 path-based derivation
 
-**Version 1 (DEFAULT - Production):**
-- BIP32 derivation **ON-CARD** at fixed path `m/43'/60'/1581'/1'/0`
-- Card returns 32-byte secp256k1 private key
-- **Host-side** domain separation:
+**EIP-1581 Derivation (Production):**
+- BIP32 derivation **ON-CARD** at domain-specific EIP-1581 paths
+- Domain → deterministic BIP32 path mapping:
   ```
-  SHA256(secp256k1_key || domain) → 256-bit AES-256-GCM master key
+  domain → SHA256("logos-" + domain) → extract 4 indices (16 bytes)
+  Path: m/43'/60'/1581'/<idx1>'/<idx2>'/<idx3>'/<idx4>'
   ```
-- Proven in production (logos-notes)
-- Non-standard (Logos-specific) but cryptographically sound
-
-**Version 2 (EXPERIMENTAL - Incomplete EIP-1581 scaffolding):**
-- **Current state:** Path mapping implemented, but NOT used for on-card derivation
-- Calculates EIP-1581 compliant path:
-  ```
-  domain → SHA256("logos-" + domain) → extract indices
-  Path: m/43'/60'/1581'/key_type'/key_index
-  ```
-- **Problem:** Still does `SHA256(baseKey || eip1581Path)` on host (same as v1)
-- **Missing:** KeycardBridge needs update to derive at custom BIP32 paths on-card
-- **Status:** Experimental scaffolding, DO NOT use in production
+- **On-card derivation:** Card derives secp256k1 key at custom path
+- **No host-side crypto:** No custom hashing, pure BIP32 standard
+- **Standards-compliant:** Follows EIP-1581 specification
+- **Interoperable:** Compatible with Keycard ecosystem
+- **Deeper nesting:** 4-level paths for better collision resistance (2^128 space)
 - Reference: https://eips.ethereum.org/EIPS/eip-1581
-- Recommended by @mikkoph (Keycard core dev) - not yet fully implemented
+- Recommended by @mikkoph (Keycard core dev) - fully implemented
 
-**Common behavior:**
+**Behavior:**
 - Caller supplies domain string:
-  - notes: `"logos-notes-encryption"`
-  - wallet: `"logos-wallet-signing"`
+  - notes: `"notes-encryption"`
+  - wallet: `"wallet-signing"`
+- "logos-" prefix added for namespace separation
 - Same card + same domain = same key (deterministic)
-- Different domains = different keys (domain isolation)
-- secp256k1_key wiped immediately after derivation
-- Returns: `{"key": hex_string, "version": N}` (AES-256 key)
+- Different domains = different keys (domain isolation via different paths)
+- Derived key wiped immediately after return
+- Returns: `{"key": hex_string}` (32-byte secp256k1 private key)
 - **Caller responsibility:** Wipe key immediately after use
 
 ### 3. Memory management
@@ -206,7 +199,7 @@ QString discoverCard()            → {"found": bool, "uid": string}
 // Authentication & Key Derivation
 QString authorize(pin)            → {"authorized": bool, "remainingAttempts": N}
                                      returns error if state == BLOCKED
-QString deriveKey(domain, version=1) → {"key": hex_string, "version": N}
+QString deriveKey(domain)         → {"key": hex_string}
                                      prereq: AUTHORIZED or SESSION_ACTIVE
                                      returns error if state != AUTHORIZED
                                      can be called multiple times for different domains
