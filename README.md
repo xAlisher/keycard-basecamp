@@ -6,20 +6,33 @@ Standalone Keycard smartcard authentication module for Logos Basecamp.
 
 This module provides smartcard authentication primitives for the Logos Basecamp ecosystem. Any Basecamp app can consume Keycard functionality via `logos.callModule("keycard", ...)`.
 
-**Status:** 🚧 In development
+**Status:** ✅ Core operations working, hardware tested
 
 ## Architecture
 
-- **keycard-core**: C++ module with PC/SC smartcard integration, state machine, and key derivation
+Built on **keycard-qt** (native C++/Qt library) for direct PC/SC smart card communication:
+
+- **keycard-core**: C++ module with native keycard-qt integration, state machine, and on-card BIP32 key derivation
 - **keycard-ui**: QML debug UI for testing state machine transitions
 
-## Security Properties
+**Migration:** Migrated from libkeycard.so (CGO/14MB) to keycard-qt (native/~4-5MB) - 70% size reduction
 
-✅ PIN verification on-card
-✅ BIP32 key derivation on-card
-✅ Domain separation for multi-app support
-✅ Secure memory wiping (sodium_memzero)
-✅ Card UID verification (prevents card-swap attacks)
+## Features
+
+**Core Operations:**
+- ✅ Reader and card auto-detection
+- ✅ Card pairing with pairing password
+- ✅ PIN verification with retry tracking
+- ✅ On-card BIP32 key derivation (custom EIP-1581 paths)
+- ✅ Domain-based key isolation
+- ✅ Session management (authorize, derive, close)
+
+**Security Properties:**
+- ✅ PIN verification on-card
+- ✅ BIP32 key derivation on-card
+- ✅ Domain separation for multi-app support
+- ✅ Secure memory wiping (sodium_memzero)
+- ✅ Card UID verification (prevents card-swap attacks)
 
 ## Documentation
 
@@ -64,9 +77,9 @@ nix run .#package-lgx
 cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev
 ```
 
-## Source
+## Implementation
 
-Keycard logic ported from [logos-notes](https://github.com/xAlisher/logos-notes) KeycardBridge implementation.
+Initially based on KeycardBridge from [logos-notes](https://github.com/xAlisher/logos-notes), now fully migrated to native [keycard-qt](https://github.com/status-im/keycard-qt) library for better performance and smaller binary size.
 
 ## License
 
