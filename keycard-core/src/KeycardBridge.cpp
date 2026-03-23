@@ -187,13 +187,44 @@ void KeycardBridge::pollStatus()
         } else if (m_state == State::WaitingForReader) {
             // Reader was gone, check if it's back
             if (isReaderPresent()) {
-                qDebug() << "KeycardBridge::pollStatus: Reader detected, restarting detection";
-                // Restart detection to properly detect cards
-                if (m_commandSet) {
-                    m_commandSet->stopDetection();
+                qDebug() << "KeycardBridge::pollStatus: Reader detected, reinitializing channel";
+                // Recreate channel and CommandSet - old channel has stale PC/SC handles
+                try {
+                    // Stop old detection if running
+                    if (m_commandSet) {
+                        m_commandSet->stopDetection();
+                    }
+
+                    // Recreate channel (clears stale PC/SC state)
+                    m_channel = std::make_shared<Keycard::KeycardChannel>(this);
+
+                    // Recreate CommandSet with fresh channel
+                    auto passwordProvider = [](const QString&) -> QString {
+                        return QString();  // No automatic pairing
+                    };
+                    m_commandSet = std::make_shared<Keycard::CommandSet>(
+                        m_channel,
+                        m_pairingStorage,  // Keep same storage (persists pairings)
+                        passwordProvider,
+                        this
+                    );
+
+                    // Reconnect signals
+                    connect(m_commandSet.get(), &Keycard::CommandSet::cardReady,
+                            this, &KeycardBridge::onCardReady);
+                    connect(m_commandSet.get(), &Keycard::CommandSet::cardLost,
+                            this, &KeycardBridge::onCardLost);
+
+                    // Start fresh detection
                     m_commandSet->startDetection();
+                    setState(State::WaitingForCard);
+
+                    qDebug() << "KeycardBridge::pollStatus: Channel and CommandSet recreated";
+
+                } catch (const std::exception& e) {
+                    qWarning() << "KeycardBridge::pollStatus: Failed to recreate channel:" << e.what();
+                    setState(State::ConnectionError);
                 }
-                setState(State::WaitingForCard);
             }
         }
     }
