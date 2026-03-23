@@ -30,11 +30,11 @@ See [SPEC.md](SPEC.md) for complete implementation specification.
 ### Clone
 
 ```bash
-# Clone with submodules (keycard-qt)
-git clone --recursive https://github.com/xAlisher/keycard-basecamp.git
+# Simple clone (keycard-qt will be fetched automatically during build)
+git clone https://github.com/xAlisher/keycard-basecamp.git
 
-# Or if already cloned, initialize submodules
-git submodule update --init --recursive
+# Or with submodules for offline builds (optional)
+git clone --recursive https://github.com/xAlisher/keycard-basecamp.git
 ```
 
 ### Build
@@ -49,6 +49,8 @@ nix build
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ```
+
+**Note:** keycard-qt dependency is fetched automatically via CMake FetchContent if not present as a submodule.
 
 ### Package LGX
 
