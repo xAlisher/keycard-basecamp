@@ -1,0 +1,3 @@
+[submodule "external/keycard-qt"]
+	path = external/keycard-qt
+	url = https://github.com/status-im/keycard-qt.git

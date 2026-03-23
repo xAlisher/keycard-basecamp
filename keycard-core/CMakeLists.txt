@@ -35,22 +35,29 @@ set_target_properties(keycard_plugin PROPERTIES
     INSTALL_RPATH "$ORIGIN"
 )
 
-# Include Logos SDK headers + PC/SC headers
+# Include Logos SDK headers + keycard-qt headers
 target_include_directories(keycard_plugin PRIVATE
     src
     "${LOGOS_LIBLOGOS_HEADERS}"
     "${LOGOS_CPP_SDK}/include"
     "${LOGOS_CPP_SDK}/include/cpp"
     "${LOGOS_CPP_SDK}/include/core"
+    "${CMAKE_SOURCE_DIR}/external/keycard-qt/include"
 )
 
-# Link Qt + Logos SDK (static) + libkeycard.so + libsodium
+# Link Qt + Logos SDK (static) + keycard-qt + OpenSSL + libsodium
 target_link_libraries(keycard_plugin PRIVATE
     Qt6::Core
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
-    ${CMAKE_CURRENT_SOURCE_DIR}/../libkeycard.so
+    keycard-qt
+    OpenSSL::Crypto
     PkgConfig::sodium
 )
+
+# Link Qt6::Nfc if available (mobile platforms)
+if(TARGET Qt6::Nfc)
+    target_link_libraries(keycard_plugin PRIVATE Qt6::Nfc)
+endif()
 
 # Install paths (use LogosBasecamp for development)
 set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
@@ -74,7 +81,4 @@ install(FILES modules/keycard/manifest.json
     DESTINATION "${KEYCARD_MODULE_DIR}"
 )
 
-# Install libkeycard.so (Go library)
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../libkeycard.so
-    DESTINATION "${KEYCARD_MODULE_DIR}"
-)
+# Note: libkeycard.so removed - now using keycard-qt (native C++/Qt)
