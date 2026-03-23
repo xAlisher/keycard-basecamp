@@ -3,16 +3,26 @@
 #include <QObject>
 #include <QString>
 #include <QJsonObject>
-#include <atomic>
+#include <memory>
 
-// Thin C++ wrapper around libkeycard.so (status-keycard-go compiled via CGO).
-// Manages PC/SC reader monitoring and card state via JSON-RPC.
+// Forward declarations (keycard-qt)
+namespace Keycard {
+    class CommunicationManager;
+    class CommandSet;
+    class KeycardChannel;
+    struct PairingInfo;
+    class IPairingStorage;
+}
+
+// Thin C++ wrapper around keycard-qt (native C++/Qt Keycard library).
+// Manages PC/SC reader monitoring and card state.
+// API compatible with previous libkeycard.so implementation.
 class KeycardBridge : public QObject
 {
     Q_OBJECT
 
 public:
-    // Card detection states (mirrors status-keycard-go state machine)
+    // Card detection states (compatible with previous implementation)
     enum class State {
         Unknown,            // Before start() called
         NoPCSC,             // PC/SC library not available
@@ -47,57 +57,71 @@ public:
     // Whether the bridge is actively monitoring.
     bool isRunning() const { return m_running; }
 
-    // Actively query the Go RPC for current state (updates cached state).
+    // Actively query current state (updates cached state).
     void pollStatus();
+
+    // Actively check if a card is present (triggers detection if found).
+    bool isCardPresent();
+
+    // Check if card is already paired. Returns JSON: {"paired":true/false}
+    QJsonObject checkPairing();
+
+    // Pair with card using pairing password. Returns JSON: {"paired":true} or {"paired":false,"error":"..."}
+    QJsonObject pairCard(const QString &pairingPassword);
 
     // Authorize with PIN. Returns JSON: {"authorized":true} or {"authorized":false,"remainingAttempts":N}
     QJsonObject authorize(const QString &pin);
 
     // Export key at derivation path. Returns raw private key bytes.
-    // Default path: m/43'/60'/1581' (EIP-1581 encryption root)
-    QByteArray exportKey(const QString &path = "m/43'/60'/1581'");
+    // Default path: m/43'/60'/1581'/1'/0 (EIP-1581 encryption key)
+    // With path parameter: Derives key at custom EIP-1581 path (Issue #11)
+    QByteArray exportKey(const QString &path = "m/43'/60'/1581'/1'/0");
 
     // Flow API: Login (auth + export in one atomic operation).
     // Returns the encryption private key bytes, or empty on failure.
-    // This avoids the mutex bug in Session API's ExportLoginKeys.
     QByteArray loginFlow(const QString &pin);
 
-    // Last error from an RPC call (for debugging)
+    // Last error from an operation (for debugging)
     QString lastError() const { return m_lastError; }
 
-    // Card info from last pollStatus (remaining attempts, key UID, etc.)
+    // Card info from last status query
     int remainingPINAttempts() const { return m_remainingPIN; }
     int remainingPUKAttempts() const { return m_remainingPUK; }
     bool keyInitialized() const { return m_keyInitialized; }
     QString keyUID() const { return m_keyUID; }
 
+    // Access to command set (for advanced operations)
+    std::shared_ptr<Keycard::CommandSet> commandSet() const { return m_commandSet; }
+
 signals:
     void stateChanged(KeycardBridge::State newState);
 
+private slots:
+    void onCardReady(const QString& uid);
+    void onCardLost();
+
 private:
-    // Send a JSON-RPC call to libkeycard and return the parsed response.
-    QJsonObject rpcCall(const QString &method, const QJsonObject &params = {});
+    void setState(State newState);
+    void updateStatusFromCommandSet();
+    QByteArray parsePrivateKeyFromTLV(const QByteArray& tlv);
+    bool isReaderPresent();  // Check if PC/SC reader is still connected
 
-    // Process signal events from the Go library.
-    static void signalCallback(const char *jsonEvent);
-
-    // Parse state string from signal into enum.
-    static State parseState(const QString &stateStr);
+    std::shared_ptr<Keycard::KeycardChannel> m_channel;
+    std::shared_ptr<Keycard::CommandSet> m_commandSet;
+    std::shared_ptr<Keycard::IPairingStorage> m_pairingStorage;
 
     State m_state = State::Unknown;
     bool m_running = false;
-    int m_rpcId = 0;
+    bool m_cardReady = false;
 
     QString m_lastError;
-    QJsonObject m_lastFlowResult;
-    std::atomic<bool> m_flowResultReady{false};
 
-    // Card status from GetStatus responses
+    // Card status
     int m_remainingPIN = -1;
     int m_remainingPUK = -1;
     bool m_keyInitialized = false;
     QString m_keyUID;
 
-    // Singleton for signal callback routing (Go callback is C function pointer)
-    static KeycardBridge *s_instance;
+    // Throttle getStatus() calls (takes ~600ms each)
+    qint64 m_lastStatusCheck = 0;
 };

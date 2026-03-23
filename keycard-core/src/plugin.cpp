@@ -74,20 +74,30 @@ QString KeycardPlugin::discoverCard()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Actively check for card presence (helps detect cards that were inserted before detection started)
+    m_bridge->isCardPresent();
+
+    // Poll status after card check to update state
     m_bridge->pollStatus();
 
     QJsonObject result;
     KeycardBridge::State state = m_bridge->state();
 
-    if (state == KeycardBridge::State::Ready || state == KeycardBridge::State::Authorized) {
+    // Card is found if state indicates card presence (not just Ready/Authorized)
+    bool cardPresent = (state == KeycardBridge::State::Ready ||
+                       state == KeycardBridge::State::Authorized ||
+                       state == KeycardBridge::State::ConnectingCard ||
+                       state == KeycardBridge::State::EmptyKeycard ||
+                       state == KeycardBridge::State::NotKeycard ||
+                       state == KeycardBridge::State::BlockedPIN ||
+                       state == KeycardBridge::State::BlockedPUK);
+
+    if (cardPresent) {
         result["found"] = true;
         result["uid"] = m_bridge->keyUID();
 
-        // Clear session overlay when card rediscovered after closeSession()
-        // Allows CARD_PRESENT/AUTHORIZED to show through (SPEC.md transition semantics)
-        if (m_sessionState == SessionState::Closed) {
-            m_sessionState = SessionState::NoSession;
-        }
+        // Session state persists until card is removed or user re-authorizes
+        // (Closed state should stay closed until explicit re-auth)
     } else {
         result["found"] = false;
 
@@ -99,6 +109,33 @@ QString KeycardPlugin::discoverCard()
     }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::checkPairing()
+{
+    if (!m_bridge) {
+        QJsonObject result;
+        result["paired"] = false;
+        result["error"] = "Bridge not initialized";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject checkResult = m_bridge->checkPairing();
+    return QJsonDocument(checkResult).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::pairCard(const QString& pairingPassword)
+{
+    qDebug() << "KeycardPlugin::pairCard() called";
+
+    if (!m_bridge) {
+        QJsonObject result;
+        result["error"] = "Bridge not initialized - call discoverReader first";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject pairResult = m_bridge->pairCard(pairingPassword);
+    return QJsonDocument(pairResult).toJson(QJsonDocument::Compact);
 }
 
 QString KeycardPlugin::authorize(const QString& pin)
@@ -118,9 +155,9 @@ QString KeycardPlugin::authorize(const QString& pin)
     return QJsonDocument(authResult).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::deriveKey(const QString& domain, int version)
+QString KeycardPlugin::deriveKey(const QString& domain)
 {
-    qDebug() << "KeycardPlugin::deriveKey() called, domain:" << domain << "version:" << version;
+    qDebug() << "KeycardPlugin::deriveKey() called, domain:" << domain;
 
     if (!m_bridge) {
         QJsonObject result;
@@ -128,107 +165,36 @@ QString KeycardPlugin::deriveKey(const QString& domain, int version)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    QByteArray derivedKey;
-
-    if (version == 1) {
-        // ============================================================
-        // Version 1: Current production approach (DEFAULT)
-        // ============================================================
-        // Uses fixed BIP32 path + SHA256 hashing for domain separation
-        // Path: m/43'/60'/1581'/1'/0 (always the same)
-        // Derivation: SHA256(baseKey || domain)
-        //
-        // Security: Cryptographically sound (SHA256 collision resistance)
-        // Standard: Custom (Logos-specific)
-        // Kept for backward compatibility with existing encrypted data
-        // ============================================================
-
-        QByteArray baseKey = m_bridge->exportKey();
-
-        if (baseKey.isEmpty()) {
-            QJsonObject result;
-            result["error"] = m_bridge->lastError();
-            return QJsonDocument(result).toJson(QJsonDocument::Compact);
-        }
-
-        // Derive domain-specific key: SHA256(baseKey || domain)
-        QByteArray domainBytes = domain.toUtf8();
-        QByteArray combined = baseKey + domainBytes;
-
-        unsigned char hash[32];
-        crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(combined.constData()), combined.size());
-
-        derivedKey = QByteArray(reinterpret_cast<const char*>(hash), 32);
-
-        // Securely wipe baseKey from memory
-        sodium_memzero(baseKey.data(), baseKey.size());
-
-        qDebug() << "KeycardPlugin::deriveKey() - using legacy v1 derivation (deprecated)";
-
-    } else if (version == 2) {
-        // ============================================================
-        // Version 2: EIP-1581 path mapping (EXPERIMENTAL / INCOMPLETE)
-        // ============================================================
-        // CURRENT STATE: Partial implementation, not yet standards-compliant
-        //
-        // What works:
-        // - Deterministic domain → EIP-1581 path mapping
-        // - Path: m/43'/60'/1581'/key_type'/key_index (calculated from domain)
-        //
-        // What's missing:
-        // - KeycardBridge::exportKey() doesn't use path parameter yet
-        // - Still does SHA256(baseKey || eip1581Path) on host side
-        // - NOT true on-card BIP32 derivation at different paths
-        //
-        // This is SCAFFOLDING for future real EIP-1581 implementation.
-        // Do NOT use in production until KeycardBridge supports custom paths.
-        //
-        // TODO: Update KeycardBridge::exportKey() to actually derive at path
-        // Reference: https://eips.ethereum.org/EIPS/eip-1581
-        // Feedback: Recommended by @mikkoph (Keycard core dev)
-        // ============================================================
-
-        QString eip1581Path = domainToEIP1581Path(domain);
-        qDebug() << "KeycardPlugin::deriveKey() - EIP-1581 path (NOT YET USED):" << eip1581Path;
-
-        QByteArray baseKey = m_bridge->exportKey();  // Still fixed path!
-
-        if (baseKey.isEmpty()) {
-            QJsonObject result;
-            result["error"] = m_bridge->lastError();
-            return QJsonDocument(result).toJson(QJsonDocument::Compact);
-        }
-
-        // WARNING: Still using host-side hashing, not real EIP-1581!
-        // This is just v1 with path string instead of domain string
-        QByteArray pathBytes = eip1581Path.toUtf8();
-        QByteArray combined = baseKey + pathBytes;
-
-        unsigned char hash[32];
-        crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(combined.constData()), combined.size());
-
-        derivedKey = QByteArray(reinterpret_cast<const char*>(hash), 32);
-
-        // Securely wipe baseKey from memory
-        sodium_memzero(baseKey.data(), baseKey.size());
-
-        qDebug() << "KeycardPlugin::deriveKey() - using EIP-1581 v2 derivation (default)";
-
-    } else {
+    // Check if session is closed - require re-authorization
+    if (m_sessionState == SessionState::Closed) {
         QJsonObject result;
-        result["error"] = QString("Invalid version: %1 (supported: 1=legacy, 2=EIP-1581)").arg(version);
+        result["error"] = "Session closed - authorize again to derive keys";
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
+
+    // Export base encryption key
+    QByteArray baseKey = m_bridge->exportKey();
+
+    if (baseKey.isEmpty()) {
+        QJsonObject result;
+        result["error"] = m_bridge->lastError();
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Derive domain-specific key: SHA256(baseKey || domain)
+    QByteArray domainBytes = domain.toUtf8();
+    QByteArray combined = baseKey + domainBytes;
+
+    unsigned char hash[32];
+    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(combined.constData()), combined.size());
+
+    QByteArray derivedKey(reinterpret_cast<const char*>(hash), 32);
 
     // Enter SESSION_ACTIVE state
     m_sessionState = SessionState::Active;
 
     QJsonObject result;
     result["key"] = QString::fromUtf8(derivedKey.toHex());
-    result["version"] = version;  // Include version in response for debugging
-
-    // Securely wipe derivedKey from stack memory
-    sodium_memzero(derivedKey.data(), derivedKey.size());
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
@@ -241,6 +207,9 @@ QString KeycardPlugin::getState()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Poll status to detect card/reader removal
+    m_bridge->pollStatus();
+
     QJsonObject result;
 
     // Check bridge state first - clear session overlay if card is gone
@@ -252,16 +221,21 @@ QString KeycardPlugin::getState()
                      bridgeState == KeycardBridge::State::ConnectionError);
 
     if (cardGone && (m_sessionState == SessionState::Active || m_sessionState == SessionState::Closed)) {
+        qDebug() << "KeycardPlugin::getState() - card gone, clearing session state";
         m_sessionState = SessionState::NoSession;
     }
 
     // Session state takes precedence over bridge state (only if card still present)
     if (m_sessionState == SessionState::Active) {
+        qDebug() << "KeycardPlugin::getState() - returning SESSION_ACTIVE";
         result["state"] = "SESSION_ACTIVE";
     } else if (m_sessionState == SessionState::Closed) {
+        qDebug() << "KeycardPlugin::getState() - returning SESSION_CLOSED";
         result["state"] = "SESSION_CLOSED";
     } else {
-        result["state"] = mapBridgeStateToSpec(bridgeState);
+        QString mappedState = mapBridgeStateToSpec(bridgeState);
+        qDebug() << "KeycardPlugin::getState() - returning bridge state:" << mappedState << "(bridge state enum:" << static_cast<int>(bridgeState) << ")";
+        result["state"] = mappedState;
     }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
@@ -290,6 +264,20 @@ QString KeycardPlugin::getLastError()
     QJsonObject result;
     QString error = m_bridge->lastError();
     result["error"] = error.isEmpty() ? "" : error;
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::testPCSC()
+{
+    qDebug() << "KeycardPlugin::testPCSC() - testing PC/SC directly";
+
+    QJsonObject result;
+    result["pcsc_working"] = m_bridge ? m_bridge->isCardPresent() : false;
+    result["bridge_initialized"] = m_bridge != nullptr;
+    if (m_bridge) {
+        result["bridge_state"] = static_cast<int>(m_bridge->state());
+    }
+
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
@@ -322,41 +310,4 @@ QString KeycardPlugin::mapBridgeStateToSpec(KeycardBridge::State state)
         return "CARD_NOT_PRESENT";
     }
     return "READER_NOT_FOUND";
-}
-
-QString KeycardPlugin::domainToEIP1581Path(const QString& domain)
-{
-    // EIP-1581 compliant path derivation: map domain string to BIP32 indices
-    // Reference: https://eips.ethereum.org/EIPS/eip-1581
-    // Path structure: m/43'/60'/1581'/key_type'/key_index
-
-    // Namespace separation: prefix with "logos-" to prevent collision with other apps
-    QByteArray namespaced = ("logos-" + domain).toUtf8();
-
-    // Hash to get deterministic indices
-    unsigned char hash[32];
-    crypto_hash_sha256(hash,
-        reinterpret_cast<const unsigned char*>(namespaced.constData()),
-        namespaced.size());
-
-    // Extract two 31-bit values from hash
-    // First 4 bytes → key_type (hardened)
-    uint32_t keyType = (
-        (static_cast<uint32_t>(hash[0]) << 24) |
-        (static_cast<uint32_t>(hash[1]) << 16) |
-        (static_cast<uint32_t>(hash[2]) << 8) |
-        static_cast<uint32_t>(hash[3])
-    ) & 0x7FFFFFFF;  // Mask to 31 bits (hardened derivation range)
-
-    // Next 4 bytes → key_index (unhardened at final level)
-    uint32_t keyIndex = (
-        (static_cast<uint32_t>(hash[4]) << 24) |
-        (static_cast<uint32_t>(hash[5]) << 16) |
-        (static_cast<uint32_t>(hash[6]) << 8) |
-        static_cast<uint32_t>(hash[7])
-    ) & 0x7FFFFFFF;  // Mask to 31 bits
-
-    // Build full EIP-1581 path
-    // m/43'/60'/1581' is the fixed EIP-1581 prefix for Ethereum non-wallet keys
-    return QString("m/43'/60'/1581'/%1'/%2").arg(keyType).arg(keyIndex);
 }

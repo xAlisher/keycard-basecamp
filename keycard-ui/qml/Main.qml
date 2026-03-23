@@ -12,13 +12,26 @@ Rectangle {
     property bool readerFound: false
     property bool cardFound: false
     property string cardUID: ""
+    property bool cardPaired: false
+    property bool autoDetectionStarted: false
 
-    // Poll state every 500ms for live updates
+    // Auto-start detection on load
+    Component.onCompleted: {
+        // Initialize reader detection
+        var result = logos.callModule("keycard", "discoverReader", [])
+        try {
+            var obj = JSON.parse(result)
+            root.readerFound = obj.found === true
+        } catch (e) {}
+    }
+
+    // Poll state and auto-detect card every 500ms
     Timer {
         interval: 500
         running: true
         repeat: true
         onTriggered: {
+            // Get current state
             var result = logos.callModule("keycard", "getState", [])
             try {
                 var obj = JSON.parse(result)
@@ -26,6 +39,41 @@ Rectangle {
                     root.currentState = obj.state
                 }
             } catch (e) {}
+
+            // Auto-detect card if reader is present
+            if (root.currentState !== "READER_NOT_FOUND") {
+                var cardResult = logos.callModule("keycard", "discoverCard", [])
+                try {
+                    var cardObj = JSON.parse(cardResult)
+                    root.cardFound = cardObj.found === true
+                    if (cardObj.uid) {
+                        root.cardUID = cardObj.uid
+                    } else {
+                        root.cardUID = ""
+                    }
+
+                    // Check pairing status if card found
+                    if (cardObj.found) {
+                        var pairingResult = logos.callModule("keycard", "checkPairing", [])
+                        try {
+                            var pairObj = JSON.parse(pairingResult)
+                            root.cardPaired = pairObj.paired === true
+                        } catch (e) {
+                            root.cardPaired = false
+                        }
+                    } else {
+                        root.cardPaired = false
+                    }
+                } catch (e) {
+                    root.cardFound = false
+                    root.cardUID = ""
+                }
+            } else {
+                // Reader not found - clear card status
+                root.cardFound = false
+                root.cardUID = ""
+                root.cardPaired = false
+            }
         }
     }
 
@@ -77,56 +125,74 @@ Rectangle {
                 }
             }
 
-            // Action Rows
-            ActionRow {
-                id: discoverReaderRow
-                title: "1. Discover Reader"
-                alwaysEnabled: true
-                prereqText: root.currentState !== "READER_NOT_FOUND" ? "✓ Reader found" : "Reader not found yet"
-                prereqMet: true
-                executeFunc: function() {
-                    var result = logos.callModule("keycard", "discoverReader", [])
-                    try {
-                        var obj = JSON.parse(result)
-                        root.readerFound = obj.found === true
-                    } catch (e) {}
-                    return result
+            // Status Displays (auto-detected)
+            StatusRow {
+                id: readerStatus
+                title: "Reader Status"
+                statusText: root.currentState !== "READER_NOT_FOUND" ? "✓ Reader found" : "✗ Reader not found"
+                statusGood: root.currentState !== "READER_NOT_FOUND"
+                resultText: root.readerFound ? '{"found":true,"name":"Smart card reader"}' : '{"found":false}'
+            }
+
+            StatusRow {
+                id: cardStatus
+                title: "Card Status"
+                statusText: {
+                    if (root.cardFound && root.cardUID) {
+                        return "✓ Card detected (UID: " + root.cardUID.substring(0, 16) + "...)"
+                    }
+                    if (root.currentState === "READER_NOT_FOUND") return "✗ Reader not found"
+                    if (!root.cardFound) return "✗ No card inserted"
+                    return "Checking..."
                 }
+                statusGood: root.cardFound
+                resultText: root.cardFound ? '{"found":true,"uid":"' + root.cardUID + '"}' : '{"found":false}'
             }
 
             ActionRow {
-                id: discoverCardRow
-                title: "2. Discover Card"
+                id: pairCardRow
+                title: "1. Pair Card"
                 prereqText: {
-                    // Check current state for card presence
+                    if (root.cardPaired) return "✓ Already paired"
                     if (root.currentState === "CARD_PRESENT" ||
                         root.currentState === "AUTHORIZED" ||
-                        root.currentState === "SESSION_ACTIVE" ||
-                        root.currentState === "SESSION_CLOSED") {
-                        return "✓ Card found"
-                    }
-
+                        root.currentState === "SESSION_ACTIVE") return "Ready to pair"
                     if (root.currentState === "CARD_NOT_PRESENT") return "✗ Card not present"
                     if (root.currentState === "READER_NOT_FOUND") return "✗ Reader not found"
-
-                    return "Ready to discover"
+                    return "Ready to pair"
                 }
-                prereqMet: root.currentState !== "READER_NOT_FOUND"
+                prereqMet: (root.currentState === "CARD_PRESENT" ||
+                           root.currentState === "AUTHORIZED" ||
+                           root.currentState === "SESSION_ACTIVE") && !root.cardPaired
+                showDomainInput: true
+                inputPlaceholder: "KeycardDefaultPairing"
+                inputLabel: "Pairing Password:"
+                defaultInputValue: "KeycardDefaultPairing"
                 executeFunc: function() {
-                    var result = logos.callModule("keycard", "discoverCard", [])
+                    var password = pairCardRow.inputValue
+                    if (password.length === 0) {
+                        password = "KeycardDefaultPairing"  // Use default if empty
+                    }
+                    if (password.length < 5 || password.length > 25) {
+                        return '{"error":"Pairing password must be 5-25 characters"}'
+                    }
+                    var result = logos.callModule("keycard", "pairCard", [password])
+
+                    // Update pairing status after pairing
                     try {
                         var obj = JSON.parse(result)
-                        root.cardFound = obj.found === true
-                        if (obj.uid) root.cardUID = obj.uid
-                        else root.cardUID = ""
+                        if (obj.paired === true) {
+                            root.cardPaired = true
+                        }
                     } catch (e) {}
+
                     return result
                 }
             }
 
             ActionRow {
                 id: authorizeRow
-                title: "3. Authorize"
+                title: "2. Authorize (Enter PIN)"
                 prereqText: {
                     if (root.currentState === "CARD_PRESENT") return "✓ Card present"
                     if (root.currentState === "SESSION_CLOSED") return "✓ Card present (re-auth allowed)"
@@ -155,7 +221,7 @@ Rectangle {
 
             ActionRow {
                 id: deriveKeyRow
-                title: "4. Derive Key"
+                title: "3. Derive Key"
                 prereqText: (root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE")
                     ? "✓ Authorized" : "✗ Not authorized"
                 prereqMet: root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE"
@@ -164,6 +230,16 @@ Rectangle {
                 executeFunc: function() {
                     var domain = deriveKeyRow.inputValue || "logos-notes-encryption"
                     return logos.callModule("keycard", "deriveKey", [domain])
+                }
+            }
+
+            ActionRow {
+                title: "4. Test PC/SC (Debug)"
+                alwaysEnabled: true
+                prereqText: "Direct PC/SC test"
+                prereqMet: true
+                executeFunc: function() {
+                    return logos.callModule("keycard", "testPCSC", [])
                 }
             }
 
@@ -241,6 +317,169 @@ Rectangle {
         }
     }
 
+    // Status Row Component (auto-detected, no button)
+    component StatusRow: Rectangle {
+        id: statusRow
+        Layout.fillWidth: true
+        Layout.preferredHeight: 100
+        color: "#1a1a1a"
+        border.color: "#555555"
+        border.width: 1
+        radius: 5
+
+        property string title: ""
+        property string statusText: ""
+        property bool statusGood: false
+        property string resultText: ""
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 15
+            spacing: 10
+
+            // Title and Status
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 15
+
+                Text {
+                    text: statusRow.title
+                    font.pixelSize: 16
+                    font.bold: true
+                    color: "#ffffff"
+                    Layout.preferredWidth: 200
+                }
+
+                Text {
+                    id: statusTextDisplay
+                    text: statusRow.statusText
+                    font.pixelSize: 14
+                    color: statusRow.statusGood ? "#00ff00" : "#ff4444"
+                    Layout.fillWidth: true
+                }
+
+                Button {
+                    text: "Copy"
+                    Layout.preferredWidth: 50
+                    Layout.preferredHeight: 24
+                    visible: statusRow.statusGood
+                    onClicked: {
+                        // Copy status text to clipboard
+                        var tempEdit = Qt.createQmlObject('import QtQuick 2.15; TextEdit { visible: false }', statusRow)
+                        tempEdit.text = statusRow.statusText
+                        tempEdit.selectAll()
+                        tempEdit.copy()
+                        tempEdit.destroy()
+                        this.text = "✓"
+                        statusTextCopyTimer.restart()
+                    }
+
+                    Timer {
+                        id: statusTextCopyTimer
+                        interval: 1000
+                        onTriggered: {
+                            parent.text = "Copy"
+                        }
+                    }
+
+                    background: Rectangle {
+                        color: parent.down ? "#4a7ba7" : "#5a8fc7"
+                        border.color: "#6a9fd7"
+                        border.width: 1
+                        radius: 3
+                    }
+
+                    contentItem: Text {
+                        text: parent.text
+                        color: "#ffffff"
+                        font.pixelSize: 10
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                Text {
+                    text: "AUTO"
+                    font.pixelSize: 11
+                    color: "#888888"
+                    Layout.preferredWidth: 60
+                    horizontalAlignment: Text.AlignRight
+                }
+            }
+
+            // Result Display
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 5
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    color: "#0a0a0a"
+                    border.color: "#555555"
+                    border.width: 1
+                    radius: 3
+
+                    ScrollView {
+                        anchors.fill: parent
+                        anchors.margins: 5
+                        clip: true
+
+                        TextEdit {
+                            id: statusResultDisplay
+                            text: statusRow.resultText
+                            font.pixelSize: 11
+                            font.family: "monospace"
+                            color: statusRow.statusGood ? "#00ff00" : "#ff4444"
+                            wrapMode: TextEdit.Wrap
+                            readOnly: true
+                            selectByMouse: true
+                        }
+                    }
+                }
+
+                Button {
+                    text: "Copy"
+                    Layout.preferredWidth: 60
+                    Layout.preferredHeight: 30
+                    enabled: statusRow.resultText.length > 0
+                    onClicked: {
+                        statusResultDisplay.selectAll()
+                        statusResultDisplay.copy()
+                        statusResultDisplay.deselect()
+                        this.text = "✓ Copied"
+                        statusCopyTimer.restart()
+                    }
+
+                    Timer {
+                        id: statusCopyTimer
+                        interval: 1000
+                        onTriggered: {
+                            parent.text = "Copy"
+                        }
+                    }
+
+                    background: Rectangle {
+                        color: parent.enabled ? (parent.down ? "#4a7ba7" : "#5a8fc7") : "#3a3a3a"
+                        border.color: parent.enabled ? "#6a9fd7" : "#555555"
+                        border.width: 1
+                        radius: 3
+                    }
+
+                    contentItem: Text {
+                        text: parent.text
+                        color: parent.enabled ? "#ffffff" : "#666666"
+                        font.pixelSize: 11
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+            }
+        }
+    }
+
     // Action Row Component
     component ActionRow: Rectangle {
         id: row
@@ -258,8 +497,16 @@ Rectangle {
         property bool showPinInput: false
         property bool showDomainInput: false
         property string inputPlaceholder: ""
+        property string inputLabel: ""
+        property string defaultInputValue: ""
         property alias inputValue: inputField.text
         property var executeFunc: function() { return '{"error":"Not implemented"}' }
+
+        Component.onCompleted: {
+            if (defaultInputValue.length > 0) {
+                inputField.text = defaultInputValue
+            }
+        }
 
         function clearInput() {
             inputField.text = ""
@@ -333,7 +580,7 @@ Rectangle {
                 spacing: 10
 
                 Text {
-                    text: row.showPinInput ? "PIN:" : "Domain:"
+                    text: row.inputLabel.length > 0 ? row.inputLabel : (row.showPinInput ? "PIN:" : "Domain:")
                     color: "#aaaaaa"
                     font.pixelSize: 13
                 }
@@ -353,29 +600,73 @@ Rectangle {
                 }
             }
 
-            // Result Display
-            Rectangle {
+            // Result Display with Copy Button
+            RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                color: "#0a0a0a"
-                border.color: "#555555"
-                border.width: 1
-                radius: 3
+                spacing: 5
 
-                ScrollView {
-                    anchors.fill: parent
-                    anchors.margins: 5
-                    clip: true
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    color: "#0a0a0a"
+                    border.color: "#555555"
+                    border.width: 1
+                    radius: 3
 
-                    TextEdit {
-                        id: resultDisplay
-                        text: "No result yet"
+                    ScrollView {
+                        anchors.fill: parent
+                        anchors.margins: 5
+                        clip: true
+
+                        TextEdit {
+                            id: resultDisplay
+                            text: "No result yet"
+                            font.pixelSize: 11
+                            font.family: "monospace"
+                            color: "#888888"
+                            wrapMode: TextEdit.Wrap
+                            readOnly: true
+                            selectByMouse: true
+                        }
+                    }
+                }
+
+                Button {
+                    text: "Copy"
+                    Layout.preferredWidth: 60
+                    Layout.preferredHeight: 30
+                    enabled: resultDisplay.text.length > 0 && resultDisplay.text !== "No result yet"
+                    onClicked: {
+                        resultDisplay.selectAll()
+                        resultDisplay.copy()
+                        resultDisplay.deselect()
+                        // Show brief feedback
+                        this.text = "✓ Copied"
+                        copyFeedbackTimer.restart()
+                    }
+
+                    Timer {
+                        id: copyFeedbackTimer
+                        interval: 1000
+                        onTriggered: {
+                            parent.text = "Copy"
+                        }
+                    }
+
+                    background: Rectangle {
+                        color: parent.enabled ? (parent.down ? "#4a7ba7" : "#5a8fc7") : "#3a3a3a"
+                        border.color: parent.enabled ? "#6a9fd7" : "#555555"
+                        border.width: 1
+                        radius: 3
+                    }
+
+                    contentItem: Text {
+                        text: parent.text
+                        color: parent.enabled ? "#ffffff" : "#666666"
                         font.pixelSize: 11
-                        font.family: "monospace"
-                        color: "#888888"
-                        wrapMode: TextEdit.Wrap
-                        readOnly: true
-                        selectByMouse: true
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
                     }
                 }
             }

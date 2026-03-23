@@ -1,399 +1,714 @@
 #include "KeycardBridge.h"
-
-#include <QJsonDocument>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QStandardPaths>
-#include <QDir>
+#include <keycard-qt/keycard_channel.h>
+#include <keycard-qt/command_set.h>
+#include <keycard-qt/types.h>
 #include <QDebug>
-#include <QThread>
-#include <QCoreApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <PCSC/winscard.h>  // For direct PC/SC reader detection
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
 
-// C API from libkeycard.so (status-keycard-go)
-extern "C" {
-    // Session API (RPC)
-    extern char* KeycardInitializeRPC(void);
-    extern char* KeycardCallRPC(char* payload);
-    extern void  KeycardSetSignalEventCallback(void* cb);
-    extern void  ResetAPI(void);
-    extern void  Free(void* param);
-
-    // Flow API (atomic operations)
-    extern char* KeycardInitFlow(char* storageDir);
-    extern char* KeycardStartFlow(int flowType, char* jsonParams);
-    extern char* KeycardResumeFlow(char* jsonParams);
-    extern char* KeycardCancelFlow(void);
+// Debug logging helper
+static void debugLog(const QString& msg) {
+    QFile file("/tmp/keycard-debug.log");
+    if (file.open(QIODevice::Append | QIODevice::Text)) {
+        QTextStream out(&file);
+        out << QDateTime::currentDateTime().toString("hh:mm:ss.zzz") << " " << msg << "\n";
+        file.flush();
+    }
+    qDebug() << msg;  // Also try qDebug
 }
 
-KeycardBridge *KeycardBridge::s_instance = nullptr;
+// Simple in-memory pairing storage
+class MemoryPairingStorage : public Keycard::IPairingStorage {
+public:
+    bool save(const QString& instanceUID, const Keycard::PairingInfo& pairing) override {
+        m_pairings[instanceUID] = pairing;
+        return true;
+    }
+
+    Keycard::PairingInfo load(const QString& instanceUID) override {
+        auto it = m_pairings.find(instanceUID);
+        if (it != m_pairings.end()) {
+            return it->second;
+        }
+        return Keycard::PairingInfo();  // Invalid pairing (index=-1)
+    }
+
+    bool remove(const QString& instanceUID) override {
+        return m_pairings.erase(instanceUID) > 0;
+    }
+
+private:
+    std::map<QString, Keycard::PairingInfo> m_pairings;
+};
 
 KeycardBridge::KeycardBridge(QObject *parent)
     : QObject(parent)
 {
-    s_instance = this;
+    qDebug() << "KeycardBridge: Constructed (keycard-qt backend)";
 }
 
 KeycardBridge::~KeycardBridge()
 {
     stop();
-    if (s_instance == this)
-        s_instance = nullptr;
 }
 
 bool KeycardBridge::start()
 {
-    if (m_running)
+    qDebug() << "KeycardBridge::start() called";
+
+    if (m_running) {
+        qWarning() << "KeycardBridge: Already running";
+        return true;
+    }
+
+    try {
+        // Create channel (PC/SC backend on desktop, NFC on mobile)
+        m_channel = std::make_shared<Keycard::KeycardChannel>(this);
+
+        // Create pairing storage
+        m_pairingStorage = std::make_shared<MemoryPairingStorage>();
+
+        // Pairing password provider (returns empty - no auto-pairing for now)
+        auto passwordProvider = [](const QString&) -> QString {
+            return QString();  // No automatic pairing
+        };
+
+        // Create command set
+        m_commandSet = std::make_shared<Keycard::CommandSet>(
+            m_channel,
+            m_pairingStorage,
+            passwordProvider,
+            this
+        );
+
+        // Connect signals
+        connect(m_commandSet.get(), &Keycard::CommandSet::cardReady,
+                this, &KeycardBridge::onCardReady);
+        connect(m_commandSet.get(), &Keycard::CommandSet::cardLost,
+                this, &KeycardBridge::onCardLost);
+
+        // Start card detection
+        m_commandSet->startDetection();
+
+        m_running = true;
+        setState(State::WaitingForCard);
+
+        qDebug() << "KeycardBridge: Started successfully";
         return true;
 
-    // Initialize the RPC server
-    char *initResult = KeycardInitializeRPC();
-    if (initResult) {
-        qDebug() << "keycard: RPC initialized:" << initResult;
-        Free(initResult);
-    }
-
-    // Register signal callback
-    KeycardSetSignalEventCallback(reinterpret_cast<void*>(&KeycardBridge::signalCallback));
-
-    // Start PC/SC monitoring
-    QString storageDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir().mkpath(storageDir);
-    QString pairingsPath = storageDir + "/keycard_pairings.json";
-
-    QJsonObject params;
-    params["storageFilePath"] = pairingsPath;
-    params["logEnabled"] = false;
-
-    QJsonObject response = rpcCall("keycard.Start", params);
-
-    QJsonValue errVal = response.value("error");
-    if (!errVal.isNull() && !errVal.isUndefined()) {
-        qWarning() << "keycard: start failed:" << errVal;
-        m_state = State::NoPCSC;
-        emit stateChanged(m_state);
+    } catch (const std::exception& e) {
+        m_lastError = QString("Exception in start(): %1").arg(e.what());
+        qWarning() << "KeycardBridge:" << m_lastError;
+        setState(State::ConnectionError);
         return false;
     }
-
-    m_running = true;
-    m_state = State::WaitingForReader;
-    emit stateChanged(m_state);
-    return true;
 }
 
 void KeycardBridge::stop()
 {
-    if (!m_running)
-        return;
+    qDebug() << "KeycardBridge::stop() called";
 
-    rpcCall("keycard.Stop");
-    ResetAPI();
+    if (!m_running) {
+        return;
+    }
+
+    if (m_commandSet) {
+        m_commandSet->stopDetection();
+        m_commandSet.reset();
+    }
+
+    m_channel.reset();
+    m_pairingStorage.reset();
+
     m_running = false;
-    m_state = State::Unknown;
-    emit stateChanged(m_state);
+    m_cardReady = false;
+    setState(State::Unknown);
+
+    qDebug() << "KeycardBridge: Stopped";
 }
 
 QString KeycardBridge::statusText() const
 {
     switch (m_state) {
-    case State::Unknown:          return QStringLiteral("Not started");
-    case State::NoPCSC:           return QStringLiteral("PC/SC service not available");
-    case State::WaitingForReader: return QStringLiteral("Connect a USB card reader");
-    case State::WaitingForCard:   return QStringLiteral("Insert your Keycard");
-    case State::ConnectingCard:   return QStringLiteral("Connecting...");
-    case State::ConnectionError:  return QStringLiteral("Connection error — reinsert card");
-    case State::NotKeycard:       return QStringLiteral("Not a Keycard — use a Status Keycard");
-    case State::EmptyKeycard:     return QStringLiteral("Card not initialized — set up with Keycard Shell first");
-    case State::BlockedPIN:       return QStringLiteral("PIN blocked — use PUK to unblock");
-    case State::BlockedPUK:       return QStringLiteral("Card permanently blocked");
-    case State::Ready:            return QStringLiteral("Keycard detected — enter PIN");
-    case State::Authorized:       return QStringLiteral("Keycard unlocked");
+    case State::Unknown:            return "Not initialized";
+    case State::NoPCSC:             return "PC/SC not available";
+    case State::WaitingForReader:   return "Waiting for card reader";
+    case State::WaitingForCard:     return "Waiting for card";
+    case State::ConnectingCard:     return "Connecting to card...";
+    case State::ConnectionError:    return "Connection error";
+    case State::NotKeycard:         return "Not a Keycard";
+    case State::EmptyKeycard:       return "Uninitialized Keycard";
+    case State::BlockedPIN:         return "PIN blocked";
+    case State::BlockedPUK:         return "PUK blocked (card bricked)";
+    case State::Ready:              return "Ready for PIN";
+    case State::Authorized:         return "Authorized";
     }
-    return QStringLiteral("Unknown state");
-}
-
-QJsonObject KeycardBridge::authorize(const QString &pin)
-{
-    QJsonObject params;
-    params["pin"] = pin;
-
-    QJsonObject response = rpcCall("keycard.Authorize", params);
-
-    QJsonValue authErr = response.value("error");
-    if (!authErr.isNull() && !authErr.isUndefined()) {
-        qWarning() << "keycard: authorize RPC error:" << authErr;
-        return {{"authorized", false}, {"error", authErr.toString()}};
-    }
-
-    QJsonObject result = response["result"].toObject();
-    bool authorized = result["authorized"].toBool(false);
-
-    if (authorized) {
-        m_state = State::Authorized;
-        emit stateChanged(m_state);
-    } else {
-        // Poll to get updated remaining attempts
-        pollStatus();
-    }
-
-    QJsonObject out;
-    out["authorized"] = authorized;
-    out["remainingAttempts"] = m_remainingPIN;
-    return out;
-}
-
-QByteArray KeycardBridge::exportKey(const QString &path)
-{
-    Q_UNUSED(path)
-
-    // ExportLoginKeys returns encryption + whisper keys
-    QJsonObject response = rpcCall("keycard.ExportLoginKeys");
-
-    m_lastError.clear();
-
-    QJsonValue exportErr = response.value("error");
-    if (!exportErr.isNull() && !exportErr.isUndefined()) {
-        m_lastError = exportErr.toString();
-        qWarning() << "keycard: exportKey RPC error:" << m_lastError;
-        return {};
-    }
-
-    // Response: {"result":{"keys":{"encryptionPrivateKey":{"privateKey":"hex",...},...}}}
-    QJsonObject result = response["result"].toObject();
-
-    QJsonObject keys = result["keys"].toObject();
-    if (keys.isEmpty()) {
-        m_lastError = "No keys. Full RPC response: " +
-            QString::fromUtf8(QJsonDocument(response).toJson(QJsonDocument::Compact)).left(500);
-        qWarning() << "keycard:" << m_lastError;
-        return {};
-    }
-
-    qDebug() << "keycard: available key types:" << keys.keys();
-    QJsonObject encKey = keys["encryptionPrivateKey"].toObject();
-    QString privKeyHex = encKey["privateKey"].toString();
-
-    if (privKeyHex.isEmpty()) {
-        // Try eip1581 as fallback
-        QJsonObject eip = keys["eip1581"].toObject();
-        privKeyHex = eip["privateKey"].toString();
-        if (!privKeyHex.isEmpty())
-            qDebug() << "keycard: using eip1581 key instead of encryptionPrivateKey";
-    }
-
-    if (privKeyHex.isEmpty()) {
-        m_lastError = "No private key in exported keys: " + keys.keys().join(", ");
-        qWarning() << "keycard:" << m_lastError;
-        return {};
-    }
-
-    qDebug() << "keycard: exported encryption key," << privKeyHex.size() << "hex chars";
-    return QByteArray::fromHex(privKeyHex.toUtf8());
-}
-
-QByteArray KeycardBridge::loginFlow(const QString &pin)
-{
-    // Stop Session API to avoid conflicts with Flow API
-    // (both share the global Go context)
-    if (m_running) {
-        rpcCall("keycard.Stop");
-        ResetAPI();
-        m_running = false;
-    }
-
-    // Initialize Flow API with storage file path for pairings
-    QString storageDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir().mkpath(storageDir);
-    QString storageFile = storageDir + "/keycard_pairings";
-
-    // Reset any previous flow result
-    m_lastFlowResult = QJsonObject();
-
-    // Keep QByteArray alive for the C call
-    QByteArray storageBytes = storageFile.toUtf8();
-    char *initResult = KeycardInitFlow(storageBytes.data());
-    if (initResult) {
-        QString res = QString::fromUtf8(initResult);
-        qDebug() << "keycard: flow init:" << res;
-        if (res != "ok") {
-            m_lastError = "Flow init failed: " + res;
-            Free(initResult);
-            return {};
-        }
-        Free(initResult);
-    }
-
-    // Register signal callback
-    KeycardSetSignalEventCallback(reinterpret_cast<void*>(&KeycardBridge::signalCallback));
-
-    // Start Login flow (type 3) with PIN
-    QJsonObject flowParams;
-    flowParams["pin"] = pin;
-    QByteArray paramsJson = QJsonDocument(flowParams).toJson(QJsonDocument::Compact);
-
-    qDebug() << "keycard: starting login flow with storage:" << storageFile;
-    char *startResult = KeycardStartFlow(3, paramsJson.data());
-    if (startResult) {
-        QString res = QString::fromUtf8(startResult);
-        Free(startResult);
-        if (res != "ok") {
-            m_lastError = "Flow start failed: " + res;
-            qWarning() << "keycard:" << m_lastError;
-            return {};
-        }
-    }
-
-    // Wait for flow-result signal (up to 10 seconds)
-    // Go callback fires on a goroutine thread — use atomic flag for cross-thread visibility.
-    m_flowResultReady.store(false);
-    m_lastFlowResult = QJsonObject();
-
-    for (int i = 0; i < 100; ++i) {
-        QThread::msleep(100);
-
-        if (m_flowResultReady.load()) {
-            qDebug() << "keycard: flow result ready after" << (i * 100) << "ms";
-            break;
-        }
-    }
-
-    if (!m_flowResultReady.load()) {
-        m_lastError = "Login flow timed out (10s)";
-        KeycardCancelFlow();
-        return {};
-    }
-
-    // Check for error
-    QString error = m_lastFlowResult["error"].toString();
-    if (!error.isEmpty()) {
-        m_lastError = "Login flow error: " + error;
-        return {};
-    }
-
-    // Extract encryption private key
-    QJsonObject encKey = m_lastFlowResult["encryption-key"].toObject();
-    QString privKeyHex = encKey["privateKey"].toString();
-
-    if (privKeyHex.isEmpty()) {
-        m_lastError = "No encryption key in flow result";
-        return {};
-    }
-
-    // Also capture key UID
-    m_keyUID = m_lastFlowResult["key-uid"].toString();
-
-    qDebug() << "keycard: loginFlow exported encryption key," << privKeyHex.size() << "hex chars";
-    m_state = State::Authorized;
-    emit stateChanged(m_state);
-
-    return QByteArray::fromHex(privKeyHex.toUtf8());
+    return "Unknown state";
 }
 
 void KeycardBridge::pollStatus()
 {
-    // Always attempt RPC — m_running may have been set in a previous callModule invocation
-    QJsonObject response = rpcCall("keycard.GetStatus");
-
-    QJsonValue errVal = response.value("error");
-    if (!errVal.isNull() && !errVal.isUndefined()) {
-        qDebug() << "keycard: pollStatus error:" << errVal;
+    if (!m_commandSet) {
         return;
     }
 
-    QJsonObject result = response["result"].toObject();
-    QString stateStr = result["state"].toString();
+    // If we think card is ready and authorized, verify it's still there
+    // Don't call getStatus() before authorization as it needs secure channel
+    if (m_cardReady && m_state == State::Authorized) {
+        // Throttle getStatus() calls - they take ~600ms each
+        // Only call every 5 seconds instead of every timer tick
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now - m_lastStatusCheck < 5000) {
+            // Too soon, skip this check
+            return;
+        }
+        m_lastStatusCheck = now;
 
-    if (stateStr.isEmpty()) {
-        qDebug() << "keycard: pollStatus empty state, response:" << response;
-        return;
+        try {
+            auto status = m_commandSet->getStatus();
+            if (status.valid) {
+                updateStatusFromCommandSet();
+            }
+        } catch (const std::exception& e) {
+            qDebug() << "KeycardBridge::pollStatus: getStatus failed:" << e.what();
+        }
+    } else {
+        // No card detected - check reader presence
+        if (m_state == State::WaitingForCard) {
+            // Reader was present, verify it's still there
+            if (!isReaderPresent()) {
+                qDebug() << "KeycardBridge::pollStatus: Reader no longer present";
+                setState(State::WaitingForReader);
+            }
+        } else if (m_state == State::WaitingForReader) {
+            // Reader was gone, check if it's back
+            if (isReaderPresent()) {
+                qDebug() << "KeycardBridge::pollStatus: Reader detected, restarting detection";
+                // Restart detection to properly detect cards
+                if (m_commandSet) {
+                    m_commandSet->stopDetection();
+                    m_commandSet->startDetection();
+                }
+                setState(State::WaitingForCard);
+            }
+        }
+    }
+}
+
+QJsonObject KeycardBridge::checkPairing()
+{
+    QJsonObject result;
+
+    if (!m_cardReady || m_keyUID.isEmpty()) {
+        result["paired"] = false;
+        result["reason"] = "No card detected";
+        return result;
     }
 
-    // If we got a valid status, the RPC server is running
-    m_running = true;
-
-    // Extract card info
-    QJsonObject kcStatus = result["keycardStatus"].toObject();
-    if (!kcStatus.isEmpty()) {
-        m_remainingPIN = kcStatus["remainingAttemptsPIN"].toInt(-1);
-        m_remainingPUK = kcStatus["remainingAttemptsPUK"].toInt(-1);
-        m_keyInitialized = kcStatus["keyInitialized"].toBool(false);
+    auto pairing = m_pairingStorage->load(m_keyUID);
+    if (pairing.index != -1) {
+        result["paired"] = true;
+        result["pairingIndex"] = pairing.index;
+        result["cardUID"] = m_keyUID;
+    } else {
+        result["paired"] = false;
+        result["reason"] = "Card not paired yet";
+        result["cardUID"] = m_keyUID;
     }
 
-    QJsonObject kcInfo = result["keycardInfo"].toObject();
-    if (!kcInfo.isEmpty()) {
-        m_keyUID = kcInfo["keyUID"].toString();
+    return result;
+}
+
+QJsonObject KeycardBridge::pairCard(const QString &pairingPassword)
+{
+    qDebug() << "KeycardBridge::pairCard() called";
+
+    QJsonObject result;
+
+    if (!m_commandSet || !m_cardReady) {
+        result["paired"] = false;
+        result["error"] = "Card not ready";
+        m_lastError = "Card not ready";
+        return result;
     }
 
-    State newState = parseState(stateStr);
-    if (newState != m_state) {
+    try {
+        qDebug() << "KeycardBridge: Selecting applet for pairing...";
+        m_commandSet->select();
+
+        qDebug() << "KeycardBridge: Pairing with password (length:" << pairingPassword.length() << ")...";
+        auto pairingInfo = m_commandSet->pair(pairingPassword);
+
+        qDebug() << "KeycardBridge: Pairing result - index:" << pairingInfo.index;
+
+        if (pairingInfo.index == -1) {
+            QString lastErr = m_commandSet->lastError();
+            result["paired"] = false;
+            result["error"] = "Pairing failed: " + (lastErr.isEmpty() ? "check password" : lastErr);
+            m_lastError = "Pairing failed: " + lastErr;
+            qDebug() << "KeycardBridge: Pairing failed, error:" << lastErr;
+            return result;
+        }
+
+        qDebug() << "KeycardBridge: Pairing successful, index:" << pairingInfo.index;
+
+        // Save pairing
+        bool saved = m_pairingStorage->save(m_keyUID, pairingInfo);
+        if (!saved) {
+            qWarning() << "KeycardBridge: Failed to save pairing (but pairing succeeded)";
+        }
+
+        result["paired"] = true;
+        result["pairingIndex"] = pairingInfo.index;
+
+    } catch (const std::exception& e) {
+        result["paired"] = false;
+        result["error"] = e.what();
+        m_lastError = e.what();
+        qWarning() << "KeycardBridge::pairCard() exception:" << e.what();
+    }
+
+    return result;
+}
+
+QJsonObject KeycardBridge::authorize(const QString &pin)
+{
+    debugLog("========================================");
+    debugLog("KeycardBridge::authorize() START");
+    debugLog(QString("PIN length: %1").arg(pin.length()));
+    debugLog(QString("m_cardReady: %1").arg(m_cardReady));
+    debugLog(QString("m_keyUID: %1").arg(m_keyUID));
+    debugLog("========================================");
+
+    QJsonObject result;
+
+    if (!m_commandSet || !m_cardReady) {
+        result["authorized"] = false;
+        result["error"] = "Card not ready";
+        m_lastError = "Card not ready";
+        debugLog(QString("ERROR: Card not ready - m_commandSet: %1 m_cardReady: %2").arg(m_commandSet != nullptr).arg(m_cardReady));
+        return result;
+    }
+
+    try {
+        debugLog("STEP 1: Loading pairing from storage...");
+        // Check if we have pairing, if not, try to load it
+        auto pairing = m_pairingStorage->load(m_keyUID);
+        debugLog(QString("STEP 1: Pairing loaded - index: %1").arg(pairing.index));
+
+        if (pairing.index == -1) {
+            // No pairing stored - need to pair first
+            result["authorized"] = false;
+            result["error"] = "Card not paired - pairing required";
+            m_lastError = "Not paired";
+            debugLog(QString("ERROR: Card not paired, instanceUID: %1").arg(m_keyUID));
+            return result;
+        }
+
+        // Re-select applet to ensure fresh connection
+        debugLog("STEP 2: Calling select() to re-select applet...");
+        debugLog("STEP 2: BEFORE select() call");
+        m_commandSet->select();
+        debugLog("STEP 2: AFTER select() call - SUCCESS");
+
+        debugLog("STEP 3: Opening secure channel...");
+        debugLog("STEP 3: BEFORE openSecureChannel() call");
+
+        // Open secure channel
+        bool scOpened = m_commandSet->openSecureChannel(pairing);
+
+        debugLog(QString("STEP 3: AFTER openSecureChannel() call - result: %1").arg(scOpened));
+
+        if (!scOpened) {
+            QString err = m_commandSet->lastError();
+            result["authorized"] = false;
+            result["error"] = "Failed to open secure channel: " + err;
+            m_lastError = "Secure channel failed: " + err;
+            debugLog(QString("ERROR: Secure channel failed: %1").arg(err));
+            return result;
+        }
+
+        debugLog("STEP 4: Verifying PIN...");
+        debugLog("STEP 4: BEFORE verifyPIN() call");
+
+        // Verify PIN
+        bool success = m_commandSet->verifyPIN(pin);
+
+        debugLog(QString("STEP 4: AFTER verifyPIN() call - result: %1").arg(success));
+
+        if (success) {
+            result["authorized"] = true;
+            setState(State::Authorized);
+
+            // Now we can get valid status
+            auto status = m_commandSet->getStatus();
+            if (status.valid) {
+                m_remainingPIN = status.pinRetryCount;
+                m_remainingPUK = status.pukRetryCount;
+                m_keyInitialized = status.keyInitialized;
+                debugLog(QString("KeycardBridge: Authorized! PIN: %1 PUK: %2 Initialized: %3")
+                         .arg(m_remainingPIN).arg(m_remainingPUK).arg(m_keyInitialized));
+            }
+        } else {
+            result["authorized"] = false;
+
+            // Get updated status after failed PIN
+            auto status = m_commandSet->getStatus();
+            if (status.valid) {
+                m_remainingPIN = status.pinRetryCount;
+                result["remainingAttempts"] = m_remainingPIN;
+                debugLog(QString("KeycardBridge: PIN verification failed, remaining: %1").arg(m_remainingPIN));
+
+                if (m_remainingPIN == 0) {
+                    setState(State::BlockedPIN);
+                } else {
+                    // PIN was wrong but not blocked - go back to Ready state
+                    setState(State::Ready);
+                }
+            } else {
+                result["remainingAttempts"] = -1;
+                result["error"] = "PIN verification failed, could not get remaining attempts";
+                // Without valid status, assume Ready state
+                setState(State::Ready);
+            }
+        }
+
+    } catch (const std::exception& e) {
+        result["authorized"] = false;
+        result["error"] = e.what();
+        m_lastError = e.what();
+        debugLog(QString("KeycardBridge::authorize() exception: %1").arg(e.what()));
+    }
+
+    debugLog("KeycardBridge::authorize() END");
+    return result;
+}
+
+QByteArray KeycardBridge::exportKey(const QString &path)
+{
+    qDebug() << "KeycardBridge::exportKey() called, path:" << path;
+
+    if (!m_commandSet || !m_cardReady) {
+        m_lastError = "Card not ready";
+        qWarning() << "KeycardBridge::exportKey():" << m_lastError;
+        return QByteArray();
+    }
+
+    if (m_state != State::Authorized) {
+        m_lastError = "Not authorized - call authorize() first";
+        qWarning() << "KeycardBridge::exportKey():" << m_lastError;
+        return QByteArray();
+    }
+
+    try {
+        // Export key at the specified BIP32 path
+        // This is REAL EIP-1581 - derives on-card at custom path!
+        QByteArray keyTLV = m_commandSet->exportKey(
+            /*derive=*/true,
+            /*makeCurrent=*/false,
+            /*path=*/path,
+            /*exportType=*/Keycard::APDU::P2ExportKeyPrivateAndPublic
+        );
+
+        if (keyTLV.isEmpty()) {
+            m_lastError = m_commandSet->lastError();
+            qWarning() << "KeycardBridge::exportKey() failed:" << m_lastError;
+            return QByteArray();
+        }
+
+        // Parse TLV to extract private key
+        QByteArray privateKey = parsePrivateKeyFromTLV(keyTLV);
+
+        if (privateKey.isEmpty()) {
+            m_lastError = "Failed to parse private key from TLV";
+            qWarning() << "KeycardBridge::exportKey():" << m_lastError;
+            return QByteArray();
+        }
+
+        qDebug() << "KeycardBridge::exportKey() success, key size:" << privateKey.size();
+        return privateKey;
+
+    } catch (const std::exception& e) {
+        m_lastError = e.what();
+        qWarning() << "KeycardBridge::exportKey() exception:" << e.what();
+        return QByteArray();
+    }
+}
+
+QByteArray KeycardBridge::loginFlow(const QString &pin)
+{
+    qDebug() << "KeycardBridge::loginFlow() called";
+
+    // Authorize first
+    QJsonObject authResult = authorize(pin);
+    if (!authResult["authorized"].toBool()) {
+        m_lastError = "Authorization failed";
+        return QByteArray();
+    }
+
+    // Export key at default path
+    return exportKey();
+}
+
+void KeycardBridge::onCardReady(const QString& uid)
+{
+    qDebug() << "KeycardBridge::onCardReady() uid:" << uid;
+
+    m_cardReady = true;
+    m_keyUID = uid;
+
+    // Select applet and get status
+    try {
+        auto appInfo = m_commandSet->select();
+        qDebug() << "KeycardBridge: Applet selected, getting status...";
+
+        auto status = m_commandSet->getStatus();
+        if (status.valid) {
+            m_remainingPIN = status.pinRetryCount;
+            m_remainingPUK = status.pukRetryCount;
+            m_keyInitialized = status.keyInitialized;
+            qDebug() << "KeycardBridge: Status - PIN:" << m_remainingPIN
+                     << "PUK:" << m_remainingPUK
+                     << "Initialized:" << m_keyInitialized;
+        } else {
+            qWarning() << "KeycardBridge: Invalid status returned";
+        }
+    } catch (const std::exception& e) {
+        qWarning() << "KeycardBridge: Failed to select/getStatus:" << e.what();
+    }
+
+    // Determine state based on card status
+    if (m_remainingPIN == 0) {
+        setState(State::BlockedPIN);
+    } else if (m_remainingPUK == 0) {
+        setState(State::BlockedPUK);
+    } else if (!m_keyInitialized) {
+        setState(State::EmptyKeycard);
+    } else {
+        setState(State::Ready);
+    }
+}
+
+void KeycardBridge::onCardLost()
+{
+    qDebug() << "KeycardBridge::onCardLost()";
+
+    m_cardReady = false;
+    m_keyUID.clear();
+    m_remainingPIN = -1;
+    m_remainingPUK = -1;
+    m_keyInitialized = false;
+
+    setState(State::WaitingForCard);
+}
+
+void KeycardBridge::setState(State newState)
+{
+    if (m_state != newState) {
         m_state = newState;
-        qDebug() << "keycard: polled state:" << stateStr << "->" << static_cast<int>(newState);
+        qDebug() << "KeycardBridge: State changed to" << static_cast<int>(newState);
         emit stateChanged(newState);
     }
 }
 
-QJsonObject KeycardBridge::rpcCall(const QString &method, const QJsonObject &params)
+void KeycardBridge::updateStatusFromCommandSet()
 {
-    QJsonObject request;
-    request["jsonrpc"] = "2.0";
-    request["id"] = QString::number(++m_rpcId);
-    request["method"] = method;
-
-    // Always include params — Go RPC requires "params":[{}] even for no-arg methods.
-    QJsonArray paramsArray;
-    paramsArray.append(params.isEmpty() ? QJsonObject() : params);
-    request["params"] = paramsArray;
-
-    QByteArray payload = QJsonDocument(request).toJson(QJsonDocument::Compact);
-
-    char *result = KeycardCallRPC(payload.data());
-    if (!result)
-        return {{"error", "null response from KeycardCallRPC"}};
-
-    QJsonObject response = QJsonDocument::fromJson(result).object();
-    Free(result);
-
-    return response;
-}
-
-void KeycardBridge::signalCallback(const char *jsonEvent)
-{
-    if (!s_instance || !jsonEvent)
+    if (!m_commandSet || !m_cardReady) {
         return;
+    }
 
-    QJsonObject event = QJsonDocument::fromJson(jsonEvent).object();
-    QString type = event["type"].toString();
-
-    if (type == "status-changed") {
-        QString stateStr = event["event"].toObject()["state"].toString();
-        State newState = parseState(stateStr);
-
-        if (newState != s_instance->m_state) {
-            s_instance->m_state = newState;
-            qDebug() << "keycard: state changed to" << stateStr;
-            emit s_instance->stateChanged(newState);
+    try {
+        // Get cached status (avoids blocking call)
+        if (m_commandSet->hasCachedStatus()) {
+            auto status = m_commandSet->cachedApplicationStatus();
+            if (status.valid) {
+                m_remainingPIN = status.pinRetryCount;
+                m_remainingPUK = status.pukRetryCount;
+                m_keyInitialized = status.keyInitialized;
+            }
+        } else {
+            // No cached status, query it
+            auto status = m_commandSet->getStatus();
+            if (status.valid) {
+                m_remainingPIN = status.pinRetryCount;
+                m_remainingPUK = status.pukRetryCount;
+                m_keyInitialized = status.keyInitialized;
+            }
         }
-    } else if (type == "keycard.flow-result") {
-        s_instance->m_lastFlowResult = event["event"].toObject();
-        s_instance->m_flowResultReady.store(true);
-        qDebug() << "keycard: flow result signal received";
+    } catch (const std::exception& e) {
+        qWarning() << "KeycardBridge::updateStatusFromCommandSet() failed:" << e.what();
     }
 }
 
-KeycardBridge::State KeycardBridge::parseState(const QString &stateStr)
+bool KeycardBridge::isReaderPresent()
 {
-    // Normalize: Go uses both "waitingForCard" (signals) and "waiting-for-card" (GetStatus)
-    QString s = stateStr.toLower().remove('-');
+    // Query PC/SC directly to check if any readers are present
+    // This works even when no card is inserted
 
-    if (s == "nopcsc" || s == "nopcsc")    return State::NoPCSC;
-    if (s == "waitingforreader")           return State::WaitingForReader;
-    if (s == "waitingforcard")             return State::WaitingForCard;
-    if (s == "connectingcard")             return State::ConnectingCard;
-    if (s == "connectionerror")            return State::ConnectionError;
-    if (s == "notkeycard")                 return State::NotKeycard;
-    if (s == "emptykeycard")               return State::EmptyKeycard;
-    if (s == "blockedpin")                 return State::BlockedPIN;
-    if (s == "blockedpuk")                 return State::BlockedPUK;
-    if (s == "ready")                      return State::Ready;
-    if (s == "authorized")                 return State::Authorized;
-    return State::Unknown;
+    SCARDCONTEXT hContext;
+    LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+
+    if (rv != SCARD_S_SUCCESS) {
+        qDebug() << "KeycardBridge::isReaderPresent: PC/SC not available, error:" << rv;
+        return false;  // PC/SC not available
+    }
+
+    LPSTR readers = NULL;
+    DWORD dwReaders = SCARD_AUTOALLOCATE;
+    rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
+
+    bool hasReaders = (rv == SCARD_S_SUCCESS && dwReaders > 1);  // dwReaders includes null terminator
+
+    if (hasReaders) {
+        qDebug() << "KeycardBridge::isReaderPresent: Found readers";
+    } else {
+        qDebug() << "KeycardBridge::isReaderPresent: No readers found, error:" << rv;
+    }
+
+    if (readers) {
+        SCardFreeMemory(hContext, readers);
+    }
+    SCardReleaseContext(hContext);
+
+    return hasReaders;
+}
+
+bool KeycardBridge::isCardPresent()
+{
+    // Query PC/SC to check if a card is inserted in any reader
+
+    SCARDCONTEXT hContext;
+    LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+
+    if (rv != SCARD_S_SUCCESS) {
+        return false;
+    }
+
+    LPSTR readers = NULL;
+    DWORD dwReaders = SCARD_AUTOALLOCATE;
+    rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
+
+    if (rv != SCARD_S_SUCCESS || !readers) {
+        SCardReleaseContext(hContext);
+        return false;
+    }
+
+    // Check status of each reader
+    LPSTR reader = readers;
+    bool cardFound = false;
+
+    while (*reader != '\0') {
+        SCARD_READERSTATE readerState;
+        readerState.szReader = reader;
+        readerState.dwCurrentState = SCARD_STATE_UNAWARE;
+
+        rv = SCardGetStatusChange(hContext, 0, &readerState, 1);
+
+        if (rv == SCARD_S_SUCCESS) {
+            // Check if card is present
+            if (readerState.dwEventState & SCARD_STATE_PRESENT) {
+                qDebug() << "KeycardBridge::isCardPresent: Card found in reader:" << reader;
+                cardFound = true;
+
+                // Trigger card ready if not already detected
+                if (!m_cardReady && m_commandSet) {
+                    // Manual card detection - try to connect
+                    qDebug() << "KeycardBridge::isCardPresent: Card found, attempting to select applet";
+                    try {
+                        auto appInfo = m_commandSet->select();
+                        QString uid = QString::fromUtf8(appInfo.instanceUID.toHex());
+                        qDebug() << "KeycardBridge::isCardPresent: Select successful, UID:" << uid << "initialized:" << appInfo.initialized;
+
+                        if (!uid.isEmpty()) {
+                            // Set card info from ApplicationInfo (doesn't need secure channel)
+                            m_cardReady = true;
+                            m_keyUID = uid;
+                            m_keyInitialized = appInfo.initialized;
+
+                            // Set state based on initialization status
+                            if (appInfo.initialized) {
+                                setState(State::Ready);
+                                qDebug() << "KeycardBridge::isCardPresent: Card initialized, set to Ready";
+                            } else {
+                                setState(State::EmptyKeycard);
+                                qDebug() << "KeycardBridge::isCardPresent: Card not initialized, set to EmptyKeycard";
+                            }
+
+                            // Emit signal for any listeners
+                            emit stateChanged(m_state);
+                        } else {
+                            qDebug() << "KeycardBridge::isCardPresent: UID is empty, setting state to NotKeycard";
+                            setState(State::NotKeycard);
+                        }
+                    } catch (const std::exception& e) {
+                        qDebug() << "KeycardBridge::isCardPresent: Select failed:" << e.what();
+                        // Card is present but not responding - set to ConnectingCard
+                        setState(State::ConnectingCard);
+                    }
+                } else if (m_cardReady) {
+                    qDebug() << "KeycardBridge::isCardPresent: Card already detected in ready state";
+                }
+                break;
+            }
+        }
+
+        // Move to next reader
+        reader += strlen(reader) + 1;
+    }
+
+    SCardFreeMemory(hContext, readers);
+    SCardReleaseContext(hContext);
+
+    return cardFound;
+}
+
+QByteArray KeycardBridge::parsePrivateKeyFromTLV(const QByteArray& tlv)
+{
+    // TLV format from keycard-qt exportKey:
+    // When exporting private key only (no public key):
+    // Tag 0xA1 (private key template)
+    //   Tag 0x81 (private key - 32 bytes) OR
+    //   Tag 0x80 (private key - 32 bytes)
+    //
+    // When exporting both:
+    // Tag 0xA1 (private key template)
+    //   Tag 0x81 (public key - 65 bytes)
+    //   Tag 0x80 (private key - 32 bytes)
+    //   Tag 0x82 (chain code - 32 bytes)
+
+    qDebug() << "KeycardBridge: Parsing TLV, size:" << tlv.size() << "hex:" << tlv.toHex();
+
+    if (tlv.size() < 10) {
+        qWarning() << "TLV too short:" << tlv.size();
+        return QByteArray();
+    }
+
+    // Find tag 0x80 or 0x81 with 32-byte length (private key)
+    for (int i = 0; i < tlv.size() - 2; ++i) {
+        unsigned char tag = static_cast<unsigned char>(tlv[i]);
+        if (tag == 0x80 || tag == 0x81) {
+            int length = static_cast<unsigned char>(tlv[i + 1]);
+            qDebug() << "Found tag" << QString("0x%1").arg(tag, 2, 16, QChar('0'))
+                     << "at offset" << i << "with length" << length;
+
+            // Private key is always 32 bytes
+            if (length == 32 && i + 2 + length <= tlv.size()) {
+                QByteArray key = tlv.mid(i + 2, length);
+                qDebug() << "Extracted private key:" << key.toHex();
+                return key;
+            } else if (length != 32) {
+                // Might be public key (65 bytes), skip it
+                qDebug() << "Skipping tag (wrong length for private key)";
+                i += length + 1;  // Skip this tag's data
+            }
+        }
+    }
+
+    qWarning() << "Private key tag (0x80 or 0x81 with 32 bytes) not found in TLV";
+    qDebug() << "TLV dump: First 40 bytes:" << tlv.left(40).toHex();
+    return QByteArray();
 }
