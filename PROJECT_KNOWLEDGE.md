@@ -819,3 +819,110 @@ sudo apt-get install libpcsclite-dev
 ```
 Clean rebuild required after installing: `rm -rf build && cmake -B build`.
 
+
+---
+
+## Phase 5: Nix Flake and LGX Packaging (Issue #5)
+
+**Status:** ✅ COMPLETE - Merged to master (2026-03-23)
+**Branch:** issue-5-nix-lgx-packaging → master
+**Final Commit:** f9f1057 (merge commit)
+**PR:** #17
+
+### Summary
+
+Implemented complete Nix build infrastructure and LGX packaging for reproducible builds and distribution.
+
+**Achievements:**
+- ✅ Nix packages for core module and UI plugin
+- ✅ One-command LGX packaging: `nix run .#package-lgx`
+- ✅ libpcsclite removal from LGX (system compatibility)
+- ✅ keycard-qt integration via CMake variable (fixes Nix sandbox issue)
+- ✅ LGX packages tested and working in Basecamp
+
+### Nix Package Structure
+
+**flake.nix provides:**
+```nix
+packages.lib        # Core module: keycard_plugin.so + manifest.json + metadata.json
+packages.ui         # UI plugin: Main.qml + metadata.json
+packages.default    # Defaults to lib
+apps.package-lgx    # LGX packaging: nix run .#package-lgx
+```
+
+**Key implementation details:**
+- **keycard-qt fetched externally:** `fetchFromGitHub` in flake, passed via `-DKEYCARD_QT_SOURCE_DIR`
+- **Avoids FetchContent in sandbox:** CMake checks `KEYCARD_QT_SOURCE_DIR` before falling back to git
+- **metadata.json vs manifest.json:** Both required - bundler needs metadata.json, runtime needs manifest.json
+
+### LGX Packaging
+
+**Command:**
+```bash
+nix run .#package-lgx
+```
+
+**Produces:**
+- `keycard-core.lgx` (3.3MB) - Core module with dependencies
+- `keycard-ui.lgx` (5.3KB) - UI plugin
+
+**Critical: libpcsclite removal**
+```bash
+# scripts/package-lgx.sh automatically:
+1. Bundles with portable bundler (includes libpcsclite)
+2. Extracts LGX to temp dir
+3. Removes libpcsclite.so* files
+4. Repacks without libpcsclite
+```
+
+**Why remove libpcsclite:**
+- Bundled libpcsclite can't communicate with system pcscd daemon socket
+- Must use system libpcsclite for smartcard detection to work
+- Lesson #36 from logos-notes
+
+### Build Commands
+
+**Individual packages:**
+```bash
+nix build .#lib  # Build core module only
+nix build .#ui   # Build UI plugin only
+```
+
+**LGX packaging:**
+```bash
+nix run .#package-lgx [output-dir]  # Default: current directory
+```
+
+**Verification:**
+```bash
+tar -tzf keycard-core.lgx | grep -i pcsclite  # Should return nothing
+```
+
+### Issues Fixed During Implementation
+
+**Issue: Nix build failing with "could not find git"**
+- **Cause:** Copied keycard-qt to build dir, CMake checked source dir, fell through to FetchContent
+- **Fix:** Pass keycard-qt via `-DKEYCARD_QT_SOURCE_DIR=${keycard-qt-src}` CMake flag
+- **Commit:** 0e4ae2a
+
+**Issue: keycard-core.lgx not created**
+- **Cause:** Relative path `$OUTPUT_DIR` became invalid after `cd $TEMP_DIR` in subshell
+- **Fix:** Convert to absolute path before subshell: `OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)`
+- **Commit:** 049f2a9
+
+**Issue: "no 'main' field in metadata.json"**
+- **Cause:** Only provided manifest.json (runtime format), bundler needed metadata.json (build format)
+- **Fix:** Created root-level metadata.json with `"main": "keycard_plugin"` (no extension)
+- **Commits:** a8ad2cb, 1ac277d
+
+### Review Process
+
+- **Round 1:** Senty found Nix build broken (FetchContent/git issue)
+- **Round 2:** Fixed via KEYCARD_QT_SOURCE_DIR, got LGTM
+- **Verified:** LGX packages tested in clean Basecamp, working
+
+### References
+
+- LESSONS.md: #37 (Nix FetchContent), #38 (relative paths), #39 (metadata.json)
+- SPEC.md: Plugin Metadata, Repo Structure
+- README.md: Updated with packaging commands

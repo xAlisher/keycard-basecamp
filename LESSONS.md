@@ -248,9 +248,65 @@ Lessons learned during building keycard-basecamp. Update this after corrections,
 
 ---
 
-## Issue #5 - Packaging
+## Issue #5 - Nix Flake and LGX Packaging
 
-*Lessons will be added here during implementation*
+### Lesson #37: Nix FetchContent Requires Git in Sandbox
+**Date:** 2026-03-23
+**Context:** Building keycard-core with Nix, CMakeLists.txt uses FetchContent for keycard-qt
+
+**What went wrong:**
+- Copied keycard-qt to build dir in `preConfigure`, but CMake checked source dir
+- In Nix, source and build dirs are separate (source is read-only)
+- CMake fell through to `FetchContent_MakeAvailable()` needing git
+- Nix sandbox doesn't have git → build failed
+
+**How to prevent:**
+- Pass externally-fetched deps via CMake variables: `-DVAR=${src}`
+- Use `if(DEFINED VAR)` check before falling back to FetchContent
+- Pattern: `add_subdirectory(${EXTERNAL_SRC} ${CMAKE_CURRENT_BINARY_DIR}/name)`
+
+**Evidence:** PR #17, Senty review finding, commit 0e4ae2a
+
+### Lesson #38: Relative Paths Break in Subshells with cd
+**Date:** 2026-03-23
+**Context:** LGX packaging script using tar to repack after removing libpcsclite
+
+**What went wrong:**
+- Used `(cd "$TEMP_DIR" && tar -czf "$OUTPUT_DIR/file.lgx" *)`
+- `$OUTPUT_DIR` was `.` (relative)
+- After `cd`, relative path pointed to wrong location
+- File written to temp dir, not output dir
+
+**How to prevent:**
+- Convert relative to absolute before subshells: `OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)`
+- Always use absolute paths when changing directories
+
+**Evidence:** PR #17, commit 049f2a9
+
+### Lesson #39: LGX Bundler Needs metadata.json with Simple main Field
+**Date:** 2026-03-23
+**Context:** LGX bundler failing - "no 'main' field in metadata.json"
+
+**What went wrong:**
+- Only provided `manifest.json` (runtime format with `main` as dict)
+- LGX bundler expected `metadata.json` (build format with `main` as string)
+
+**Two different formats:**
+```json
+// metadata.json (for LGX bundler)
+{"main": "keycard_plugin"}  // String, no extension
+
+// manifest.json (for Basecamp runtime)
+{"main": {"linux-amd64": "keycard_plugin.so"}}  // Dict with platforms
+```
+
+**How to prevent:**
+- Always provide both files
+- metadata.json at repo root for bundler
+- manifest.json in modules/ for runtime
+- Bundler appends .so automatically (don't include in main field)
+
+**Evidence:** PR #17, commits a8ad2cb, 1ac277d
 
 ---
 
