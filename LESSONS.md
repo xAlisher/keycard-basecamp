@@ -619,3 +619,198 @@ prereqText: {
 
 ---
 
+
+## Issue #10 - keycard-qt Migration
+
+### UI Freeze from Blocking Calls in Event Loop
+**Date:** 2026-03-23
+**Context:** Authorization worked but froze entire UI for several seconds
+
+**What went wrong:**
+- After authorization, `getStatus()` called every 500ms via QML timer
+- Each `getStatus()` call blocked for ~600ms (PC/SC communication)
+- UI timer running in main thread → entire UI frozen during blocking calls
+- User couldn't interact with app after clicking "Authorize"
+
+**Root cause:**
+- `pollStatus()` called `getStatus()` on every timer tick when authorized
+- No throttling - if timer interval < call duration, UI constantly blocked
+- keycard-qt uses synchronous API, not Qt async signals for this call
+
+**Solution:**
+- Added timestamp tracking (`m_lastStatusCheck`)
+- Throttle `getStatus()` to once every 5 seconds instead of 500ms
+- UI responsive 90% of time, brief freeze every 5 seconds acceptable
+
+**Code pattern:**
+```cpp
+void pollStatus() {
+    if (m_state == Authorized) {
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now - m_lastStatusCheck < 5000) {
+            return;  // Skip, too soon
+        }
+        m_lastStatusCheck = now;
+        m_commandSet->getStatus();  // Now called infrequently
+    }
+}
+```
+
+**Prevention:**
+- Profile blocking calls duration before adding to tight loops
+- If call duration > loop interval, throttle aggressively
+- Consider moving blocking I/O to worker thread
+- QML timers run on main thread - keep handlers fast
+
+**Evidence:** Debug logs showed getStatus() taking 600-614ms per call
+
+---
+
+### Session State Reset by Auto-Detection Logic
+**Date:** 2026-03-23
+**Context:** closeSession() worked but state immediately reverted to AUTHORIZED
+
+**What went wrong:**
+- `closeSession()` set `m_sessionState = Closed`
+- QML timer called `discoverCard()` 500ms later
+- `discoverCard()` had: `if (cardPresent && sessionState == Closed) { sessionState = NoSession; }`
+- Result: Closed state lasted <1 second before being cleared
+
+**Root cause:**
+- Incorrect assumption: "card rediscovered means clear Closed state"
+- Session state is logical (user action), card presence is physical
+- Card staying present after closeSession() is normal, not a rediscovery
+
+**Solution:**
+- Remove auto-reset logic from `discoverCard()`
+- Session state persists until explicit action (authorize) or card removal
+- Only clear session state when card actually removed
+
+**Code before:**
+```cpp
+if (cardPresent && m_sessionState == Closed) {
+    m_sessionState = NoSession;  // WRONG: card still present!
+}
+```
+
+**Code after:**
+```cpp
+if (cardPresent) {
+    // Session state persists - don't touch it
+}
+```
+
+**Prevention:**
+- Session state = user intent, not hardware state
+- Only auto-clear session on card removal (hardware change)
+- State transitions from user actions should persist until next user action
+
+**Evidence:** User saw state flip from CLOSED → AUTHORIZED in 1 second
+
+---
+
+### deriveKey Allowed After Session Closed
+**Date:** 2026-03-23
+**Context:** After closeSession(), deriveKey() still worked
+
+**What went wrong:**
+- `deriveKey()` didn't check session state
+- Could derive keys even after session explicitly closed
+- Violated security model: closed session should require re-auth
+
+**Solution:**
+- Add session state check at top of `deriveKey()`:
+```cpp
+if (m_sessionState == SessionState::Closed) {
+    return error("Session closed - authorize again");
+}
+```
+
+**Prevention:**
+- Security operations must check authorization state
+- Session closure means "no more operations until re-auth"
+- Add state guards to all sensitive operations, not just some
+
+---
+
+### Git Submodules Don't Work in Archives
+**Date:** 2026-03-23
+**Context:** Senty review found branch not buildable from `git archive`
+
+**What went wrong:**
+- Used git submodule for keycard-qt dependency
+- `git archive` (used by GitHub tarballs) doesn't include submodule contents
+- Clean archive extracts showed empty `external/keycard-qt/` directory
+- Build failed: "CMakeLists.txt not found"
+
+**Why this matters:**
+- CI systems often use archives, not full git clones
+- Release tarballs from GitHub don't include submodules
+- Breaks reproducibility: developer checkout works, but clean archive doesn't
+
+**Solution - CMake FetchContent:**
+```cmake
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/keycard-qt/CMakeLists.txt")
+    add_subdirectory(external/keycard-qt)  # Use local if present
+else()
+    FetchContent_Declare(
+        keycard-qt
+        GIT_REPOSITORY https://github.com/status-im/keycard-qt.git
+        GIT_TAG        3c01bc114f0a38e91147793e96d7a4ebd68301a6
+    )
+    FetchContent_MakeAvailable(keycard-qt)  # Download if missing
+endif()
+```
+
+**Benefits:**
+- Developer workflow: uses local submodule (fast, offline capable)
+- Archive/CI workflow: auto-downloads from GitHub
+- Reproducible: same commit hash every time
+
+**Prevention:**
+- For cross-project dependencies, use FetchContent or find_package, not submodules alone
+- Test build from `git archive` extract, not just live git checkout
+- Pin to commit hashes for reproducibility, not branch names
+
+**Evidence:** Senty verified clean archive build after FetchContent added
+
+---
+
+### Module Process Logs Not in Main App Log
+**Date:** 2026-03-23
+**Context:** qDebug() output from authorize() not appearing anywhere
+
+**What went wrong:**
+- Added debug logging with `qDebug()` in KeycardBridge
+- Expected to see output in `/tmp/logos-app.log`
+- No output appeared - logs were "lost"
+
+**Root cause:**
+- Keycard module runs in separate `logos_host.elf` process
+- Each module has its own stdout/stderr
+- Main app log only captures main process output
+- Module process stderr likely goes to journal or separate streams
+
+**Solution:**
+- Implemented file-based logging helper:
+```cpp
+static void debugLog(const QString& msg) {
+    QFile file("/tmp/keycard-debug.log");
+    if (file.open(QIODevice::Append)) {
+        QTextStream out(&file);
+        out << QDateTime::currentDateTime().toString("hh:mm:ss.zzz") 
+            << " " << msg << "\n";
+        file.flush();
+    }
+}
+```
+
+**Prevention:**
+- Module debugging needs separate log file, not qDebug()
+- Or check `journalctl --user` for module process output
+- Don't assume module qDebug() appears in main app log
+
+**Evidence:** After adding file logging, all debug output visible in `/tmp/keycard-debug.log`
+
+---
+

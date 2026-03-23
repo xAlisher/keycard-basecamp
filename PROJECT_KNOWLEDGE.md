@@ -577,9 +577,32 @@ prereqMet: root.currentState === "TARGET_STATE" || root.currentState === "ALSO_V
 
 ## Phase X: keycard-qt Migration (Issue #10)
 
-**Status:** ✅ Week 1 Day 1 Complete (Building & Loading)
-**Branch:** issue-10-keycard-qt
-**Target:** 3-4 weeks total (20-28 days)
+**Status:** ✅ COMPLETE - Merged to master (2026-03-23)
+**Branch:** issue-10-keycard-qt-migration → master
+**Duration:** Week 1 Days 1-3 (faster than 3-4 week estimate)
+**Final Commit:** bf24f68
+
+### Migration Summary
+
+**Achievements:**
+- ✅ 70% binary size reduction (14MB → ~4-5MB)
+- ✅ Native C++/Qt stack (no CGO/JSON-RPC overhead)
+- ✅ Real EIP-1581 support (on-card BIP32 custom paths)
+- ✅ Authorization and session management working
+- ✅ Reproducible builds from archives (CMake FetchContent)
+- ✅ All hardware tests passing
+
+**Key Issues Fixed:**
+1. **Authorization UI freeze** - throttled getStatus() from 500ms to 5s
+2. **Session state reset** - removed incorrect auto-clear logic
+3. **Build reproducibility** - implemented FetchContent with commit pinning
+4. **Module logging** - added file-based debugLog() helper
+
+**Review Process:**
+- Round 1: Fixed submodule documentation
+- Round 2: Implemented FetchContent for archive builds
+- Round 3: Fixed invalid Git reference (main → commit hash)
+- Round 4: LGTM - merged to master
 
 ### What Was Built (Week 1 Day 1)
 
