@@ -926,3 +926,73 @@ tar -tzf keycard-core.lgx | grep -i pcsclite  # Should return nothing
 - LESSONS.md: #37 (Nix FetchContent), #38 (relative paths), #39 (metadata.json)
 - SPEC.md: Plugin Metadata, Repo Structure
 - README.md: Updated with packaging commands
+
+
+## Security Fixes (Issue #16 - PR #20)
+
+**Status:** ⏳ In review (Round 2)
+**Review rounds:** 1 (Round 1 findings addressed)
+**Branch:** security-fixes-14-15-16
+
+### Overview
+
+Security review (SECURITY_REVIEW.md) identified Issue #16: Sensitive always-on debug logging that could leak private keys and stable card identifiers in production builds.
+
+### Fixes Implemented
+
+**Round 1 (commit 5f1ad27):**
+- Removed `/tmp/keycard-debug.log` file logging entirely (file-based attacks)
+- Replaced `debugLog()` function with `KEYCARD_LOG()` macro gated by `KEYCARD_DEBUG` flag
+- Sanitized existing UID logging in `authorize()` to log presence instead of raw values
+- Changed 26 debugLog() calls to KEYCARD_LOG() throughout KeycardBridge.cpp
+
+**Round 2 (commit 9e0328f):**
+- Fixed remaining 4 unconditional UID logging locations identified in review:
+  1. `onCardReady()`: Changed to log UID length instead of raw signal UID
+  2. `isCardPresent()`: Changed to log UID presence instead of instance UID hex
+  3. `pairCard()`: Changed to log UID length instead of m_keyUID in pairing save path
+  4. `unpairCard()`: Changed to log UID length instead of m_keyUID in storage removal path
+
+### Technical Details
+
+**Conditional Compilation Pattern:**
+```cpp
+// Debug logging - only enabled with KEYCARD_DEBUG build flag
+// No file logging to /tmp - qDebug() output only
+#ifdef KEYCARD_DEBUG
+    #define KEYCARD_LOG(msg) qDebug() << "[KEYCARD]" << QDateTime::currentDateTime().toString("hh:mm:ss.zzz") << msg
+#else
+    #define KEYCARD_LOG(msg) do {} while(0)
+#endif
+```
+
+**Sanitization Pattern - UID Logging:**
+```cpp
+// ❌ BEFORE (unconditional, leaks stable identifier):
+qDebug() << "KeycardBridge::onCardReady() signal received, uid from signal:" << uid;
+
+// ✅ AFTER (sanitized, logs only metadata):
+qDebug() << "KeycardBridge::onCardReady() signal received, uid length:" << uid.length();
+```
+
+**Why This Matters:**
+- Card UIDs are stable identifiers that could enable user tracking across sessions
+- Unconditional logging to journalctl leaks these IDs in production builds
+- Length/presence checks provide debugging value without privacy risk
+- Per SECURITY_REVIEW.md: "Unconditional UID logs are sensitive telemetry"
+
+### Files Changed
+
+- `keycard-core/src/KeycardBridge.cpp`: All debug logging sanitized
+- `keycard-core/src/KeycardBridge.h`: Added KEYCARD_LOG macro definition
+
+### Review Process
+
+- **Round 1:** Senty found that removing /tmp logging was good, but 4 unconditional UID logs remained
+- **Round 2:** Sanitized all 4 locations, awaiting LGTM
+
+### Related Issues
+
+- Issue #14: Private key logging (fixed in same PR, commit 8534328)
+- Issue #15: Session state enforcement (fixed in same PR, commit fa0a203)
+- SECURITY_REVIEW.md: Findings 14-16 all addressed in PR #20
