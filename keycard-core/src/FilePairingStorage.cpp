@@ -120,7 +120,6 @@ bool FilePairingStorage::writeFile(const QJsonObject& data)
 {
     // Write to temp file first, then atomic rename
     QString tempPath = m_filePath + ".tmp";
-
     QFile file(tempPath);
     if (!file.open(QIODevice::WriteOnly)) {
         qWarning() << "FilePairingStorage::writeFile: Failed to open temp file" << tempPath;
@@ -134,6 +133,15 @@ bool FilePairingStorage::writeFile(const QJsonObject& data)
     // Set permissions to 0600 (owner read/write only)
     if (chmod(tempPath.toUtf8().constData(), S_IRUSR | S_IWUSR) != 0) {
         qWarning() << "FilePairingStorage::writeFile: Failed to set permissions on" << tempPath;
+    }
+
+    // Remove old file if exists (QFile::rename doesn't overwrite on all platforms)
+    if (QFile::exists(m_filePath)) {
+        if (!QFile::remove(m_filePath)) {
+            qWarning() << "FilePairingStorage::writeFile: Failed to remove old file" << m_filePath;
+            QFile::remove(tempPath);
+            return false;
+        }
     }
 
     // Atomic rename

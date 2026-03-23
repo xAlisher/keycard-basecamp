@@ -186,7 +186,11 @@ Rectangle {
                         Text {
                             text: {
                                 if (root.cardPaired) {
-                                    return "✓ Paired (slot " + root.pairingSlot + ")"
+                                    if (root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE") {
+                                        return "✓ Paired (slot " + root.pairingSlot + ") - Authorized"
+                                    } else {
+                                        return "✓ Paired (slot " + root.pairingSlot + ") - Authorize to unpair"
+                                    }
                                 }
                                 if (root.currentState === "CARD_PRESENT" ||
                                     root.currentState === "AUTHORIZED" ||
@@ -196,18 +200,34 @@ Rectangle {
                                 return "Ready to pair"
                             }
                             font.pixelSize: 13
-                            color: root.cardPaired ? "#00ff00" :
-                                   ((root.currentState === "CARD_PRESENT" ||
-                                     root.currentState === "AUTHORIZED" ||
-                                     root.currentState === "SESSION_ACTIVE") ? "#00ff00" : "#ff4444")
+                            color: {
+                                if (root.cardPaired) {
+                                    if (root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE") {
+                                        return "#00ff00"  // Green when can unpair
+                                    } else {
+                                        return "#ffaa00"  // Orange when need to authorize
+                                    }
+                                }
+                                return (root.currentState === "CARD_PRESENT" ||
+                                        root.currentState === "AUTHORIZED" ||
+                                        root.currentState === "SESSION_ACTIVE") ? "#00ff00" : "#ff4444"
+                            }
                             Layout.fillWidth: true
                         }
 
                         Button {
                             text: root.cardPaired ? "Unpair" : "Pair"
-                            enabled: root.cardPaired || (root.currentState === "CARD_PRESENT" ||
-                                                          root.currentState === "AUTHORIZED" ||
-                                                          root.currentState === "SESSION_ACTIVE")
+                            enabled: {
+                                if (root.cardPaired) {
+                                    // Unpair requires authorization
+                                    return root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE"
+                                } else {
+                                    // Pair works when card present
+                                    return root.currentState === "CARD_PRESENT" ||
+                                           root.currentState === "AUTHORIZED" ||
+                                           root.currentState === "SESSION_ACTIVE"
+                                }
+                            }
                             Layout.preferredWidth: 100
                             onClicked: {
                                 var result
