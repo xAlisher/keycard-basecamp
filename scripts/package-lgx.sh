@@ -8,6 +8,9 @@ export PATH="/nix/var/nix/profiles/default/bin:$PATH"
 OUTPUT_DIR="${1:-.}"
 mkdir -p "$OUTPUT_DIR"
 
+# Convert to absolute path (needed for tar -czf inside subshell)
+OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
+
 echo "==> Building core module LGX with portable bundler..."
 nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib
 
