@@ -20,6 +20,13 @@ pkg_check_modules(sodium REQUIRED IMPORTED_TARGET libsodium)
 pkg_check_modules(pcsclite REQUIRED IMPORTED_TARGET libpcsclite)
 
 # Add keycard-qt library
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/keycard-qt/CMakeLists.txt")
+    message(FATAL_ERROR
+        "keycard-qt submodule not initialized. Run:\n"
+        "  git submodule update --init --recursive\n"
+        "Or clone with:\n"
+        "  git clone --recursive <repo-url>")
+endif()
 add_subdirectory(external/keycard-qt)
 
 # Include subdirectories
