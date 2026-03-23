@@ -155,9 +155,9 @@ QString KeycardPlugin::authorize(const QString& pin)
     return QJsonDocument(authResult).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::deriveKey(const QString& domain, int version)
+QString KeycardPlugin::deriveKey(const QString& domain)
 {
-    qDebug() << "KeycardPlugin::deriveKey() called, domain:" << domain << "version:" << version;
+    qDebug() << "KeycardPlugin::deriveKey() called, domain:" << domain;
 
     if (!m_bridge) {
         QJsonObject result;
@@ -172,62 +172,32 @@ QString KeycardPlugin::deriveKey(const QString& domain, int version)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    QByteArray derivedKey;
+    // EIP-1581 standard: on-card BIP32 derivation at custom paths
+    // Map domain to EIP-1581 BIP32 path with deeper nesting (per mikkoph feedback)
+    // Path: m/43'/60'/1581'/<idx1>'/<idx2>'/<idx3>'/<idx4>'
+    // Uses 16 bytes of hash for better collision resistance
+    // Add "logos-" prefix for namespace separation
+    QByteArray namespaced = ("logos-" + domain).toUtf8();
+    unsigned char hash[32];
+    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(namespaced.constData()), namespaced.size());
 
-    if (version == 1) {
-        // Version 1: Legacy SHA256(baseKey || domain) - DEPRECATED but supported for backward compatibility
-        qDebug() << "KeycardPlugin::deriveKey() - using v1 (legacy SHA256 derivation)";
+    // Extract 4 indices from hash (use hardened derivation, 31-bit values)
+    uint32_t idx1 = (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 |
+                     uint32_t(hash[2])  << 8  | uint32_t(hash[3]))  & 0x7FFFFFFF;
+    uint32_t idx2 = (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 |
+                     uint32_t(hash[6])  << 8  | uint32_t(hash[7]))  & 0x7FFFFFFF;
+    uint32_t idx3 = (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 |
+                     uint32_t(hash[10]) << 8  | uint32_t(hash[11])) & 0x7FFFFFFF;
+    uint32_t idx4 = (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 |
+                     uint32_t(hash[14]) << 8  | uint32_t(hash[15])) & 0x7FFFFFFF;
 
-        QByteArray baseKey = m_bridge->exportKey("m/43'/60'/1581'/1'/0");
-        if (baseKey.isEmpty()) {
-            QJsonObject result;
-            result["error"] = m_bridge->lastError();
-            return QJsonDocument(result).toJson(QJsonDocument::Compact);
-        }
+    // Construct EIP-1581 path with deeper nesting (uses 16 bytes of hash)
+    QString eip1581Path = QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'")
+        .arg(idx1).arg(idx2).arg(idx3).arg(idx4);
+    qDebug() << "KeycardPlugin::deriveKey() - domain:" << domain << "→ path:" << eip1581Path;
 
-        // SHA256(baseKey || domain)
-        QByteArray combined = baseKey + domain.toUtf8();
-        unsigned char hash[32];
-        crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(combined.constData()), combined.size());
-
-        derivedKey = QByteArray(reinterpret_cast<const char*>(hash), 32);
-        sodium_memzero(baseKey.data(), baseKey.size());  // Clear sensitive data
-
-    } else if (version == 2) {
-        // Version 2: EIP-1581 standard - on-card BIP32 derivation at custom paths
-        qDebug() << "KeycardPlugin::deriveKey() - using v2 (EIP-1581 standard)";
-
-        // Map domain to EIP-1581 BIP32 path with deeper nesting (per mikkoph feedback)
-        // Path: m/43'/60'/1581'/<idx1>'/<idx2>'/<idx3>'/<idx4>'
-        // Uses 16 bytes of hash for better collision resistance
-        // Add "logos-" prefix for namespace separation
-        QByteArray namespaced = ("logos-" + domain).toUtf8();
-        unsigned char hash[32];
-        crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(namespaced.constData()), namespaced.size());
-
-        // Extract 4 indices from hash (use hardened derivation, 31-bit values)
-        uint32_t idx1 = (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 |
-                         uint32_t(hash[2])  << 8  | uint32_t(hash[3]))  & 0x7FFFFFFF;
-        uint32_t idx2 = (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 |
-                         uint32_t(hash[6])  << 8  | uint32_t(hash[7]))  & 0x7FFFFFFF;
-        uint32_t idx3 = (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 |
-                         uint32_t(hash[10]) << 8  | uint32_t(hash[11])) & 0x7FFFFFFF;
-        uint32_t idx4 = (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 |
-                         uint32_t(hash[14]) << 8  | uint32_t(hash[15])) & 0x7FFFFFFF;
-
-        // Construct EIP-1581 path with deeper nesting (uses 16 bytes of hash)
-        QString eip1581Path = QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'")
-            .arg(idx1).arg(idx2).arg(idx3).arg(idx4);
-        qDebug() << "KeycardPlugin::deriveKey() - domain:" << domain << "→ path:" << eip1581Path;
-
-        // Derive key on-card at custom EIP-1581 path (real BIP32 derivation)
-        derivedKey = m_bridge->exportKey(eip1581Path);
-
-    } else {
-        QJsonObject result;
-        result["error"] = QString("Invalid version %1 (supported: 1=legacy, 2=EIP-1581)").arg(version);
-        return QJsonDocument(result).toJson(QJsonDocument::Compact);
-    }
+    // Derive key on-card at custom EIP-1581 path (real BIP32 derivation)
+    QByteArray derivedKey = m_bridge->exportKey(eip1581Path);
 
     if (derivedKey.isEmpty()) {
         QJsonObject result;
@@ -240,7 +210,6 @@ QString KeycardPlugin::deriveKey(const QString& domain, int version)
 
     QJsonObject result;
     result["key"] = QString::fromUtf8(derivedKey.toHex());
-    result["version"] = version;  // Include version in response for debugging
 
     // Clear sensitive data
     sodium_memzero(derivedKey.data(), derivedKey.size());
