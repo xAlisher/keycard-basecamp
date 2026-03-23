@@ -203,7 +203,7 @@ QString deriveKey(domain)         → {"key": hex_string}
                                      prereq: AUTHORIZED or SESSION_ACTIVE
                                      returns error if state != AUTHORIZED
                                      can be called multiple times for different domains
-                                     version: 1=production (default), 2=experimental (incomplete)
+                                     EIP-1581 standard derivation at custom BIP32 paths
 
 // State Management
 QString getState()                → {"state": "READER_NOT_FOUND"|
