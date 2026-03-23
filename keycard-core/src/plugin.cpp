@@ -186,29 +186,47 @@ QString KeycardPlugin::deriveKey(const QString& domain)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Export base encryption key
-    QByteArray baseKey = m_bridge->exportKey();
+    // EIP-1581 standard: on-card BIP32 derivation at custom paths
+    // Map domain to EIP-1581 BIP32 path with deeper nesting (per mikkoph feedback)
+    // Path: m/43'/60'/1581'/<idx1>'/<idx2>'/<idx3>'/<idx4>'
+    // Uses 16 bytes of hash for better collision resistance
+    // Add "logos-" prefix for namespace separation
+    QByteArray namespaced = ("logos-" + domain).toUtf8();
+    unsigned char hash[32];
+    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(namespaced.constData()), namespaced.size());
 
-    if (baseKey.isEmpty()) {
+    // Extract 4 indices from hash (use hardened derivation, 31-bit values)
+    uint32_t idx1 = (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 |
+                     uint32_t(hash[2])  << 8  | uint32_t(hash[3]))  & 0x7FFFFFFF;
+    uint32_t idx2 = (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 |
+                     uint32_t(hash[6])  << 8  | uint32_t(hash[7]))  & 0x7FFFFFFF;
+    uint32_t idx3 = (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 |
+                     uint32_t(hash[10]) << 8  | uint32_t(hash[11])) & 0x7FFFFFFF;
+    uint32_t idx4 = (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 |
+                     uint32_t(hash[14]) << 8  | uint32_t(hash[15])) & 0x7FFFFFFF;
+
+    // Construct EIP-1581 path with deeper nesting (uses 16 bytes of hash)
+    QString eip1581Path = QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'")
+        .arg(idx1).arg(idx2).arg(idx3).arg(idx4);
+    qDebug() << "KeycardPlugin::deriveKey() - domain:" << domain << "→ path:" << eip1581Path;
+
+    // Derive key on-card at custom EIP-1581 path (real BIP32 derivation)
+    QByteArray derivedKey = m_bridge->exportKey(eip1581Path);
+
+    if (derivedKey.isEmpty()) {
         QJsonObject result;
         result["error"] = m_bridge->lastError();
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
-
-    // Derive domain-specific key: SHA256(baseKey || domain)
-    QByteArray domainBytes = domain.toUtf8();
-    QByteArray combined = baseKey + domainBytes;
-
-    unsigned char hash[32];
-    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(combined.constData()), combined.size());
-
-    QByteArray derivedKey(reinterpret_cast<const char*>(hash), 32);
 
     // Enter SESSION_ACTIVE state
     m_sessionState = SessionState::Active;
 
     QJsonObject result;
     result["key"] = QString::fromUtf8(derivedKey.toHex());
+
+    // Clear sensitive data
+    sodium_memzero(derivedKey.data(), derivedKey.size());
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }

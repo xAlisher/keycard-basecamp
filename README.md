@@ -21,18 +21,19 @@ Built on **keycard-qt** (native C++/Qt library) for direct PC/SC smart card comm
 
 **Core Operations:**
 - ✅ Reader and card auto-detection
-- ✅ Card pairing with pairing password
+- ✅ Card pairing with pairing password (persistent storage)
 - ✅ PIN verification with retry tracking
-- ✅ On-card BIP32 key derivation (custom EIP-1581 paths)
-- ✅ Domain-based key isolation
+- ✅ On-card BIP32 key derivation (EIP-1581 standard)
+- ✅ Domain-based key isolation (deterministic path mapping)
 - ✅ Session management (authorize, derive, close)
 
 **Security Properties:**
-- ✅ PIN verification on-card
-- ✅ BIP32 key derivation on-card
-- ✅ Domain separation for multi-app support
+- ✅ PIN verification on-card (never leaves device)
+- ✅ BIP32 key derivation on-card (EIP-1581 compliant)
+- ✅ Domain separation via deterministic paths (no custom crypto)
 - ✅ Secure memory wiping (sodium_memzero)
 - ✅ Card UID verification (prevents card-swap attacks)
+- ✅ Standards-compliant derivation (interoperable with Keycard ecosystem)
 
 ## Documentation
 

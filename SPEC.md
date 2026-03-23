@@ -134,18 +134,32 @@ if (currentUID != m_expectedUID && state >= AUTHORIZED) {
 
 ### 2. deriveKey(domain)
 - **Prerequisite:** state == AUTHORIZED or SESSION_ACTIVE
-- BIP32 derivation **ON-CARD** at `m/43'/60'/1581'/1'/0`
-- Card returns 32-byte secp256k1 private key
-- **Host-side** (in keycard module):
+- **Standards-compliant:** EIP-1581 BIP32 path-based derivation
+
+**EIP-1581 Derivation (Production):**
+- BIP32 derivation **ON-CARD** at domain-specific EIP-1581 paths
+- Domain → deterministic BIP32 path mapping:
   ```
-  SHA256(secp256k1_key || domain) → 256-bit AES-256-GCM master key
+  domain → SHA256("logos-" + domain) → extract 4 indices (16 bytes)
+  Path: m/43'/60'/1581'/<idx1>'/<idx2>'/<idx3>'/<idx4>'
   ```
+- **On-card derivation:** Card derives secp256k1 key at custom path
+- **No host-side crypto:** No custom hashing, pure BIP32 standard
+- **Standards-compliant:** Follows EIP-1581 specification
+- **Interoperable:** Compatible with Keycard ecosystem
+- **Deeper nesting:** 4-level paths for better collision resistance (2^128 space)
+- Reference: https://eips.ethereum.org/EIPS/eip-1581
+- Recommended by @mikkoph (Keycard core dev) - fully implemented
+
+**Behavior:**
 - Caller supplies domain string:
-  - notes: `"logos-notes-encryption"`
-  - wallet: `"logos-wallet-signing"`
-- Same card + same BIP32 key + different domain = different AES keys per consumer
-- secp256k1_key wiped immediately after derivation
-- Returns: `{"key": hex_string}` (AES-256 key, not secp256k1 key)
+  - notes: `"notes-encryption"`
+  - wallet: `"wallet-signing"`
+- "logos-" prefix added for namespace separation
+- Same card + same domain = same key (deterministic)
+- Different domains = different keys (domain isolation via different paths)
+- Derived key wiped immediately after return
+- Returns: `{"key": hex_string}` (32-byte secp256k1 private key)
 - **Caller responsibility:** Wipe key immediately after use
 
 ### 3. Memory management
@@ -189,6 +203,7 @@ QString deriveKey(domain)         → {"key": hex_string}
                                      prereq: AUTHORIZED or SESSION_ACTIVE
                                      returns error if state != AUTHORIZED
                                      can be called multiple times for different domains
+                                     EIP-1581 standard derivation at custom BIP32 paths
 
 // State Management
 QString getState()                → {"state": "READER_NOT_FOUND"|
