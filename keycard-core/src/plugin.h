@@ -26,11 +26,14 @@ public:
     // Core keycard operations
     Q_INVOKABLE QString discoverReader();
     Q_INVOKABLE QString discoverCard();
+    Q_INVOKABLE QString checkPairing();
+    Q_INVOKABLE QString pairCard(const QString& pairingPassword);
     Q_INVOKABLE QString authorize(const QString& pin);
     Q_INVOKABLE QString deriveKey(const QString& domain);
     Q_INVOKABLE QString getState();
     Q_INVOKABLE QString closeSession();
     Q_INVOKABLE QString getLastError();
+    Q_INVOKABLE QString testPCSC();  // Debug: test PC/SC directly
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);

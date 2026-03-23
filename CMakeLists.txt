@@ -16,6 +16,9 @@ find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(sodium REQUIRED IMPORTED_TARGET libsodium)
 
+# Find PC/SC (for direct reader detection)
+pkg_check_modules(pcsclite REQUIRED IMPORTED_TARGET libpcsclite)
+
 # Add keycard-qt library
 add_subdirectory(external/keycard-qt)
 

@@ -45,13 +45,14 @@ target_include_directories(keycard_plugin PRIVATE
     "${CMAKE_SOURCE_DIR}/external/keycard-qt/include"
 )
 
-# Link Qt + Logos SDK (static) + keycard-qt + OpenSSL + libsodium
+# Link Qt + Logos SDK (static) + keycard-qt + OpenSSL + libsodium + PC/SC
 target_link_libraries(keycard_plugin PRIVATE
     Qt6::Core
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
     keycard-qt
     OpenSSL::Crypto
     PkgConfig::sodium
+    PkgConfig::pcsclite
 )
 
 # Link Qt6::Nfc if available (mobile platforms)

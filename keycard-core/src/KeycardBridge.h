@@ -60,6 +60,15 @@ public:
     // Actively query current state (updates cached state).
     void pollStatus();
 
+    // Actively check if a card is present (triggers detection if found).
+    bool isCardPresent();
+
+    // Check if card is already paired. Returns JSON: {"paired":true/false}
+    QJsonObject checkPairing();
+
+    // Pair with card using pairing password. Returns JSON: {"paired":true} or {"paired":false,"error":"..."}
+    QJsonObject pairCard(const QString &pairingPassword);
+
     // Authorize with PIN. Returns JSON: {"authorized":true} or {"authorized":false,"remainingAttempts":N}
     QJsonObject authorize(const QString &pin);
 
@@ -95,6 +104,7 @@ private:
     void setState(State newState);
     void updateStatusFromCommandSet();
     QByteArray parsePrivateKeyFromTLV(const QByteArray& tlv);
+    bool isReaderPresent();  // Check if PC/SC reader is still connected
 
     std::shared_ptr<Keycard::KeycardChannel> m_channel;
     std::shared_ptr<Keycard::CommandSet> m_commandSet;
@@ -111,4 +121,7 @@ private:
     int m_remainingPUK = -1;
     bool m_keyInitialized = false;
     QString m_keyUID;
+
+    // Throttle getStatus() calls (takes ~600ms each)
+    qint64 m_lastStatusCheck = 0;
 };

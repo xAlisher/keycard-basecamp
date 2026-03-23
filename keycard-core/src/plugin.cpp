@@ -74,20 +74,30 @@ QString KeycardPlugin::discoverCard()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Actively check for card presence (helps detect cards that were inserted before detection started)
+    m_bridge->isCardPresent();
+
+    // Poll status after card check to update state
     m_bridge->pollStatus();
 
     QJsonObject result;
     KeycardBridge::State state = m_bridge->state();
 
-    if (state == KeycardBridge::State::Ready || state == KeycardBridge::State::Authorized) {
+    // Card is found if state indicates card presence (not just Ready/Authorized)
+    bool cardPresent = (state == KeycardBridge::State::Ready ||
+                       state == KeycardBridge::State::Authorized ||
+                       state == KeycardBridge::State::ConnectingCard ||
+                       state == KeycardBridge::State::EmptyKeycard ||
+                       state == KeycardBridge::State::NotKeycard ||
+                       state == KeycardBridge::State::BlockedPIN ||
+                       state == KeycardBridge::State::BlockedPUK);
+
+    if (cardPresent) {
         result["found"] = true;
         result["uid"] = m_bridge->keyUID();
 
-        // Clear session overlay when card rediscovered after closeSession()
-        // Allows CARD_PRESENT/AUTHORIZED to show through (SPEC.md transition semantics)
-        if (m_sessionState == SessionState::Closed) {
-            m_sessionState = SessionState::NoSession;
-        }
+        // Session state persists until card is removed or user re-authorizes
+        // (Closed state should stay closed until explicit re-auth)
     } else {
         result["found"] = false;
 
@@ -99,6 +109,33 @@ QString KeycardPlugin::discoverCard()
     }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::checkPairing()
+{
+    if (!m_bridge) {
+        QJsonObject result;
+        result["paired"] = false;
+        result["error"] = "Bridge not initialized";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject checkResult = m_bridge->checkPairing();
+    return QJsonDocument(checkResult).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::pairCard(const QString& pairingPassword)
+{
+    qDebug() << "KeycardPlugin::pairCard() called";
+
+    if (!m_bridge) {
+        QJsonObject result;
+        result["error"] = "Bridge not initialized - call discoverReader first";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject pairResult = m_bridge->pairCard(pairingPassword);
+    return QJsonDocument(pairResult).toJson(QJsonDocument::Compact);
 }
 
 QString KeycardPlugin::authorize(const QString& pin)
@@ -125,6 +162,13 @@ QString KeycardPlugin::deriveKey(const QString& domain)
     if (!m_bridge) {
         QJsonObject result;
         result["error"] = "Bridge not initialized";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Check if session is closed - require re-authorization
+    if (m_sessionState == SessionState::Closed) {
+        QJsonObject result;
+        result["error"] = "Session closed - authorize again to derive keys";
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
@@ -163,6 +207,9 @@ QString KeycardPlugin::getState()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Poll status to detect card/reader removal
+    m_bridge->pollStatus();
+
     QJsonObject result;
 
     // Check bridge state first - clear session overlay if card is gone
@@ -174,16 +221,21 @@ QString KeycardPlugin::getState()
                      bridgeState == KeycardBridge::State::ConnectionError);
 
     if (cardGone && (m_sessionState == SessionState::Active || m_sessionState == SessionState::Closed)) {
+        qDebug() << "KeycardPlugin::getState() - card gone, clearing session state";
         m_sessionState = SessionState::NoSession;
     }
 
     // Session state takes precedence over bridge state (only if card still present)
     if (m_sessionState == SessionState::Active) {
+        qDebug() << "KeycardPlugin::getState() - returning SESSION_ACTIVE";
         result["state"] = "SESSION_ACTIVE";
     } else if (m_sessionState == SessionState::Closed) {
+        qDebug() << "KeycardPlugin::getState() - returning SESSION_CLOSED";
         result["state"] = "SESSION_CLOSED";
     } else {
-        result["state"] = mapBridgeStateToSpec(bridgeState);
+        QString mappedState = mapBridgeStateToSpec(bridgeState);
+        qDebug() << "KeycardPlugin::getState() - returning bridge state:" << mappedState << "(bridge state enum:" << static_cast<int>(bridgeState) << ")";
+        result["state"] = mappedState;
     }
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
@@ -212,6 +264,20 @@ QString KeycardPlugin::getLastError()
     QJsonObject result;
     QString error = m_bridge->lastError();
     result["error"] = error.isEmpty() ? "" : error;
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::testPCSC()
+{
+    qDebug() << "KeycardPlugin::testPCSC() - testing PC/SC directly";
+
+    QJsonObject result;
+    result["pcsc_working"] = m_bridge ? m_bridge->isCardPresent() : false;
+    result["bridge_initialized"] = m_bridge != nullptr;
+    if (m_bridge) {
+        result["bridge_state"] = static_cast<int>(m_bridge->state());
+    }
+
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 

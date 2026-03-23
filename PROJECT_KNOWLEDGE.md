@@ -575,3 +575,224 @@ prereqText: {
 prereqMet: root.currentState === "TARGET_STATE" || root.currentState === "ALSO_VALID"
 ```
 
+## Phase X: keycard-qt Migration (Issue #10)
+
+**Status:** ✅ Week 1 Day 1 Complete (Building & Loading)
+**Branch:** issue-10-keycard-qt
+**Target:** 3-4 weeks total (20-28 days)
+
+### What Was Built (Week 1 Day 1)
+
+**Complete architecture migration** from libkeycard.so (CGO/JSON-RPC) to keycard-qt (native C++/Qt):
+
+**Size Reduction:** 54% smaller
+- Before: 14MB libkeycard.so + 2.1MB plugin = 16.1MB total
+- After: 6.4MB integrated plugin (keycard-qt statically linked)
+
+**API Compatibility:** Preserved exact same public interface
+- KeycardBridge has identical public methods
+- Existing code (logos-notes) works without changes
+- All Q_INVOKABLE methods unchanged
+
+**New Capability:** Real EIP-1581 support
+- `exportKey(path)` now does on-card BIP32 derivation at custom paths
+- Enables Issue #11 (custom EIP-1581 paths)
+
+### Technical Changes
+
+**CMakeLists.txt (root):**
+```cmake
+# Added keycard-qt as git submodule
+add_subdirectory(external/keycard-qt)
+
+# OpenSSL for secp256k1 ECDH
+find_package(OpenSSL REQUIRED)
+
+# Qt6::Nfc optional (mobile only)
+find_package(Qt6 OPTIONAL_COMPONENTS Nfc)
+```
+
+**keycard-core/CMakeLists.txt:**
+```cmake
+# Link keycard-qt + OpenSSL + libsodium
+target_link_libraries(keycard_plugin PRIVATE
+    Qt6::Core
+    "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
+    keycard-qt
+    OpenSSL::Crypto
+    PkgConfig::sodium
+)
+
+# Conditional Qt6::Nfc for mobile
+if(TARGET Qt6::Nfc)
+    target_link_libraries(keycard_plugin PRIVATE Qt6::Nfc)
+endif()
+```
+
+**KeycardBridge (complete rewrite):**
+
+Before (libkeycard.so):
+```cpp
+// JSON-RPC calls to Go library
+QString response = m_keycard->call("keycard_authorize", {pin});
+QJsonDocument doc = QJsonDocument::fromJson(response.toUtf8());
+```
+
+After (keycard-qt):
+```cpp
+// Direct C++ API calls
+m_commandSet = std::make_shared<Keycard::CommandSet>(
+    m_channel, m_pairingStorage, passwordProvider, this
+);
+
+bool success = m_commandSet->verifyPIN(pin);
+
+// Real on-card derivation at custom paths:
+QByteArray keyTLV = m_commandSet->exportKey(
+    /*derive=*/true,
+    /*makeCurrent=*/false,
+    /*path=*/path,  // CUSTOM PATH SUPPORT!
+    /*exportType=*/Keycard::APDU::P2ExportKeyPrivateAndPublic
+);
+```
+
+**MemoryPairingStorage implementation:**
+```cpp
+class MemoryPairingStorage : public Keycard::IPairingStorage {
+public:
+    bool save(const QString& instanceUID, const Keycard::PairingInfo& pairing) override {
+        m_pairings[instanceUID] = pairing;
+        return true;
+    }
+
+    Keycard::PairingInfo load(const QString& instanceUID) override {
+        auto it = m_pairings.find(instanceUID);
+        if (it != m_pairings.end()) {
+            return it->second;
+        }
+        return Keycard::PairingInfo();  // Invalid pairing (index=-1)
+    }
+
+    bool remove(const QString& instanceUID) override {
+        return m_pairings.erase(instanceUID) > 0;
+    }
+
+private:
+    std::map<QString, Keycard::PairingInfo> m_pairings;
+};
+```
+
+**TLV Parsing for key export:**
+```cpp
+QByteArray KeycardBridge::parsePrivateKeyFromTLV(const QByteArray& tlv) {
+    // TLV format: Tag 0xA1 (private key template)
+    //   Tag 0x81 (public key - 65 bytes)
+    //   Tag 0x80 (private key - 32 bytes)  ← WE WANT THIS
+    //   Tag 0x82 (chain code - 32 bytes)
+
+    for (int i = 0; i < tlv.size() - 2; ++i) {
+        if (static_cast<unsigned char>(tlv[i]) == 0x80) {
+            int length = static_cast<unsigned char>(tlv[i + 1]);
+            if (length == 32 && i + 2 + length <= tlv.size()) {
+                return tlv.mid(i + 2, length);
+            }
+        }
+    }
+    return QByteArray();  // Parse failure
+}
+```
+
+### Runtime Verification
+
+**Build & Install:**
+```bash
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+cmake --install build --prefix ~/.local/share/Logos/LogosApp
+```
+
+**Loading Test (Logos AppImage):**
+```bash
+$ lsof -p 585186 | grep keycard
+keycard_plugin.so (6.6MB) - new plugin loaded
+libpcsclite.so.1.0.0 - PC/SC library loaded
+/tmp/logos_keycard - Unix socket IPC active
+
+$ journalctl --user | grep KeycardPlugin
+KeycardPlugin constructed
+Logos API initialized
+KeycardBridge created
+
+Module stats: CPU 0-0.67%, Memory 22.22 MB
+```
+
+**Status:** ✅ Plugin loads and runs successfully with AppImage.
+
+### Known Issues
+
+**Nix Build Not Working:**
+```bash
+$ /nix/store/.../bin/LogosBasecamp
+error while loading shared libraries: libQt6RemoteObjects.so.6:
+cannot open shared object file: No such file or directory
+```
+
+**Cause:** Nix-built Logos Basecamp missing Qt6RemoteObjects dependency.
+**Workaround:** Use Logos AppImage for testing (works correctly).
+**Impact:** Development unblocked, Nix build issue is upstream.
+
+### Next Steps (Week 1 Days 2-5)
+
+**Day 2: Testing & Bug Fixes**
+- Test with real Keycard hardware
+- Verify state transitions (cardReady, cardLost signals)
+- Test pairing flow
+- Validate PIN verification
+
+**Day 3: EIP-1581 Path Support**
+- Implement `domainToEIP1581Path()` in plugin.cpp
+- Update `deriveKey()` to use custom paths instead of fixed path
+- Test multiple domains derive to different paths
+
+**Days 4-5: Polish & Documentation**
+- Update SPEC.md (remove libkeycard.so references)
+- Update README.md (build instructions)
+- Add keycard-qt API notes to LESSONS.md
+- Create PR for Issue #10
+
+### Lessons Learned
+
+**38. keycard-qt requires OpenSSL for secp256k1 ECDH**
+The keycard-qt library uses OpenSSL's EC_KEY functions for ECDH pairing. Build fails without `find_package(OpenSSL REQUIRED)`.
+
+**39. PairingStorage interface returns values, not optionals**
+The IPairingStorage::load() method returns `PairingInfo` directly (with index=-1 for invalid), not `std::optional<PairingInfo>`.
+
+**40. Qt6::Nfc should be optional, not required**
+Desktop Linux doesn't have Qt6::Nfc. Use `OPTIONAL_COMPONENTS` and conditional linking:
+```cmake
+find_package(Qt6 OPTIONAL_COMPONENTS Nfc)
+if(TARGET Qt6::Nfc)
+    target_link_libraries(keycard_plugin PRIVATE Qt6::Nfc)
+endif()
+```
+
+**41. keycard-qt TLV format for exportKey**
+The exportKey() response is TLV-encoded:
+- Tag 0xA1: Private key template container
+- Tag 0x80 (32 bytes): Private key (secp256k1)
+- Tag 0x81 (65 bytes): Public key
+- Tag 0x82 (32 bytes): Chain code
+
+Parse tag 0x80 to extract the 32-byte private key.
+
+**42. Nix-built Logos Basecamp may have missing Qt dependencies**
+The Nix-built `/nix/store/.../bin/LogosBasecamp` binary can fail to run if Qt6RemoteObjects or other Qt libraries are missing. Use AppImage for development if Nix build is broken.
+
+**43. libpcsclite-dev required for keycard-qt PC/SC backend**
+The keycard-qt library's PC/SC backend needs libpcsclite-dev installed:
+```bash
+sudo apt-get install libpcsclite-dev
+```
+Clean rebuild required after installing: `rm -rf build && cmake -B build`.
+
