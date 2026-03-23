@@ -148,6 +148,14 @@ QString KeycardPlugin::unpairCard()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Check if session is closed - require re-authorization
+    if (m_sessionState == SessionState::Closed) {
+        QJsonObject result;
+        result["unpaired"] = false;
+        result["error"] = "Session closed - authorize again to unpair card";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
     QJsonObject unpairResult = m_bridge->unpairCard();
     return QJsonDocument(unpairResult).toJson(QJsonDocument::Compact);
 }

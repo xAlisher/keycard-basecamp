@@ -12,16 +12,13 @@
 #include <QDateTime>
 #include <QStandardPaths>
 
-// Debug logging helper
-static void debugLog(const QString& msg) {
-    QFile file("/tmp/keycard-debug.log");
-    if (file.open(QIODevice::Append | QIODevice::Text)) {
-        QTextStream out(&file);
-        out << QDateTime::currentDateTime().toString("hh:mm:ss.zzz") << " " << msg << "\n";
-        file.flush();
-    }
-    qDebug() << msg;  // Also try qDebug
-}
+// Debug logging - only enabled with KEYCARD_DEBUG build flag
+// No file logging to /tmp - qDebug() output only
+#ifdef KEYCARD_DEBUG
+    #define KEYCARD_LOG(msg) qDebug() << "[KEYCARD]" << QDateTime::currentDateTime().toString("hh:mm:ss.zzz") << msg
+#else
+    #define KEYCARD_LOG(msg) do {} while(0)
+#endif
 
 KeycardBridge::KeycardBridge(QObject *parent)
     : QObject(parent)
@@ -275,7 +272,7 @@ QJsonObject KeycardBridge::pairCard(const QString &pairingPassword)
         }
 
         qDebug() << "KeycardBridge: Pairing successful, index:" << pairingInfo.index;
-        qDebug() << "KeycardBridge: Saving pairing for UID:" << m_keyUID;
+        qDebug() << "KeycardBridge: Saving pairing (UID length:" << m_keyUID.length() << ")";
 
         // Save pairing - CRITICAL: must persist to disk
         bool saved = m_pairingStorage->save(m_keyUID, pairingInfo);
@@ -357,7 +354,7 @@ QJsonObject KeycardBridge::unpairCard()
         }
 
         // Remove from local storage
-        qDebug() << "KeycardBridge: Removing pairing from storage for UID:" << m_keyUID;
+        qDebug() << "KeycardBridge: Removing pairing from storage (UID length:" << m_keyUID.length() << ")";
         bool removed = m_pairingStorage->remove(m_keyUID);
         qDebug() << "KeycardBridge: Storage remove result:" << removed;
 
@@ -383,12 +380,12 @@ QJsonObject KeycardBridge::unpairCard()
 
 QJsonObject KeycardBridge::authorize(const QString &pin)
 {
-    debugLog("========================================");
-    debugLog("KeycardBridge::authorize() START");
-    debugLog(QString("PIN length: %1").arg(pin.length()));
-    debugLog(QString("m_cardReady: %1").arg(m_cardReady));
-    debugLog(QString("m_keyUID: %1").arg(m_keyUID));
-    debugLog("========================================");
+    KEYCARD_LOG("========================================");
+    KEYCARD_LOG("KeycardBridge::authorize() START");
+    KEYCARD_LOG(QString("PIN length: %1").arg(pin.length()));
+    KEYCARD_LOG(QString("m_cardReady: %1").arg(m_cardReady));
+    KEYCARD_LOG(QString("m_keyUID present: %1").arg(!m_keyUID.isEmpty()));
+    KEYCARD_LOG("========================================");
 
     QJsonObject result;
 
@@ -396,55 +393,55 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
         result["authorized"] = false;
         result["error"] = "Card not ready";
         m_lastError = "Card not ready";
-        debugLog(QString("ERROR: Card not ready - m_commandSet: %1 m_cardReady: %2").arg(m_commandSet != nullptr).arg(m_cardReady));
+        KEYCARD_LOG(QString("ERROR: Card not ready - m_commandSet: %1 m_cardReady: %2").arg(m_commandSet != nullptr).arg(m_cardReady));
         return result;
     }
 
     try {
-        debugLog("STEP 1: Loading pairing from storage...");
+        KEYCARD_LOG("STEP 1: Loading pairing from storage...");
         // Check if we have pairing, if not, try to load it
         auto pairing = m_pairingStorage->load(m_keyUID);
-        debugLog(QString("STEP 1: Pairing loaded - index: %1").arg(pairing.index));
+        KEYCARD_LOG(QString("STEP 1: Pairing loaded - index: %1").arg(pairing.index));
 
         if (pairing.index == -1) {
             // No pairing stored - need to pair first
             result["authorized"] = false;
             result["error"] = "Card not paired - pairing required";
             m_lastError = "Not paired";
-            debugLog(QString("ERROR: Card not paired, instanceUID: %1").arg(m_keyUID));
+            KEYCARD_LOG("ERROR: Card not paired (pairing required)");
             return result;
         }
 
         // Re-select applet to ensure fresh connection
-        debugLog("STEP 2: Calling select() to re-select applet...");
-        debugLog("STEP 2: BEFORE select() call");
+        KEYCARD_LOG("STEP 2: Calling select() to re-select applet...");
+        KEYCARD_LOG("STEP 2: BEFORE select() call");
         m_commandSet->select();
-        debugLog("STEP 2: AFTER select() call - SUCCESS");
+        KEYCARD_LOG("STEP 2: AFTER select() call - SUCCESS");
 
-        debugLog("STEP 3: Opening secure channel...");
-        debugLog("STEP 3: BEFORE openSecureChannel() call");
+        KEYCARD_LOG("STEP 3: Opening secure channel...");
+        KEYCARD_LOG("STEP 3: BEFORE openSecureChannel() call");
 
         // Open secure channel
         bool scOpened = m_commandSet->openSecureChannel(pairing);
 
-        debugLog(QString("STEP 3: AFTER openSecureChannel() call - result: %1").arg(scOpened));
+        KEYCARD_LOG(QString("STEP 3: AFTER openSecureChannel() call - result: %1").arg(scOpened));
 
         if (!scOpened) {
             QString err = m_commandSet->lastError();
             result["authorized"] = false;
             result["error"] = "Failed to open secure channel: " + err;
             m_lastError = "Secure channel failed: " + err;
-            debugLog(QString("ERROR: Secure channel failed: %1").arg(err));
+            KEYCARD_LOG(QString("ERROR: Secure channel failed: %1").arg(err));
             return result;
         }
 
-        debugLog("STEP 4: Verifying PIN...");
-        debugLog("STEP 4: BEFORE verifyPIN() call");
+        KEYCARD_LOG("STEP 4: Verifying PIN...");
+        KEYCARD_LOG("STEP 4: BEFORE verifyPIN() call");
 
         // Verify PIN
         bool success = m_commandSet->verifyPIN(pin);
 
-        debugLog(QString("STEP 4: AFTER verifyPIN() call - result: %1").arg(success));
+        KEYCARD_LOG(QString("STEP 4: AFTER verifyPIN() call - result: %1").arg(success));
 
         if (success) {
             result["authorized"] = true;
@@ -456,7 +453,7 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
                 m_remainingPIN = status.pinRetryCount;
                 m_remainingPUK = status.pukRetryCount;
                 m_keyInitialized = status.keyInitialized;
-                debugLog(QString("KeycardBridge: Authorized! PIN: %1 PUK: %2 Initialized: %3")
+                KEYCARD_LOG(QString("KeycardBridge: Authorized! PIN: %1 PUK: %2 Initialized: %3")
                          .arg(m_remainingPIN).arg(m_remainingPUK).arg(m_keyInitialized));
             }
         } else {
@@ -467,7 +464,7 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
             if (status.valid) {
                 m_remainingPIN = status.pinRetryCount;
                 result["remainingAttempts"] = m_remainingPIN;
-                debugLog(QString("KeycardBridge: PIN verification failed, remaining: %1").arg(m_remainingPIN));
+                KEYCARD_LOG(QString("KeycardBridge: PIN verification failed, remaining: %1").arg(m_remainingPIN));
 
                 if (m_remainingPIN == 0) {
                     setState(State::BlockedPIN);
@@ -487,10 +484,10 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
         result["authorized"] = false;
         result["error"] = e.what();
         m_lastError = e.what();
-        debugLog(QString("KeycardBridge::authorize() exception: %1").arg(e.what()));
+        KEYCARD_LOG(QString("KeycardBridge::authorize() exception: %1").arg(e.what()));
     }
 
-    debugLog("KeycardBridge::authorize() END");
+    KEYCARD_LOG("KeycardBridge::authorize() END");
     return result;
 }
 
@@ -562,7 +559,7 @@ QByteArray KeycardBridge::loginFlow(const QString &pin)
 
 void KeycardBridge::onCardReady(const QString& uid)
 {
-    qDebug() << "KeycardBridge::onCardReady() signal received, uid from signal:" << uid;
+    qDebug() << "KeycardBridge::onCardReady() signal received, uid length:" << uid.length();
 
     m_cardReady = true;
 
@@ -574,7 +571,7 @@ void KeycardBridge::onCardReady(const QString& uid)
 
         // Get instance UID from appInfo (full 16 bytes)
         QString instanceUID = QString::fromUtf8(appInfo.instanceUID.toHex());
-        qDebug() << "KeycardBridge::onCardReady() - instanceUID from appInfo:" << instanceUID;
+        qDebug() << "KeycardBridge::onCardReady() - instanceUID length:" << instanceUID.length();
 
         if (!instanceUID.isEmpty() && instanceUID.length() == 32) {
             m_keyUID = instanceUID;
@@ -738,7 +735,7 @@ bool KeycardBridge::isCardPresent()
                     try {
                         auto appInfo = m_commandSet->select();
                         QString uid = QString::fromUtf8(appInfo.instanceUID.toHex());
-                        qDebug() << "KeycardBridge::isCardPresent: Select successful, UID:" << uid << "initialized:" << appInfo.initialized;
+                        qDebug() << "KeycardBridge::isCardPresent: Select successful, UID present:" << !uid.isEmpty() << "initialized:" << appInfo.initialized;
 
                         if (!uid.isEmpty()) {
                             // Set card info from ApplicationInfo (doesn't need secure channel)
@@ -797,7 +794,7 @@ QByteArray KeycardBridge::parsePrivateKeyFromTLV(const QByteArray& tlv)
     //   Tag 0x80 (private key - 32 bytes)
     //   Tag 0x82 (chain code - 32 bytes)
 
-    qDebug() << "KeycardBridge: Parsing TLV, size:" << tlv.size() << "hex:" << tlv.toHex();
+    qDebug() << "KeycardBridge: Parsing TLV, size:" << tlv.size() << "bytes";
 
     if (tlv.size() < 10) {
         qWarning() << "TLV too short:" << tlv.size();
@@ -815,7 +812,7 @@ QByteArray KeycardBridge::parsePrivateKeyFromTLV(const QByteArray& tlv)
             // Private key is always 32 bytes
             if (length == 32 && i + 2 + length <= tlv.size()) {
                 QByteArray key = tlv.mid(i + 2, length);
-                qDebug() << "Extracted private key:" << key.toHex();
+                qDebug() << "Extracted private key of length:" << key.size();
                 return key;
             } else if (length != 32) {
                 // Might be public key (65 bytes), skip it
@@ -826,6 +823,5 @@ QByteArray KeycardBridge::parsePrivateKeyFromTLV(const QByteArray& tlv)
     }
 
     qWarning() << "Private key tag (0x80 or 0x81 with 32 bytes) not found in TLV";
-    qDebug() << "TLV dump: First 40 bytes:" << tlv.left(40).toHex();
     return QByteArray();
 }
