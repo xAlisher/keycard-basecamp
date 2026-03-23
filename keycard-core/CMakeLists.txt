@@ -11,6 +11,9 @@ else()
     set(LOGOS_LIBLOGOS_HEADERS "/nix/store/092zxk8qbm9zxqigq1z0a5l901a068cz-logos-liblogos-headers-0.1.0/include")
 endif()
 
+# Debug option
+option(KEYCARD_DEBUG "Enable verbose keycard debug logging" OFF)
+
 # Plugin sources
 set(PLUGIN_SOURCES
     src/plugin.h
@@ -60,6 +63,12 @@ target_link_libraries(keycard_plugin PRIVATE
 # Link Qt6::Nfc if available (mobile platforms)
 if(TARGET Qt6::Nfc)
     target_link_libraries(keycard_plugin PRIVATE Qt6::Nfc)
+endif()
+
+# Enable debug logging if requested
+if(KEYCARD_DEBUG)
+    target_compile_definitions(keycard_plugin PRIVATE KEYCARD_DEBUG)
+    message(STATUS "Keycard debug logging enabled")
 endif()
 
 # Install paths (use LogosBasecamp for development)
