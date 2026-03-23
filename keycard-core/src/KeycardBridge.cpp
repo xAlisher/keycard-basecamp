@@ -571,7 +571,7 @@ void KeycardBridge::onCardReady(const QString& uid)
 
         // Get instance UID from appInfo (full 16 bytes)
         QString instanceUID = QString::fromUtf8(appInfo.instanceUID.toHex());
-        qDebug() << "KeycardBridge::onCardReady() - instanceUID from appInfo:" << instanceUID;
+        qDebug() << "KeycardBridge::onCardReady() - instanceUID length:" << instanceUID.length();
 
         if (!instanceUID.isEmpty() && instanceUID.length() == 32) {
             m_keyUID = instanceUID;
