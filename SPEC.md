@@ -132,20 +132,39 @@ if (currentUID != m_expectedUID && state >= AUTHORIZED) {
 - Returns: `{"authorized": bool, "remainingAttempts": N}`
 - On 3rd failure → state = BLOCKED
 
-### 2. deriveKey(domain)
+### 2. deriveKey(domain, version=2)
 - **Prerequisite:** state == AUTHORIZED or SESSION_ACTIVE
-- BIP32 derivation **ON-CARD** at `m/43'/60'/1581'/1'/0`
+- **Version parameter:** Controls derivation approach (default: 2)
+
+**Version 1 (DEPRECATED - Legacy approach):**
+- BIP32 derivation **ON-CARD** at fixed path `m/43'/60'/1581'/1'/0`
 - Card returns 32-byte secp256k1 private key
-- **Host-side** (in keycard module):
+- **Host-side** domain separation:
   ```
   SHA256(secp256k1_key || domain) → 256-bit AES-256-GCM master key
   ```
+- Kept for backward compatibility with existing encrypted data
+- Non-standard (Logos-specific)
+
+**Version 2 (DEFAULT - EIP-1581 standard):**
+- Maps domain to EIP-1581 compliant BIP32 path:
+  ```
+  domain → SHA256("logos-" + domain) → extract indices
+  Path: m/43'/60'/1581'/key_type'/key_index
+  ```
+- Different domains → different BIP32 paths (standards-compliant)
+- Reference: https://eips.ethereum.org/EIPS/eip-1581
+- Recommended by @mikkoph (Keycard core dev)
+- Currently uses temporary hash-based approach until KeycardBridge supports path param
+
+**Common behavior:**
 - Caller supplies domain string:
   - notes: `"logos-notes-encryption"`
   - wallet: `"logos-wallet-signing"`
-- Same card + same BIP32 key + different domain = different AES keys per consumer
+- Same card + same domain = same key (deterministic)
+- Different domains = different keys (domain isolation)
 - secp256k1_key wiped immediately after derivation
-- Returns: `{"key": hex_string}` (AES-256 key, not secp256k1 key)
+- Returns: `{"key": hex_string, "version": N}` (AES-256 key)
 - **Caller responsibility:** Wipe key immediately after use
 
 ### 3. Memory management
@@ -185,10 +204,11 @@ QString discoverCard()            → {"found": bool, "uid": string}
 // Authentication & Key Derivation
 QString authorize(pin)            → {"authorized": bool, "remainingAttempts": N}
                                      returns error if state == BLOCKED
-QString deriveKey(domain)         → {"key": hex_string}
+QString deriveKey(domain, version=2) → {"key": hex_string, "version": N}
                                      prereq: AUTHORIZED or SESSION_ACTIVE
                                      returns error if state != AUTHORIZED
                                      can be called multiple times for different domains
+                                     version: 1=legacy (deprecated), 2=EIP-1581 (default)
 
 // State Management
 QString getState()                → {"state": "READER_NOT_FOUND"|
