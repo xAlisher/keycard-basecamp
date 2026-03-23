@@ -5,6 +5,6 @@
   "author": "alisher",
   "type": "core",
   "category": "security",
-  "main": "keycard_plugin.so",
+  "main": "keycard_plugin",
   "dependencies": []
 }
