@@ -132,7 +132,7 @@ QString KeycardPlugin::deriveKey(const QString& domain, int version)
 
     if (version == 1) {
         // ============================================================
-        // Version 1: Legacy approach (DEPRECATED)
+        // Version 1: Current production approach (DEFAULT)
         // ============================================================
         // Uses fixed BIP32 path + SHA256 hashing for domain separation
         // Path: m/43'/60'/1581'/1'/0 (always the same)
@@ -167,28 +167,31 @@ QString KeycardPlugin::deriveKey(const QString& domain, int version)
 
     } else if (version == 2) {
         // ============================================================
-        // Version 2: EIP-1581 standard approach (DEFAULT)
+        // Version 2: EIP-1581 path mapping (EXPERIMENTAL / INCOMPLETE)
         // ============================================================
-        // Uses different BIP32 paths for different domains
-        // Path: m/43'/60'/1581'/key_type'/key_index (varies per domain)
-        // Derivation: Pure BIP32 (on-card)
+        // CURRENT STATE: Partial implementation, not yet standards-compliant
         //
-        // Security: Cryptographically sound (BIP32 hardened derivation)
-        // Standard: EIP-1581 compliant (Ethereum/Keycard standard)
-        // Interoperability: Compatible with other Keycard apps
+        // What works:
+        // - Deterministic domain → EIP-1581 path mapping
+        // - Path: m/43'/60'/1581'/key_type'/key_index (calculated from domain)
+        //
+        // What's missing:
+        // - KeycardBridge::exportKey() doesn't use path parameter yet
+        // - Still does SHA256(baseKey || eip1581Path) on host side
+        // - NOT true on-card BIP32 derivation at different paths
+        //
+        // This is SCAFFOLDING for future real EIP-1581 implementation.
+        // Do NOT use in production until KeycardBridge supports custom paths.
+        //
+        // TODO: Update KeycardBridge::exportKey() to actually derive at path
         // Reference: https://eips.ethereum.org/EIPS/eip-1581
         // Feedback: Recommended by @mikkoph (Keycard core dev)
         // ============================================================
 
         QString eip1581Path = domainToEIP1581Path(domain);
-        qDebug() << "KeycardPlugin::deriveKey() - EIP-1581 path:" << eip1581Path;
+        qDebug() << "KeycardPlugin::deriveKey() - EIP-1581 path (NOT YET USED):" << eip1581Path;
 
-        // Note: Currently exportKey() uses fixed path m/43'/60'/1581'/1'/0
-        // TODO: Update KeycardBridge::exportKey() to accept path parameter
-        // For now, fall back to v1 behavior with v2 path calculation
-        // This is a partial implementation pending KeycardBridge update
-
-        QByteArray baseKey = m_bridge->exportKey();
+        QByteArray baseKey = m_bridge->exportKey();  // Still fixed path!
 
         if (baseKey.isEmpty()) {
             QJsonObject result;
@@ -196,8 +199,8 @@ QString KeycardPlugin::deriveKey(const QString& domain, int version)
             return QJsonDocument(result).toJson(QJsonDocument::Compact);
         }
 
-        // Temporary: Use SHA256(baseKey || eip1581Path) until exportKey supports paths
-        // This maintains determinism while we migrate KeycardBridge
+        // WARNING: Still using host-side hashing, not real EIP-1581!
+        // This is just v1 with path string instead of domain string
         QByteArray pathBytes = eip1581Path.toUtf8();
         QByteArray combined = baseKey + pathBytes;
 

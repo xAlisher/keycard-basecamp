@@ -132,30 +132,32 @@ if (currentUID != m_expectedUID && state >= AUTHORIZED) {
 - Returns: `{"authorized": bool, "remainingAttempts": N}`
 - On 3rd failure → state = BLOCKED
 
-### 2. deriveKey(domain, version=2)
+### 2. deriveKey(domain, version=1)
 - **Prerequisite:** state == AUTHORIZED or SESSION_ACTIVE
-- **Version parameter:** Controls derivation approach (default: 2)
+- **Version parameter:** Controls derivation approach (default: 1)
 
-**Version 1 (DEPRECATED - Legacy approach):**
+**Version 1 (DEFAULT - Production):**
 - BIP32 derivation **ON-CARD** at fixed path `m/43'/60'/1581'/1'/0`
 - Card returns 32-byte secp256k1 private key
 - **Host-side** domain separation:
   ```
   SHA256(secp256k1_key || domain) → 256-bit AES-256-GCM master key
   ```
-- Kept for backward compatibility with existing encrypted data
-- Non-standard (Logos-specific)
+- Proven in production (logos-notes)
+- Non-standard (Logos-specific) but cryptographically sound
 
-**Version 2 (DEFAULT - EIP-1581 standard):**
-- Maps domain to EIP-1581 compliant BIP32 path:
+**Version 2 (EXPERIMENTAL - Incomplete EIP-1581 scaffolding):**
+- **Current state:** Path mapping implemented, but NOT used for on-card derivation
+- Calculates EIP-1581 compliant path:
   ```
   domain → SHA256("logos-" + domain) → extract indices
   Path: m/43'/60'/1581'/key_type'/key_index
   ```
-- Different domains → different BIP32 paths (standards-compliant)
+- **Problem:** Still does `SHA256(baseKey || eip1581Path)` on host (same as v1)
+- **Missing:** KeycardBridge needs update to derive at custom BIP32 paths on-card
+- **Status:** Experimental scaffolding, DO NOT use in production
 - Reference: https://eips.ethereum.org/EIPS/eip-1581
-- Recommended by @mikkoph (Keycard core dev)
-- Currently uses temporary hash-based approach until KeycardBridge supports path param
+- Recommended by @mikkoph (Keycard core dev) - not yet fully implemented
 
 **Common behavior:**
 - Caller supplies domain string:
@@ -204,11 +206,11 @@ QString discoverCard()            → {"found": bool, "uid": string}
 // Authentication & Key Derivation
 QString authorize(pin)            → {"authorized": bool, "remainingAttempts": N}
                                      returns error if state == BLOCKED
-QString deriveKey(domain, version=2) → {"key": hex_string, "version": N}
+QString deriveKey(domain, version=1) → {"key": hex_string, "version": N}
                                      prereq: AUTHORIZED or SESSION_ACTIVE
                                      returns error if state != AUTHORIZED
                                      can be called multiple times for different domains
-                                     version: 1=legacy (deprecated), 2=EIP-1581 (default)
+                                     version: 1=production (default), 2=experimental (incomplete)
 
 // State Management
 QString getState()                → {"state": "READER_NOT_FOUND"|

@@ -21,7 +21,7 @@ This module provides smartcard authentication primitives for the Logos Basecamp 
 - **keycard-core**: C++ plugin wrapping libkeycard.so (status-keycard-go via CGO)
   - KeycardBridge: JSON-RPC communication with Go library
   - 7-state machine: READER_NOT_FOUND → CARD_PRESENT → AUTHORIZED → SESSION_ACTIVE → SESSION_CLOSED
-  - Domain-based derivation: EIP-1581 compliant paths (v2, default) or legacy SHA256 (v1, deprecated)
+  - Domain-based derivation: SHA256(baseKey || domain) (v1, production default)
 - **keycard-ui**: QML debug UI test harness
   - 7 action rows (one per API method)
   - Live state indicator (500ms polling)
@@ -58,13 +58,13 @@ logos.callModule("keycard", "discoverCard", [])
 logos.callModule("keycard", "authorize", ["000000"])
 // → {"authorized": true}
 
-// 4. Derive app-specific key (EIP-1581 standard, default)
+// 4. Derive app-specific key (default: v1 production)
 logos.callModule("keycard", "deriveKey", ["my-app-domain"])
-// → {"key": "64-char-hex-key", "version": 2}
-
-// 4b. Derive with legacy approach (for backward compatibility)
-logos.callModule("keycard", "deriveKey", ["my-app-domain", 1])
 // → {"key": "64-char-hex-key", "version": 1}
+
+// 4b. Experimental EIP-1581 scaffolding (incomplete, not recommended)
+logos.callModule("keycard", "deriveKey", ["my-app-domain", 2])
+// → {"key": "64-char-hex-key", "version": 2}  // WARNING: Not true EIP-1581 yet!
 
 // 5. Get current state
 logos.callModule("keycard", "getState", [])

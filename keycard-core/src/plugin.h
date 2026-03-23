@@ -27,7 +27,7 @@ public:
     Q_INVOKABLE QString discoverReader();
     Q_INVOKABLE QString discoverCard();
     Q_INVOKABLE QString authorize(const QString& pin);
-    Q_INVOKABLE QString deriveKey(const QString& domain, int version = 2);
+    Q_INVOKABLE QString deriveKey(const QString& domain, int version = 1);
     Q_INVOKABLE QString getState();
     Q_INVOKABLE QString closeSession();
     Q_INVOKABLE QString getLastError();
