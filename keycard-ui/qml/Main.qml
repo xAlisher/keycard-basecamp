@@ -13,6 +13,7 @@ Rectangle {
     property bool cardFound: false
     property string cardUID: ""
     property bool cardPaired: false
+    property int pairingSlot: -1
     property bool autoDetectionStarted: false
 
     // Auto-start detection on load
@@ -58,11 +59,14 @@ Rectangle {
                         try {
                             var pairObj = JSON.parse(pairingResult)
                             root.cardPaired = pairObj.paired === true
+                            root.pairingSlot = pairObj.pairingIndex || -1
                         } catch (e) {
                             root.cardPaired = false
+                            root.pairingSlot = -1
                         }
                     } else {
                         root.cardPaired = false
+                        root.pairingSlot = -1
                     }
                 } catch (e) {
                     root.cardFound = false
@@ -149,44 +153,239 @@ Rectangle {
                 resultText: root.cardFound ? '{"found":true,"uid":"' + root.cardUID + '"}' : '{"found":false}'
             }
 
-            ActionRow {
+            // Custom Pairing Row (shows Pair or Unpair based on status)
+            Rectangle {
                 id: pairCardRow
-                title: "1. Pair Card"
-                prereqText: {
-                    if (root.cardPaired) return "✓ Already paired"
-                    if (root.currentState === "CARD_PRESENT" ||
-                        root.currentState === "AUTHORIZED" ||
-                        root.currentState === "SESSION_ACTIVE") return "Ready to pair"
-                    if (root.currentState === "CARD_NOT_PRESENT") return "✗ Card not present"
-                    if (root.currentState === "READER_NOT_FOUND") return "✗ Reader not found"
-                    return "Ready to pair"
-                }
-                prereqMet: (root.currentState === "CARD_PRESENT" ||
-                           root.currentState === "AUTHORIZED" ||
-                           root.currentState === "SESSION_ACTIVE") && !root.cardPaired
-                showDomainInput: true
-                inputPlaceholder: "KeycardDefaultPairing"
-                inputLabel: "Pairing Password:"
-                defaultInputValue: "KeycardDefaultPairing"
-                executeFunc: function() {
-                    var password = pairCardRow.inputValue
-                    if (password.length === 0) {
-                        password = "KeycardDefaultPairing"  // Use default if empty
-                    }
-                    if (password.length < 5 || password.length > 25) {
-                        return '{"error":"Pairing password must be 5-25 characters"}'
-                    }
-                    var result = logos.callModule("keycard", "pairCard", [password])
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.cardPaired ? 100 : 140
+                color: "#1a1a1a"
+                border.color: "#555555"
+                border.width: 1
+                radius: 5
 
-                    // Update pairing status after pairing
-                    try {
-                        var obj = JSON.parse(result)
-                        if (obj.paired === true) {
-                            root.cardPaired = true
+                property alias inputValue: pairingPasswordField.text
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 15
+                    spacing: 10
+
+                    // Title and Status
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 15
+
+                        Text {
+                            text: "1. Pair Card"
+                            font.pixelSize: 16
+                            font.bold: true
+                            color: "#ffffff"
+                            Layout.preferredWidth: 200
                         }
-                    } catch (e) {}
 
-                    return result
+                        Text {
+                            text: {
+                                if (root.cardPaired) {
+                                    if (root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE") {
+                                        return "✓ Paired (slot " + root.pairingSlot + ") - Authorized"
+                                    } else {
+                                        return "✓ Paired (slot " + root.pairingSlot + ") - Authorize to unpair"
+                                    }
+                                }
+                                if (root.currentState === "CARD_PRESENT" ||
+                                    root.currentState === "AUTHORIZED" ||
+                                    root.currentState === "SESSION_ACTIVE") return "Ready to pair"
+                                if (root.currentState === "CARD_NOT_PRESENT") return "✗ Card not present"
+                                if (root.currentState === "READER_NOT_FOUND") return "✗ Reader not found"
+                                return "Ready to pair"
+                            }
+                            font.pixelSize: 13
+                            color: {
+                                if (root.cardPaired) {
+                                    if (root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE") {
+                                        return "#00ff00"  // Green when can unpair
+                                    } else {
+                                        return "#ffaa00"  // Orange when need to authorize
+                                    }
+                                }
+                                return (root.currentState === "CARD_PRESENT" ||
+                                        root.currentState === "AUTHORIZED" ||
+                                        root.currentState === "SESSION_ACTIVE") ? "#00ff00" : "#ff4444"
+                            }
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            text: root.cardPaired ? "Unpair" : "Pair"
+                            enabled: {
+                                if (root.cardPaired) {
+                                    // Unpair requires authorization
+                                    return root.currentState === "AUTHORIZED" || root.currentState === "SESSION_ACTIVE"
+                                } else {
+                                    // Pair works when card present
+                                    return root.currentState === "CARD_PRESENT" ||
+                                           root.currentState === "AUTHORIZED" ||
+                                           root.currentState === "SESSION_ACTIVE"
+                                }
+                            }
+                            Layout.preferredWidth: 100
+                            onClicked: {
+                                var result
+                                if (root.cardPaired) {
+                                    // Unpair
+                                    result = logos.callModule("keycard", "unpairCard", [])
+                                    pairResultDisplay.text = result
+                                    try {
+                                        var obj = JSON.parse(result)
+                                        if (obj.unpaired === true) {
+                                            root.cardPaired = false
+                                            root.pairingSlot = -1
+                                            pairResultDisplay.color = "#00ff00"
+                                        } else {
+                                            pairResultDisplay.color = "#ff4444"
+                                        }
+                                    } catch (e) {
+                                        pairResultDisplay.color = "#ffaa00"
+                                    }
+                                } else {
+                                    // Pair
+                                    var password = pairingPasswordField.text || "KeycardDefaultPairing"
+                                    if (password.length < 5 || password.length > 25) {
+                                        result = '{"error":"Pairing password must be 5-25 characters"}'
+                                        pairResultDisplay.text = result
+                                        pairResultDisplay.color = "#ff4444"
+                                        return
+                                    }
+                                    result = logos.callModule("keycard", "pairCard", [password])
+                                    pairResultDisplay.text = result
+                                    try {
+                                        var obj = JSON.parse(result)
+                                        if (obj.paired === true) {
+                                            root.cardPaired = true
+                                            root.pairingSlot = obj.pairingIndex || -1
+                                            pairResultDisplay.color = "#00ff00"
+                                        } else {
+                                            pairResultDisplay.color = "#ff4444"
+                                        }
+                                    } catch (e) {
+                                        pairResultDisplay.color = "#ffaa00"
+                                    }
+                                }
+                            }
+
+                            background: Rectangle {
+                                color: parent.enabled ? (parent.down ? "#555555" : "#3a3a3a") : "#2a2a2a"
+                                border.color: parent.enabled ? "#666666" : "#444444"
+                                border.width: 1
+                                radius: 3
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                color: parent.enabled ? "#ffffff" : "#666666"
+                                font.pixelSize: 13
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
+
+                    // Password Input (only show when not paired)
+                    RowLayout {
+                        visible: !root.cardPaired
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        Text {
+                            text: "Pairing Password:"
+                            color: "#aaaaaa"
+                            font.pixelSize: 13
+                        }
+
+                        TextField {
+                            id: pairingPasswordField
+                            placeholderText: "KeycardDefaultPairing"
+                            text: "KeycardDefaultPairing"
+                            Layout.fillWidth: true
+                            color: "#ffffff"
+                            background: Rectangle {
+                                color: "#0a0a0a"
+                                border.color: "#555555"
+                                border.width: 1
+                                radius: 3
+                            }
+                        }
+                    }
+
+                    // Result Display
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 5
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 30
+                            color: "#0a0a0a"
+                            border.color: "#555555"
+                            border.width: 1
+                            radius: 3
+
+                            ScrollView {
+                                anchors.fill: parent
+                                anchors.margins: 5
+                                clip: true
+
+                                TextEdit {
+                                    id: pairResultDisplay
+                                    text: "No result yet"
+                                    font.pixelSize: 11
+                                    font.family: "monospace"
+                                    color: "#888888"
+                                    wrapMode: TextEdit.Wrap
+                                    readOnly: true
+                                    selectByMouse: true
+                                }
+                            }
+                        }
+
+                        Button {
+                            text: "Copy"
+                            Layout.preferredWidth: 60
+                            Layout.preferredHeight: 30
+                            enabled: pairResultDisplay.text.length > 0 && pairResultDisplay.text !== "No result yet"
+                            onClicked: {
+                                pairResultDisplay.selectAll()
+                                pairResultDisplay.copy()
+                                pairResultDisplay.deselect()
+                                this.text = "✓ Copied"
+                                pairCopyTimer.restart()
+                            }
+
+                            Timer {
+                                id: pairCopyTimer
+                                interval: 1000
+                                onTriggered: {
+                                    parent.text = "Copy"
+                                }
+                            }
+
+                            background: Rectangle {
+                                color: parent.enabled ? (parent.down ? "#4a7ba7" : "#5a8fc7") : "#3a3a3a"
+                                border.color: parent.enabled ? "#6a9fd7" : "#555555"
+                                border.width: 1
+                                radius: 3
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                color: parent.enabled ? "#ffffff" : "#666666"
+                                font.pixelSize: 11
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
                 }
             }
 
