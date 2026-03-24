@@ -72,7 +72,7 @@ if(KEYCARD_DEBUG)
 endif()
 
 # Install paths (use LogosBasecamp for development)
-set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosApp")
+set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
 set(KEYCARD_MODULE_DIR "${LOGOS_APP_DATA}/modules/keycard")
 
 # Cleanup stale backups (Lesson #33)
