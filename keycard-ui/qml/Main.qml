@@ -17,6 +17,10 @@ Rectangle {
     property bool autoDetectionStarted: false
     property var pendingAuthRequests: []
 
+    // Add property to hold result message (accessible from anywhere)
+    property string authResultMessage: "Test flow:\n1. 'Create Fake Request' → adds to Pending Authorizations\n2. Click 'Authorize' in pending list → opens modal\n3. 'Show Auth Window' → direct test (no pending request)"
+    property string authResultColor: "#88ccff"
+
     // Auto-start detection on load
     Component.onCompleted: {
         // Initialize reader detection
@@ -602,27 +606,45 @@ Rectangle {
 
                                     onClicked: {
                                         // Open auth window with this request's details
+                                        console.log("DEBUG: Authorize button clicked, authId:", modelData.authId)
                                         authWindow.currentAuthId = modelData.authId
                                         authWindow.domain = modelData.domain
                                         authWindow.requestingModule = modelData.caller
                                         authWindow.remainingAttempts = 3
 
+                                        // Test if modalAuthResult is accessible
+                                        console.log("DEBUG: modalAuthResult accessible?", typeof modalAuthResult !== 'undefined')
+
                                         // Connect success/failure signals to update UI
                                         authWindow.authorizationComplete.connect(function(success, key) {
-                                            if (success) {
-                                                modalAuthResult.text = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
-                                                modalAuthResult.color = "#00ff00"
-                                            } else {
-                                                modalAuthResult.text = "❌ Authorization failed"
-                                                modalAuthResult.color = "#ff4444"
+                                            console.log("DEBUG: authorizationComplete signal fired! success=", success, "key=", key ? key.substring(0, 16) : "null")
+                                            try {
+                                                if (success) {
+                                                    console.log("DEBUG: Setting success message on modalAuthResult")
+                                                    root.authResultMessage = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
+                                                    root.authResultColor = "#00ff00"
+                                                    console.log("DEBUG: Success message set!")
+                                                } else {
+                                                    console.log("DEBUG: Setting failure message")
+                                                    root.authResultMessage = "❌ Authorization failed"
+                                                    root.authResultColor = "#ff4444"
+                                                }
+                                            } catch(e) {
+                                                console.log("DEBUG ERROR in signal handler:", e)
                                             }
                                         })
 
                                         authWindow.cancelled.connect(function() {
-                                            modalAuthResult.text = "⚠️ User cancelled authorization"
-                                            modalAuthResult.color = "#ffaa00"
+                                            console.log("DEBUG: cancelled signal fired!")
+                                            try {
+                                                root.authResultMessage = "⚠️ User cancelled authorization"
+                                                root.authResultColor = "#ffaa00"
+                                            } catch(e) {
+                                                console.log("DEBUG ERROR in cancelled handler:", e)
+                                            }
                                         })
 
+                                        console.log("DEBUG: Opening auth window")
                                         authWindow.open()
                                     }
                                 }
@@ -690,16 +712,16 @@ Rectangle {
                                 try {
                                     var parsed = JSON.parse(result)
                                     if (parsed.authId) {
-                                        modalAuthResult.text = "📝 Pending request created!\nAuth ID: " + parsed.authId.substring(0, 16) + "...\n\nCheck 'Pending Authorization Requests' section above."
-                                        modalAuthResult.color = "#ffaa00"
+                                        root.authResultMessage = "📝 Pending request created!\nAuth ID: " + parsed.authId.substring(0, 16) + "...\n\nCheck 'Pending Authorization Requests' section above."
+                                        root.authResultColor = "#ffaa00"
                                         refreshPendingAuths()
                                     } else {
-                                        modalAuthResult.text = "❌ Failed: " + (parsed.error || "Unknown error")
-                                        modalAuthResult.color = "#ff4444"
+                                        root.authResultMessage = "❌ Failed: " + (parsed.error || "Unknown error")
+                                        root.authResultColor = "#ff4444"
                                     }
                                 } catch (e) {
-                                    modalAuthResult.text = "❌ Error: " + e.toString()
-                                    modalAuthResult.color = "#ff4444"
+                                    root.authResultMessage = "❌ Error: " + e.toString()
+                                    root.authResultColor = "#ff4444"
                                 }
                             }
                         }
@@ -733,17 +755,17 @@ Rectangle {
 
                                 authWindow.authorizationComplete.connect(function(success, key) {
                                     if (success) {
-                                        modalAuthResult.text = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
-                                        modalAuthResult.color = "#00ff00"
+                                        root.authResultMessage = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
+                                        root.authResultColor = "#00ff00"
                                     } else {
-                                        modalAuthResult.text = "❌ Authorization failed"
-                                        modalAuthResult.color = "#ff4444"
+                                        root.authResultMessage = "❌ Authorization failed"
+                                        root.authResultColor = "#ff4444"
                                     }
                                 })
 
                                 authWindow.cancelled.connect(function() {
-                                    modalAuthResult.text = "⚠️ User cancelled authorization"
-                                    modalAuthResult.color = "#ffaa00"
+                                    root.authResultMessage = "⚠️ User cancelled authorization"
+                                    root.authResultColor = "#ffaa00"
                                 })
 
                                 authWindow.open()
@@ -754,10 +776,10 @@ Rectangle {
                     Text {
                         id: modalAuthResult
                         Layout.fillWidth: true
-                        text: "Test flow:\n1. 'Create Fake Request' → adds to Pending Authorizations\n2. Click 'Authorize' in pending list → opens modal\n3. 'Show Auth Window' → direct test (no pending request)"
+                        text: root.authResultMessage
                         font.pixelSize: 12
                         font.family: "monospace"
-                        color: "#88ccff"
+                        color: root.authResultColor
                         wrapMode: Text.Wrap
                     }
                 }
