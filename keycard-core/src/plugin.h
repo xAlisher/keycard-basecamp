@@ -36,6 +36,13 @@ public:
     Q_INVOKABLE QString getLastError();
     Q_INVOKABLE QString testPCSC();  // Debug: test PC/SC directly
 
+    // Authorization request API (Option C: Module-Managed Auth State)
+    // Allows consuming modules to request auth, user completes in keycard-ui
+    Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);
+    Q_INVOKABLE QString checkAuthStatus(const QString& authId);
+    Q_INVOKABLE QString getPendingAuths();
+    Q_INVOKABLE QString completeAuth(const QString& authId, const QString& key);
+
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
 
@@ -46,8 +53,19 @@ private:
         Closed           // SESSION_CLOSED - explicitly closed
     };
 
+    struct AuthRequest {
+        QString id;
+        QString domain;
+        QString caller;
+        QString status;  // "pending", "complete", "failed"
+        QString key;     // Result key (if complete)
+        QString error;   // Error message (if failed)
+        qint64 timestamp;
+    };
+
     QString mapBridgeStateToSpec(KeycardBridge::State state);
 
     KeycardBridge* m_bridge = nullptr;
     SessionState m_sessionState = SessionState::NoSession;
+    QList<AuthRequest> m_authRequests;  // Pending authorization requests
 };

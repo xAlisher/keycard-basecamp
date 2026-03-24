@@ -2,6 +2,9 @@
 #include "KeycardBridge.h"
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QUuid>
+#include <QDateTime>
 #include <QDebug>
 #include <sodium.h>
 
@@ -350,4 +353,96 @@ QString KeycardPlugin::mapBridgeStateToSpec(KeycardBridge::State state)
         return "CARD_NOT_PRESENT";
     }
     return "READER_NOT_FOUND";
+}
+
+// Authorization request API implementation (Option C: Module-Managed Auth State)
+
+QString KeycardPlugin::requestAuth(const QString& domain, const QString& caller)
+{
+    // Generate unique auth request ID
+    QString authId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    AuthRequest request;
+    request.id = authId;
+    request.domain = domain;
+    request.caller = caller;
+    request.status = "pending";
+    request.timestamp = QDateTime::currentMSecsSinceEpoch();
+
+    m_authRequests.append(request);
+
+    QJsonObject result;
+    result["authId"] = authId;
+    result["status"] = "pending";
+    result["message"] = "Authorization request created. Open Keycard UI to complete.";
+
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::checkAuthStatus(const QString& authId)
+{
+    for (const auto& req : m_authRequests) {
+        if (req.id == authId) {
+            QJsonObject result;
+            result["authId"] = authId;
+            result["status"] = req.status;
+            result["domain"] = req.domain;
+            result["caller"] = req.caller;
+
+            if (req.status == "complete") {
+                result["key"] = req.key;
+            } else if (req.status == "failed") {
+                result["error"] = req.error;
+            }
+
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+    }
+
+    QJsonObject result;
+    result["error"] = "Auth request not found";
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::getPendingAuths()
+{
+    QJsonArray pending;
+
+    for (const auto& req : m_authRequests) {
+        if (req.status == "pending") {
+            QJsonObject obj;
+            obj["authId"] = req.id;
+            obj["domain"] = req.domain;
+            obj["caller"] = req.caller;
+            obj["timestamp"] = req.timestamp;
+            pending.append(obj);
+        }
+    }
+
+    QJsonObject result;
+    result["pending"] = pending;
+    result["count"] = pending.size();
+
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::completeAuth(const QString& authId, const QString& key)
+{
+    for (auto& req : m_authRequests) {
+        if (req.id == authId && req.status == "pending") {
+            req.status = "complete";
+            req.key = key;
+
+            QJsonObject result;
+            result["authId"] = authId;
+            result["status"] = "complete";
+            result["message"] = "Authorization completed successfully";
+
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+    }
+
+    QJsonObject result;
+    result["error"] = "Auth request not found or already completed";
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
