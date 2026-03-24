@@ -10,7 +10,6 @@ install(FILES
 
 install(FILES
     qml/Main.qml
-    qml/AuthWindow.qml
     keycard.png
     DESTINATION "${KEYCARD_UI_DIR}"
 )

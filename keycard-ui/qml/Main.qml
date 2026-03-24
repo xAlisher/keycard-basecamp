@@ -530,27 +530,26 @@ Rectangle {
                             }
 
                             onClicked: {
-                                var authWin = authWindowComponent.createObject(root, {
-                                    domain: "notes-encryption",
-                                    requestingModule: "notes"
-                                })
+                                authWindow.domain = "notes-encryption"
+                                authWindow.requestingModule = "notes"
+                                authWindow.remainingAttempts = 3
 
-                                authWin.authorizationComplete.connect(function(success, key) {
+                                authWindow.authorizationComplete.connect(function(success, key) {
                                     if (success) {
                                         modalAuthResult.text = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
                                         modalAuthResult.color = "#00ff00"
                                     } else {
-                                        modalAuthResult.text = "❌ Authorization failed or cancelled"
+                                        modalAuthResult.text = "❌ Authorization failed"
                                         modalAuthResult.color = "#ff4444"
                                     }
                                 })
 
-                                authWin.cancelled.connect(function() {
+                                authWindow.cancelled.connect(function() {
                                     modalAuthResult.text = "⚠️ User cancelled authorization"
                                     modalAuthResult.color = "#ffaa00"
                                 })
 
-                                authWin.show()
+                                authWindow.open()
                             }
                         }
                     }
@@ -608,10 +607,198 @@ Rectangle {
         }
     }
 
-    // AuthWindow Component Loader
-    Component {
-        id: authWindowComponent
-        AuthWindow {}
+    // AuthWindow Dialog (inline to avoid file loading issues)
+    Dialog {
+        id: authWindow
+        title: "Keycard Authorization"
+        width: 450
+        height: 320
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+
+        property string domain: ""
+        property string requestingModule: ""
+        property int remainingAttempts: 3
+
+        signal authorizationComplete(bool success, string key)
+        signal cancelled()
+
+        onVisibleChanged: {
+            if (visible) {
+                pinField.text = ""
+                pinField.forceActiveFocus()
+                errorText.text = ""
+            }
+        }
+
+        contentItem: Rectangle {
+            color: "#2b2b2b"
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 15
+
+                Text {
+                    text: "Keycard Authorization"
+                    font.pixelSize: 20
+                    font.bold: true
+                    color: "#ffffff"
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Text {
+                    text: requestingModule ? 'Module "' + requestingModule + '" requests access' : "Authorization required"
+                    font.pixelSize: 13
+                    color: "#aaaaaa"
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Text {
+                    text: "Domain: " + authWindow.domain
+                    font.pixelSize: 12
+                    color: "#888888"
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "#444444"
+                }
+
+                Text {
+                    text: "Enter PIN:"
+                    font.pixelSize: 13
+                    color: "#ffffff"
+                }
+
+                TextField {
+                    id: pinField
+                    Layout.fillWidth: true
+                    placeholderText: "6-digit PIN"
+                    echoMode: TextInput.Password
+                    font.pixelSize: 14
+
+                    background: Rectangle {
+                        color: "#1a1a1a"
+                        border.color: pinField.activeFocus ? "#4a9eff" : "#444444"
+                        border.width: 2
+                        radius: 4
+                    }
+
+                    color: "#ffffff"
+
+                    Keys.onReturnPressed: authorizeBtn.clicked()
+                }
+
+                Text {
+                    id: errorText
+                    Layout.fillWidth: true
+                    text: ""
+                    font.pixelSize: 12
+                    color: "#ff4444"
+                    wrapMode: Text.WordWrap
+                    visible: text !== ""
+                }
+
+                Text {
+                    text: remainingAttempts > 0 ? "Remaining attempts: " + remainingAttempts : ""
+                    font.pixelSize: 11
+                    color: remainingAttempts <= 2 ? "#ff8844" : "#aaaaaa"
+                    visible: remainingAttempts > 0 && remainingAttempts <= 5
+                }
+
+                Item { Layout.fillHeight: true }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Button {
+                        text: "Cancel"
+                        Layout.fillWidth: true
+
+                        background: Rectangle {
+                            color: parent.pressed ? "#3a3a3a" : parent.hovered ? "#444444" : "#2a2a2a"
+                            border.color: "#555555"
+                            radius: 4
+                        }
+
+                        contentItem: Text {
+                            text: parent.text
+                            color: "#aaaaaa"
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        onClicked: {
+                            authWindow.cancelled()
+                            authWindow.close()
+                        }
+                    }
+
+                    Button {
+                        id: authorizeBtn
+                        text: "Authorize"
+                        Layout.fillWidth: true
+                        enabled: pinField.text.length > 0
+
+                        background: Rectangle {
+                            color: !parent.enabled ? "#1a1a1a" : parent.pressed ? "#3a7acc" : parent.hovered ? "#5a9eff" : "#4a9eff"
+                            border.color: !parent.enabled ? "#333333" : "#6ab0ff"
+                            radius: 4
+                        }
+
+                        contentItem: Text {
+                            text: parent.text
+                            font.bold: true
+                            color: parent.enabled ? "#ffffff" : "#555555"
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        onClicked: {
+                            errorText.text = ""
+                            var result = logos.callModule("keycard", "authorize", [pinField.text])
+
+                            try {
+                                var parsed = JSON.parse(result)
+
+                                if (parsed.authorized) {
+                                    var keyResult = logos.callModule("keycard", "deriveKey", [authWindow.domain])
+                                    var keyParsed = JSON.parse(keyResult)
+
+                                    if (keyParsed.key) {
+                                        authWindow.authorizationComplete(true, keyParsed.key)
+                                        authWindow.close()
+                                    } else {
+                                        errorText.text = keyParsed.error || "Failed to derive key"
+                                    }
+                                } else {
+                                    errorText.text = parsed.error || "Wrong PIN"
+
+                                    if (parsed.remainingAttempts !== undefined) {
+                                        authWindow.remainingAttempts = parsed.remainingAttempts
+
+                                        if (authWindow.remainingAttempts === 0) {
+                                            errorText.text = "Card blocked"
+                                            authorizeBtn.enabled = false
+                                            pinField.enabled = false
+                                        }
+                                    }
+
+                                    pinField.clear()
+                                    pinField.forceActiveFocus()
+                                }
+                            } catch (e) {
+                                errorText.text = "Error: " + e.toString()
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Status Row Component (auto-detected, no button)
