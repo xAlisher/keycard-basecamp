@@ -999,52 +999,80 @@ Rectangle {
 
                         onClicked: {
                             errorText.text = ""
-                            var result = logos.callModule("keycard", "authorize", [pinField.text])
 
-                            try {
-                                var parsed = JSON.parse(result)
+                            // SECURITY: Use authorizeRequest if this is from a pending request
+                            // This ensures only keycard module can derive legitimate keys
+                            if (authWindow.currentAuthId) {
+                                // Secure path: authorizeRequest verifies PIN and derives key internally
+                                var result = logos.callModule("keycard", "authorizeRequest",
+                                    [authWindow.currentAuthId, pinField.text])
 
-                                if (parsed.authorized) {
-                                    var keyResult = logos.callModule("keycard", "deriveKey", [authWindow.domain])
-                                    var keyParsed = JSON.parse(keyResult)
+                                try {
+                                    var parsed = JSON.parse(result)
 
-                                    if (keyParsed.key) {
-                                        // If this is from a pending auth request, complete it
-                                        if (authWindow.currentAuthId) {
-                                            var completeResult = logos.callModule("keycard", "completeAuth",
-                                                [authWindow.currentAuthId, keyParsed.key])
-                                            console.log("Auth request completed:", completeResult)
-
-                                            // Refresh pending list
-                                            refreshPendingAuths()
-
-                                            // Clear current auth ID
-                                            authWindow.currentAuthId = ""
-                                        }
-
-                                        authWindow.authorizationComplete(true, keyParsed.key)
+                                    if (parsed.status === "complete") {
+                                        // Success - legitimate key from hardware
+                                        refreshPendingAuths()
+                                        authWindow.currentAuthId = ""
+                                        authWindow.authorizationComplete(true, parsed.key)
                                         authWindow.close()
-                                    } else {
-                                        errorText.text = keyParsed.error || "Failed to derive key"
-                                    }
-                                } else {
-                                    errorText.text = parsed.error || "Wrong PIN"
+                                    } else if (parsed.status === "failed") {
+                                        errorText.text = parsed.error || "Authorization failed"
 
-                                    if (parsed.remainingAttempts !== undefined) {
-                                        authWindow.remainingAttempts = parsed.remainingAttempts
+                                        if (parsed.remainingAttempts !== undefined) {
+                                            authWindow.remainingAttempts = parsed.remainingAttempts
 
-                                        if (authWindow.remainingAttempts === 0) {
-                                            errorText.text = "Card blocked"
-                                            authorizeBtn.enabled = false
-                                            pinField.enabled = false
+                                            if (authWindow.remainingAttempts === 0) {
+                                                errorText.text = "Card blocked"
+                                                authorizeBtn.enabled = false
+                                                pinField.enabled = false
+                                            }
                                         }
-                                    }
 
-                                    pinField.clear()
-                                    pinField.forceActiveFocus()
+                                        pinField.clear()
+                                        pinField.forceActiveFocus()
+                                    } else {
+                                        errorText.text = parsed.error || "Unknown error"
+                                    }
+                                } catch (e) {
+                                    errorText.text = "Error: " + e.toString()
                                 }
-                            } catch (e) {
-                                errorText.text = "Error: " + e.toString()
+                            } else {
+                                // Test mode: direct authorize + deriveKey (no pending request)
+                                var result = logos.callModule("keycard", "authorize", [pinField.text])
+
+                                try {
+                                    var parsed = JSON.parse(result)
+
+                                    if (parsed.authorized) {
+                                        var keyResult = logos.callModule("keycard", "deriveKey", [authWindow.domain])
+                                        var keyParsed = JSON.parse(keyResult)
+
+                                        if (keyParsed.key) {
+                                            authWindow.authorizationComplete(true, keyParsed.key)
+                                            authWindow.close()
+                                        } else {
+                                            errorText.text = keyParsed.error || "Failed to derive key"
+                                        }
+                                    } else {
+                                        errorText.text = parsed.error || "Wrong PIN"
+
+                                        if (parsed.remainingAttempts !== undefined) {
+                                            authWindow.remainingAttempts = parsed.remainingAttempts
+
+                                            if (authWindow.remainingAttempts === 0) {
+                                                errorText.text = "Card blocked"
+                                                authorizeBtn.enabled = false
+                                                pinField.enabled = false
+                                            }
+                                        }
+
+                                        pinField.clear()
+                                        pinField.forceActiveFocus()
+                                    }
+                                } catch (e) {
+                                    errorText.text = "Error: " + e.toString()
+                                }
                             }
                         }
                     }

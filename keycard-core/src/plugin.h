@@ -41,7 +41,9 @@ public:
     Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);
     Q_INVOKABLE QString checkAuthStatus(const QString& authId);
     Q_INVOKABLE QString getPendingAuths();
-    Q_INVOKABLE QString completeAuth(const QString& authId, const QString& key);
+
+    // SECURITY: Only keycard-ui should call this - verifies PIN and derives key internally
+    Q_INVOKABLE QString authorizeRequest(const QString& authId, const QString& pin);
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
