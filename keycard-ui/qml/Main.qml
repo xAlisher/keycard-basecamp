@@ -850,10 +850,10 @@ Rectangle {
                     color: "#444444"
                 }
 
-                // OAuth-style permission explanation
+                // OAuth-style permission explanation (technical details for power users)
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 80
+                    Layout.preferredHeight: 110
                     color: "#1a1a1a"
                     border.color: "#444444"
                     border.width: 1
@@ -873,7 +873,7 @@ Rectangle {
                         }
 
                         Text {
-                            text: "• Derive encryption keys for domain: " + authWindow.domain
+                            text: "• Derive keys for domain: " + authWindow.domain
                             font.pixelSize: 11
                             color: "#aaaaaa"
                             Layout.fillWidth: true
@@ -881,7 +881,24 @@ Rectangle {
                         }
 
                         Text {
-                            text: "• Access card-derived secrets without storing your PIN"
+                            text: "• Derivation path: m/43'/60'/1581'/[SHA256(logos-" + authWindow.domain + ")]'/...'"
+                            font.pixelSize: 10
+                            font.family: "monospace"
+                            color: "#888888"
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "• Isolated - no access to other domains"
+                            font.pixelSize: 11
+                            color: "#aaaaaa"
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "• Your PIN never leaves the card"
                             font.pixelSize: 11
                             color: "#aaaaaa"
                             Layout.fillWidth: true
