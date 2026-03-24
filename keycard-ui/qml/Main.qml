@@ -649,6 +649,45 @@ Rectangle {
                         }
 
                         Button {
+                            text: "Create Fake Request"
+                            Layout.preferredWidth: 150
+
+                            background: Rectangle {
+                                color: parent.down ? "#7a5a3a" : "#9a7a4a"
+                                border.color: "#ffaa66"
+                                border.width: 1
+                                radius: 3
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                color: "#ffffff"
+                                font.pixelSize: 13
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: {
+                                var result = logos.callModule("keycard", "requestAuth", ["notes-encryption", "notes"])
+                                try {
+                                    var parsed = JSON.parse(result)
+                                    if (parsed.authId) {
+                                        modalAuthResult.text = "📝 Pending request created!\nAuth ID: " + parsed.authId.substring(0, 16) + "...\n\nCheck 'Pending Authorization Requests' section above."
+                                        modalAuthResult.color = "#ffaa00"
+                                        refreshPendingAuths()
+                                    } else {
+                                        modalAuthResult.text = "❌ Failed: " + (parsed.error || "Unknown error")
+                                        modalAuthResult.color = "#ff4444"
+                                    }
+                                } catch (e) {
+                                    modalAuthResult.text = "❌ Error: " + e.toString()
+                                    modalAuthResult.color = "#ff4444"
+                                }
+                            }
+                        }
+
+                        Button {
                             text: "Show Auth Window"
                             Layout.preferredWidth: 150
                             enabled: root.currentState === "CARD_PRESENT" || root.currentState === "SESSION_CLOSED"
@@ -698,7 +737,7 @@ Rectangle {
                     Text {
                         id: modalAuthResult
                         Layout.fillWidth: true
-                        text: "Click button to test modal authorization flow (simulates Notes requesting access)"
+                        text: "Test flow:\n1. 'Create Fake Request' → adds to Pending Authorizations\n2. Click 'Authorize' in pending list → opens modal\n3. 'Show Auth Window' → direct test (no pending request)"
                         font.pixelSize: 12
                         font.family: "monospace"
                         color: "#88ccff"
