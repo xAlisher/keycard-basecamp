@@ -791,8 +791,8 @@ Rectangle {
     Dialog {
         id: authWindow
         title: "Keycard Authorization"
-        width: 500
-        height: 480
+        width: 520
+        height: 560
         modal: true
         closePolicy: Popup.CloseOnEscape
         x: (parent.width - width) / 2
@@ -820,27 +820,20 @@ Rectangle {
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 20
-                spacing: 15
+                spacing: 12
 
                 Text {
-                    text: "Keycard Authorization"
-                    font.pixelSize: 20
+                    text: requestingModule ? 'Module "' + requestingModule + '" requests access' : "Authorization required"
+                    font.pixelSize: 14
                     font.bold: true
                     color: "#ffffff"
                     Layout.alignment: Qt.AlignHCenter
                 }
 
                 Text {
-                    text: requestingModule ? 'Module "' + requestingModule + '" requests access' : "Authorization required"
-                    font.pixelSize: 13
-                    color: "#aaaaaa"
-                    Layout.alignment: Qt.AlignHCenter
-                }
-
-                Text {
                     text: "Domain: " + authWindow.domain
                     font.pixelSize: 12
-                    color: "#888888"
+                    color: "#88ff88"
                     Layout.alignment: Qt.AlignHCenter
                 }
 
