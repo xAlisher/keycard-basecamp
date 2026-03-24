@@ -111,6 +111,26 @@ Rectangle {
         }
     }
 
+    // Listen to authWindow signals (proper QML pattern)
+    Connections {
+        target: authWindow
+
+        function onAuthorizationComplete(success, key) {
+            if (success) {
+                root.authResultMessage = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
+                root.authResultColor = "#00ff00"
+            } else {
+                root.authResultMessage = "❌ Authorization failed"
+                root.authResultColor = "#ff4444"
+            }
+        }
+
+        function onCancelled() {
+            root.authResultMessage = "⚠️ User cancelled authorization"
+            root.authResultColor = "#ffaa00"
+        }
+    }
+
     ScrollView {
         anchors.fill: parent
         anchors.margins: 20
@@ -606,45 +626,10 @@ Rectangle {
 
                                     onClicked: {
                                         // Open auth window with this request's details
-                                        console.log("DEBUG: Authorize button clicked, authId:", modelData.authId)
                                         authWindow.currentAuthId = modelData.authId
                                         authWindow.domain = modelData.domain
                                         authWindow.requestingModule = modelData.caller
                                         authWindow.remainingAttempts = 3
-
-                                        // Test if modalAuthResult is accessible
-                                        console.log("DEBUG: modalAuthResult accessible?", typeof modalAuthResult !== 'undefined')
-
-                                        // Connect success/failure signals to update UI
-                                        authWindow.authorizationComplete.connect(function(success, key) {
-                                            console.log("DEBUG: authorizationComplete signal fired! success=", success, "key=", key ? key.substring(0, 16) : "null")
-                                            try {
-                                                if (success) {
-                                                    console.log("DEBUG: Setting success message on modalAuthResult")
-                                                    root.authResultMessage = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
-                                                    root.authResultColor = "#00ff00"
-                                                    console.log("DEBUG: Success message set!")
-                                                } else {
-                                                    console.log("DEBUG: Setting failure message")
-                                                    root.authResultMessage = "❌ Authorization failed"
-                                                    root.authResultColor = "#ff4444"
-                                                }
-                                            } catch(e) {
-                                                console.log("DEBUG ERROR in signal handler:", e)
-                                            }
-                                        })
-
-                                        authWindow.cancelled.connect(function() {
-                                            console.log("DEBUG: cancelled signal fired!")
-                                            try {
-                                                root.authResultMessage = "⚠️ User cancelled authorization"
-                                                root.authResultColor = "#ffaa00"
-                                            } catch(e) {
-                                                console.log("DEBUG ERROR in cancelled handler:", e)
-                                            }
-                                        })
-
-                                        console.log("DEBUG: Opening auth window")
                                         authWindow.open()
                                     }
                                 }
@@ -752,22 +737,6 @@ Rectangle {
                                 authWindow.domain = "notes-encryption"
                                 authWindow.requestingModule = "notes"
                                 authWindow.remainingAttempts = 3
-
-                                authWindow.authorizationComplete.connect(function(success, key) {
-                                    if (success) {
-                                        root.authResultMessage = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
-                                        root.authResultColor = "#00ff00"
-                                    } else {
-                                        root.authResultMessage = "❌ Authorization failed"
-                                        root.authResultColor = "#ff4444"
-                                    }
-                                })
-
-                                authWindow.cancelled.connect(function() {
-                                    root.authResultMessage = "⚠️ User cancelled authorization"
-                                    root.authResultColor = "#ffaa00"
-                                })
-
                                 authWindow.open()
                             }
                         }
