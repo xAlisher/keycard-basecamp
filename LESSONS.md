@@ -870,3 +870,70 @@ static void debugLog(const QString& msg) {
 
 ---
 
+## Issue #23 - Modal Authorization Window
+
+### Don't Fix Working Infrastructure
+**Date:** 2026-03-24
+**Context:** Feature branch broke plugin loading by changing working configuration
+
+**What went wrong:**
+1. Changed plugin name: `keycard-ui` → `keycard_ui` (hyphen to underscore)
+2. Switched install paths: LogosBasecamp ↔ LogosApp (multiple times)
+3. Used wrong AppImage: `/nix/store/.../logos-basecamp.AppImage` instead of `~/logos-app/logos-app.AppImage`
+4. Created duplicate plugins in multiple locations
+5. Result: UI plugin appeared twice in sidebar, neither opened
+
+**Root cause:**
+- **Changed working master configuration while adding new feature (AuthWindow.qml)**
+- Assumed plugin naming was wrong (it wasn't - master used hyphen correctly)
+- Followed misleading memory file about LogosApp vs LogosBasecamp paths
+- Didn't verify what configuration worked before making changes
+
+**Why master worked:**
+- `keycard-ui` (hyphen) in LogosBasecamp
+- Launched with `~/logos-app/logos-app.AppImage`
+- Single plugin in correct location
+
+**Solution:**
+- Reverted to master configuration (keycard-ui, LogosBasecamp, correct AppImage)
+- Removed duplicate plugin directories
+- Created RUN.md with explicit launch instructions
+
+**Key principle:**
+> **When adding features, only modify what the feature needs. Don't "improve" working infrastructure.**
+
+**Correct approach for Issue #23:**
+1. ✅ Add AuthWindow.qml (new feature)
+2. ✅ Update Main.qml to use AuthWindow (new feature)
+3. ✅ Update CMakeLists.txt to install AuthWindow.qml (required for feature)
+4. ❌ Change plugin name (NOT needed for feature)
+5. ❌ Change install paths (NOT needed for feature)
+6. ❌ Change AppImage (NOT needed for feature)
+
+**Prevention checklist:**
+- [ ] Before changing infrastructure, verify it's actually broken
+- [ ] Test master branch first to confirm what works
+- [ ] Only change what's required for the specific feature
+- [ ] When in doubt, consult RUN.md for current configuration
+- [ ] Kill and verify processes before every test launch
+
+**Red flags:**
+- "Let me fix the naming to match other plugins" ← Is current naming broken? No? Don't fix.
+- "The memory file says use LogosApp" ← Does master work? Yes? Keep master config.
+- "Maybe it's the AppImage" ← Did yesterday work with same AppImage? Yes? Don't change.
+
+**Testing protocol:**
+1. Checkout master
+2. Build and install
+3. Kill processes (verify with `ps aux | grep logos`)
+4. Launch correct AppImage from RUN.md
+5. Verify UI opens correctly
+6. **Only then** checkout feature branch and make minimal changes
+
+**Evidence:**
+- Feature branch: Plugin didn't load (multiple naming/path issues)
+- Master branch: Plugin loaded immediately after reverting changes
+- Created RUN.md to prevent future configuration drift
+
+---
+
