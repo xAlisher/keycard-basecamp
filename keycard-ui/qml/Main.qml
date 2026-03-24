@@ -475,6 +475,98 @@ Rectangle {
                 }
             }
 
+            // NEW: Modal Auth Window Test
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 120
+                color: "#1a2a3a"
+                border.color: "#4a9eff"
+                border.width: 2
+                radius: 5
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 15
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 15
+
+                        Text {
+                            text: "8. Test Modal Auth Window"
+                            font.pixelSize: 16
+                            font.bold: true
+                            color: "#4a9eff"
+                            Layout.preferredWidth: 250
+                        }
+
+                        Text {
+                            text: "NEW: OAuth-like authorization flow (Strategy 2)"
+                            font.pixelSize: 13
+                            color: "#88ccff"
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            text: "Show Auth Window"
+                            Layout.preferredWidth: 150
+                            enabled: root.currentState === "CARD_PRESENT" || root.currentState === "SESSION_CLOSED"
+
+                            background: Rectangle {
+                                color: parent.enabled ? (parent.down ? "#3a7acc" : "#4a9eff") : "#2a4a6a"
+                                border.color: parent.enabled ? "#6ab0ff" : "#445566"
+                                border.width: 1
+                                radius: 3
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                color: parent.enabled ? "#ffffff" : "#666666"
+                                font.pixelSize: 13
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: {
+                                var authWin = authWindowComponent.createObject(root, {
+                                    domain: "notes-encryption",
+                                    requestingModule: "notes"
+                                })
+
+                                authWin.authorizationComplete.connect(function(success, key) {
+                                    if (success) {
+                                        modalAuthResult.text = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
+                                        modalAuthResult.color = "#00ff00"
+                                    } else {
+                                        modalAuthResult.text = "❌ Authorization failed or cancelled"
+                                        modalAuthResult.color = "#ff4444"
+                                    }
+                                })
+
+                                authWin.cancelled.connect(function() {
+                                    modalAuthResult.text = "⚠️ User cancelled authorization"
+                                    modalAuthResult.color = "#ffaa00"
+                                })
+
+                                authWin.show()
+                            }
+                        }
+                    }
+
+                    Text {
+                        id: modalAuthResult
+                        Layout.fillWidth: true
+                        text: "Click button to test modal authorization flow (simulates Notes requesting access)"
+                        font.pixelSize: 12
+                        font.family: "monospace"
+                        color: "#88ccff"
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
             // Instructions
             Rectangle {
                 Layout.fillWidth: true
@@ -514,6 +606,12 @@ Rectangle {
             case "BLOCKED": return "#ff0000"
             default: return "#ffffff"
         }
+    }
+
+    // AuthWindow Component Loader
+    Component {
+        id: authWindowComponent
+        AuthWindow {}
     }
 
     // Status Row Component (auto-detected, no button)
