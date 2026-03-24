@@ -42,15 +42,35 @@ ls ~/.local/share/Logos/LogosBasecamp/modules/keycard/
 # Should show: keycard_plugin.so, manifest.json
 ```
 
+## Kill Processes (Before Launch)
+
+**ALWAYS kill and verify before launching:**
+
+```bash
+# Kill all logos processes
+pkill -9 -f "logos"
+sleep 2
+
+# Verify they're dead (should show nothing)
+ps aux | grep -i logos | grep -v grep
+
+# If still running, kill individually:
+pkill -9 -f "LogosBasecamp.elf"
+pkill -9 -f "logos_host.elf"
+pkill -9 -f "logos-app.AppImage"
+sleep 2
+
+# Verify again
+ps aux | grep -i logos | grep -v grep
+```
+
+**Expected:** No output = all killed successfully.
+
 ## Troubleshooting
 
 If the UI doesn't appear:
 
-1. **Kill all processes:**
-   ```bash
-   pkill -9 -f "logos"
-   sleep 2
-   ```
+1. **Kill all processes (see section above)**
 
 2. **Check for duplicate plugins:**
    ```bash
