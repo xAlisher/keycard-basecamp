@@ -15,6 +15,7 @@ Rectangle {
     property bool cardPaired: false
     property int pairingSlot: -1
     property bool autoDetectionStarted: false
+    property var pendingAuthRequests: []
 
     // Auto-start detection on load
     Component.onCompleted: {
@@ -24,6 +25,21 @@ Rectangle {
             var obj = JSON.parse(result)
             root.readerFound = obj.found === true
         } catch (e) {}
+
+        // Load pending auth requests
+        refreshPendingAuths()
+    }
+
+    function refreshPendingAuths() {
+        var result = logos.callModule("keycard", "getPendingAuths", [])
+        try {
+            var obj = JSON.parse(result)
+            if (obj.pending) {
+                root.pendingAuthRequests = obj.pending
+            }
+        } catch (e) {
+            console.log("Error fetching pending auths:", e)
+        }
     }
 
     // Poll state and auto-detect card every 500ms
@@ -78,6 +94,16 @@ Rectangle {
                 root.cardUID = ""
                 root.cardPaired = false
             }
+        }
+    }
+
+    // Refresh pending auth requests every 2 seconds
+    Timer {
+        interval: 2000
+        running: true
+        repeat: true
+        onTriggered: {
+            refreshPendingAuths()
         }
     }
 
@@ -475,6 +501,120 @@ Rectangle {
                 }
             }
 
+            // Pending Authorization Requests
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.pendingAuthRequests.length > 0 ? 150 + (root.pendingAuthRequests.length * 60) : 80
+                color: "#1a2a1a"
+                border.color: root.pendingAuthRequests.length > 0 ? "#88ff88" : "#555555"
+                border.width: 2
+                radius: 5
+                visible: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 15
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: "⏳ Pending Authorization Requests"
+                            font.pixelSize: 16
+                            font.bold: true
+                            color: root.pendingAuthRequests.length > 0 ? "#88ff88" : "#888888"
+                            Layout.preferredWidth: 350
+                        }
+
+                        Text {
+                            text: root.pendingAuthRequests.length > 0 ?
+                                  ("(" + root.pendingAuthRequests.length + " pending)") : "(No pending requests)"
+                            font.pixelSize: 13
+                            color: root.pendingAuthRequests.length > 0 ? "#88ff88" : "#666666"
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Text {
+                        visible: root.pendingAuthRequests.length === 0
+                        text: "No apps are currently requesting authorization.\nWhen an app needs access, it will appear here."
+                        font.pixelSize: 12
+                        color: "#666666"
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                    }
+
+                    Repeater {
+                        model: root.pendingAuthRequests
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 50
+                            color: "#2a3a2a"
+                            border.color: "#4a9a4a"
+                            border.width: 1
+                            radius: 3
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 15
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 3
+
+                                    Text {
+                                        text: "App: " + modelData.caller
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                        color: "#ffffff"
+                                    }
+
+                                    Text {
+                                        text: "Domain: " + modelData.domain
+                                        font.pixelSize: 11
+                                        font.family: "monospace"
+                                        color: "#88ff88"
+                                    }
+                                }
+
+                                Button {
+                                    text: "Authorize"
+                                    Layout.preferredWidth: 100
+
+                                    background: Rectangle {
+                                        color: parent.down ? "#3a7a3a" : "#4a9a4a"
+                                        border.color: "#6aff6a"
+                                        border.width: 1
+                                        radius: 3
+                                    }
+
+                                    contentItem: Text {
+                                        text: parent.text
+                                        color: "#ffffff"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    onClicked: {
+                                        // Open auth window with this request's details
+                                        authWindow.currentAuthId = modelData.authId
+                                        authWindow.domain = modelData.domain
+                                        authWindow.requestingModule = modelData.caller
+                                        authWindow.remainingAttempts = 3
+                                        authWindow.open()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // NEW: Modal Auth Window Test
             Rectangle {
                 Layout.fillWidth: true
@@ -530,6 +670,7 @@ Rectangle {
                             }
 
                             onClicked: {
+                                authWindow.currentAuthId = ""  // Clear auth ID - this is a test, not a real request
                                 authWindow.domain = "notes-encryption"
                                 authWindow.requestingModule = "notes"
                                 authWindow.remainingAttempts = 3
@@ -619,6 +760,7 @@ Rectangle {
         property string domain: ""
         property string requestingModule: ""
         property int remainingAttempts: 3
+        property string currentAuthId: ""  // Track which auth request we're fulfilling
 
         signal authorizationComplete(bool success, string key)
         signal cancelled()
@@ -770,6 +912,19 @@ Rectangle {
                                     var keyParsed = JSON.parse(keyResult)
 
                                     if (keyParsed.key) {
+                                        // If this is from a pending auth request, complete it
+                                        if (authWindow.currentAuthId) {
+                                            var completeResult = logos.callModule("keycard", "completeAuth",
+                                                [authWindow.currentAuthId, keyParsed.key])
+                                            console.log("Auth request completed:", completeResult)
+
+                                            // Refresh pending list
+                                            refreshPendingAuths()
+
+                                            // Clear current auth ID
+                                            authWindow.currentAuthId = ""
+                                        }
+
                                         authWindow.authorizationComplete(true, keyParsed.key)
                                         authWindow.close()
                                     } else {
