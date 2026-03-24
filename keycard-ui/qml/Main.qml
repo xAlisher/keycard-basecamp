@@ -606,6 +606,23 @@ Rectangle {
                                         authWindow.domain = modelData.domain
                                         authWindow.requestingModule = modelData.caller
                                         authWindow.remainingAttempts = 3
+
+                                        // Connect success/failure signals to update UI
+                                        authWindow.authorizationComplete.connect(function(success, key) {
+                                            if (success) {
+                                                modalAuthResult.text = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
+                                                modalAuthResult.color = "#00ff00"
+                                            } else {
+                                                modalAuthResult.text = "❌ Authorization failed"
+                                                modalAuthResult.color = "#ff4444"
+                                            }
+                                        })
+
+                                        authWindow.cancelled.connect(function() {
+                                            modalAuthResult.text = "⚠️ User cancelled authorization"
+                                            modalAuthResult.color = "#ffaa00"
+                                        })
+
                                         authWindow.open()
                                     }
                                 }
