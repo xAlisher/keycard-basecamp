@@ -791,10 +791,12 @@ Rectangle {
     Dialog {
         id: authWindow
         title: "Keycard Authorization"
-        width: 450
-        height: 320
+        width: 500
+        height: 480
         modal: true
         closePolicy: Popup.CloseOnEscape
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
 
         property string domain: ""
         property string requestingModule: ""
@@ -840,6 +842,52 @@ Rectangle {
                     font.pixelSize: 12
                     color: "#888888"
                     Layout.alignment: Qt.AlignHCenter
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "#444444"
+                }
+
+                // OAuth-style permission explanation
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 80
+                    color: "#1a1a1a"
+                    border.color: "#444444"
+                    border.width: 1
+                    radius: 4
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 6
+
+                        Text {
+                            text: "This will allow " + (authWindow.requestingModule || "the app") + " to:"
+                            font.pixelSize: 12
+                            font.bold: true
+                            color: "#ffffff"
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: "• Derive encryption keys for domain: " + authWindow.domain
+                            font.pixelSize: 11
+                            color: "#aaaaaa"
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "• Access card-derived secrets without storing your PIN"
+                            font.pixelSize: 11
+                            color: "#aaaaaa"
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+                    }
                 }
 
                 Rectangle {
