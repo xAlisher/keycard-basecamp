@@ -1,5 +1,5 @@
-# Install QML and metadata (use LogosBasecamp for development)
-set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
+# Install QML and metadata (use LogosApp for new plugin discovery)
+set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosApp")
 set(KEYCARD_UI_DIR "${LOGOS_APP_DATA}/plugins/keycard-ui")
 
 install(FILES
