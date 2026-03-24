@@ -792,7 +792,7 @@ Rectangle {
         id: authWindow
         title: "Keycard Authorization"
         width: 520
-        height: 560
+        height: 520
         modal: true
         closePolicy: Popup.CloseOnEscape
         x: (parent.width - width) / 2
@@ -846,7 +846,7 @@ Rectangle {
                 // OAuth-style permission explanation (technical details for power users)
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 110
+                    Layout.preferredHeight: 140
                     color: "#1a1a1a"
                     border.color: "#444444"
                     border.width: 1
@@ -855,7 +855,7 @@ Rectangle {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 12
-                        spacing: 6
+                        spacing: 5
 
                         Text {
                             text: "This will allow " + (authWindow.requestingModule || "the app") + " to:"
@@ -948,7 +948,7 @@ Rectangle {
                     visible: remainingAttempts > 0 && remainingAttempts <= 5
                 }
 
-                Item { Layout.fillHeight: true }
+                Item { Layout.preferredHeight: 10 }
 
                 RowLayout {
                     Layout.fillWidth: true
