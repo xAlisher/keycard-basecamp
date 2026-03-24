@@ -15,6 +15,7 @@ Rectangle {
     property bool cardPaired: false
     property int pairingSlot: -1
     property bool autoDetectionStarted: false
+    property var pendingAuthRequests: []
 
     // Auto-start detection on load
     Component.onCompleted: {
@@ -24,6 +25,21 @@ Rectangle {
             var obj = JSON.parse(result)
             root.readerFound = obj.found === true
         } catch (e) {}
+
+        // Load pending auth requests
+        refreshPendingAuths()
+    }
+
+    function refreshPendingAuths() {
+        var result = logos.callModule("keycard", "getPendingAuths", [])
+        try {
+            var obj = JSON.parse(result)
+            if (obj.pending) {
+                root.pendingAuthRequests = obj.pending
+            }
+        } catch (e) {
+            console.log("Error fetching pending auths:", e)
+        }
     }
 
     // Poll state and auto-detect card every 500ms
@@ -78,6 +94,16 @@ Rectangle {
                 root.cardUID = ""
                 root.cardPaired = false
             }
+        }
+    }
+
+    // Refresh pending auth requests every 2 seconds
+    Timer {
+        interval: 2000
+        running: true
+        repeat: true
+        onTriggered: {
+            refreshPendingAuths()
         }
     }
 
@@ -475,6 +501,251 @@ Rectangle {
                 }
             }
 
+            // Pending Authorization Requests
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.pendingAuthRequests.length > 0 ? 150 + (root.pendingAuthRequests.length * 60) : 80
+                color: "#1a2a1a"
+                border.color: root.pendingAuthRequests.length > 0 ? "#88ff88" : "#555555"
+                border.width: 2
+                radius: 5
+                visible: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 15
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: "⏳ Pending Authorization Requests"
+                            font.pixelSize: 16
+                            font.bold: true
+                            color: root.pendingAuthRequests.length > 0 ? "#88ff88" : "#888888"
+                            Layout.preferredWidth: 350
+                        }
+
+                        Text {
+                            text: root.pendingAuthRequests.length > 0 ?
+                                  ("(" + root.pendingAuthRequests.length + " pending)") : "(No pending requests)"
+                            font.pixelSize: 13
+                            color: root.pendingAuthRequests.length > 0 ? "#88ff88" : "#666666"
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Text {
+                        visible: root.pendingAuthRequests.length === 0
+                        text: "No apps are currently requesting authorization.\nWhen an app needs access, it will appear here."
+                        font.pixelSize: 12
+                        color: "#666666"
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                    }
+
+                    Repeater {
+                        model: root.pendingAuthRequests
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 50
+                            color: "#2a3a2a"
+                            border.color: "#4a9a4a"
+                            border.width: 1
+                            radius: 3
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 15
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 3
+
+                                    Text {
+                                        text: "App: " + modelData.caller
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                        color: "#ffffff"
+                                    }
+
+                                    Text {
+                                        text: "Domain: " + modelData.domain
+                                        font.pixelSize: 11
+                                        font.family: "monospace"
+                                        color: "#88ff88"
+                                    }
+                                }
+
+                                Button {
+                                    text: "Authorize"
+                                    Layout.preferredWidth: 100
+
+                                    background: Rectangle {
+                                        color: parent.down ? "#3a7a3a" : "#4a9a4a"
+                                        border.color: "#6aff6a"
+                                        border.width: 1
+                                        radius: 3
+                                    }
+
+                                    contentItem: Text {
+                                        text: parent.text
+                                        color: "#ffffff"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    onClicked: {
+                                        // Open auth window with this request's details
+                                        authWindow.currentAuthId = modelData.authId
+                                        authWindow.domain = modelData.domain
+                                        authWindow.requestingModule = modelData.caller
+                                        authWindow.remainingAttempts = 3
+                                        authWindow.open()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // NEW: Modal Auth Window Test
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 120
+                color: "#1a2a3a"
+                border.color: "#4a9eff"
+                border.width: 2
+                radius: 5
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 15
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 15
+
+                        Text {
+                            text: "8. Test Modal Auth Window"
+                            font.pixelSize: 16
+                            font.bold: true
+                            color: "#4a9eff"
+                            Layout.preferredWidth: 250
+                        }
+
+                        Text {
+                            text: "NEW: OAuth-like authorization flow (Strategy 2)"
+                            font.pixelSize: 13
+                            color: "#88ccff"
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            text: "Create Fake Request"
+                            Layout.preferredWidth: 150
+
+                            background: Rectangle {
+                                color: parent.down ? "#7a5a3a" : "#9a7a4a"
+                                border.color: "#ffaa66"
+                                border.width: 1
+                                radius: 3
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                color: "#ffffff"
+                                font.pixelSize: 13
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: {
+                                var result = logos.callModule("keycard", "requestAuth", ["notes-encryption", "notes"])
+                                try {
+                                    var parsed = JSON.parse(result)
+                                    if (parsed.authId) {
+                                        modalAuthResult.text = "📝 Pending request created!\nAuth ID: " + parsed.authId.substring(0, 16) + "...\n\nCheck 'Pending Authorization Requests' section above."
+                                        modalAuthResult.color = "#ffaa00"
+                                        refreshPendingAuths()
+                                    } else {
+                                        modalAuthResult.text = "❌ Failed: " + (parsed.error || "Unknown error")
+                                        modalAuthResult.color = "#ff4444"
+                                    }
+                                } catch (e) {
+                                    modalAuthResult.text = "❌ Error: " + e.toString()
+                                    modalAuthResult.color = "#ff4444"
+                                }
+                            }
+                        }
+
+                        Button {
+                            text: "Show Auth Window"
+                            Layout.preferredWidth: 150
+                            enabled: root.currentState === "CARD_PRESENT" || root.currentState === "SESSION_CLOSED"
+
+                            background: Rectangle {
+                                color: parent.enabled ? (parent.down ? "#3a7acc" : "#4a9eff") : "#2a4a6a"
+                                border.color: parent.enabled ? "#6ab0ff" : "#445566"
+                                border.width: 1
+                                radius: 3
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                color: parent.enabled ? "#ffffff" : "#666666"
+                                font.pixelSize: 13
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: {
+                                authWindow.currentAuthId = ""  // Clear auth ID - this is a test, not a real request
+                                authWindow.domain = "notes-encryption"
+                                authWindow.requestingModule = "notes"
+                                authWindow.remainingAttempts = 3
+
+                                authWindow.authorizationComplete.connect(function(success, key) {
+                                    if (success) {
+                                        modalAuthResult.text = "✅ Authorization successful!\nKey: " + key.substring(0, 32) + "..."
+                                        modalAuthResult.color = "#00ff00"
+                                    } else {
+                                        modalAuthResult.text = "❌ Authorization failed"
+                                        modalAuthResult.color = "#ff4444"
+                                    }
+                                })
+
+                                authWindow.cancelled.connect(function() {
+                                    modalAuthResult.text = "⚠️ User cancelled authorization"
+                                    modalAuthResult.color = "#ffaa00"
+                                })
+
+                                authWindow.open()
+                            }
+                        }
+                    }
+
+                    Text {
+                        id: modalAuthResult
+                        Layout.fillWidth: true
+                        text: "Test flow:\n1. 'Create Fake Request' → adds to Pending Authorizations\n2. Click 'Authorize' in pending list → opens modal\n3. 'Show Auth Window' → direct test (no pending request)"
+                        font.pixelSize: 12
+                        font.family: "monospace"
+                        color: "#88ccff"
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
             // Instructions
             Rectangle {
                 Layout.fillWidth: true
@@ -513,6 +784,300 @@ Rectangle {
             case "SESSION_CLOSED": return "#8888ff"
             case "BLOCKED": return "#ff0000"
             default: return "#ffffff"
+        }
+    }
+
+    // AuthWindow Dialog (inline to avoid file loading issues)
+    Dialog {
+        id: authWindow
+        title: "Keycard Authorization"
+        width: 520
+        height: 520
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+
+        property string domain: ""
+        property string requestingModule: ""
+        property int remainingAttempts: 3
+        property string currentAuthId: ""  // Track which auth request we're fulfilling
+
+        signal authorizationComplete(bool success, string key)
+        signal cancelled()
+
+        onVisibleChanged: {
+            if (visible) {
+                pinField.text = ""
+                pinField.forceActiveFocus()
+                errorText.text = ""
+            }
+        }
+
+        contentItem: Rectangle {
+            color: "#2b2b2b"
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 12
+
+                Text {
+                    text: requestingModule ? 'Module "' + requestingModule + '" requests access' : "Authorization required"
+                    font.pixelSize: 14
+                    font.bold: true
+                    color: "#ffffff"
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Text {
+                    text: "Domain: " + authWindow.domain
+                    font.pixelSize: 12
+                    color: "#88ff88"
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "#444444"
+                }
+
+                // OAuth-style permission explanation (technical details for power users)
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 140
+                    color: "#1a1a1a"
+                    border.color: "#444444"
+                    border.width: 1
+                    radius: 4
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 5
+
+                        Text {
+                            text: "This will allow " + (authWindow.requestingModule || "the app") + " to:"
+                            font.pixelSize: 12
+                            font.bold: true
+                            color: "#ffffff"
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: "• Derive keys for domain: " + authWindow.domain
+                            font.pixelSize: 11
+                            color: "#aaaaaa"
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "• Derivation path: m/43'/60'/1581'/[SHA256(logos-" + authWindow.domain + ")]'/...'"
+                            font.pixelSize: 10
+                            font.family: "monospace"
+                            color: "#888888"
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "• Isolated - no access to other domains"
+                            font.pixelSize: 11
+                            color: "#aaaaaa"
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            text: "• Your PIN never leaves the card"
+                            font.pixelSize: 11
+                            color: "#aaaaaa"
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "#444444"
+                }
+
+                Text {
+                    text: "Enter PIN:"
+                    font.pixelSize: 13
+                    color: "#ffffff"
+                }
+
+                TextField {
+                    id: pinField
+                    Layout.fillWidth: true
+                    placeholderText: "6-digit PIN"
+                    echoMode: TextInput.Password
+                    font.pixelSize: 14
+
+                    background: Rectangle {
+                        color: "#1a1a1a"
+                        border.color: pinField.activeFocus ? "#4a9eff" : "#444444"
+                        border.width: 2
+                        radius: 4
+                    }
+
+                    color: "#ffffff"
+
+                    Keys.onReturnPressed: authorizeBtn.clicked()
+                }
+
+                Text {
+                    id: errorText
+                    Layout.fillWidth: true
+                    text: ""
+                    font.pixelSize: 12
+                    color: "#ff4444"
+                    wrapMode: Text.WordWrap
+                    visible: text !== ""
+                }
+
+                Text {
+                    text: remainingAttempts > 0 ? "Remaining attempts: " + remainingAttempts : ""
+                    font.pixelSize: 11
+                    color: remainingAttempts <= 2 ? "#ff8844" : "#aaaaaa"
+                    visible: remainingAttempts > 0 && remainingAttempts <= 5
+                }
+
+                Item { Layout.preferredHeight: 10 }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Button {
+                        text: "Cancel"
+                        Layout.fillWidth: true
+
+                        background: Rectangle {
+                            color: parent.pressed ? "#3a3a3a" : parent.hovered ? "#444444" : "#2a2a2a"
+                            border.color: "#555555"
+                            radius: 4
+                        }
+
+                        contentItem: Text {
+                            text: parent.text
+                            color: "#aaaaaa"
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        onClicked: {
+                            authWindow.cancelled()
+                            authWindow.close()
+                        }
+                    }
+
+                    Button {
+                        id: authorizeBtn
+                        text: "Authorize"
+                        Layout.fillWidth: true
+                        enabled: pinField.text.length > 0
+
+                        background: Rectangle {
+                            color: !parent.enabled ? "#1a1a1a" : parent.pressed ? "#3a7acc" : parent.hovered ? "#5a9eff" : "#4a9eff"
+                            border.color: !parent.enabled ? "#333333" : "#6ab0ff"
+                            radius: 4
+                        }
+
+                        contentItem: Text {
+                            text: parent.text
+                            font.bold: true
+                            color: parent.enabled ? "#ffffff" : "#555555"
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        onClicked: {
+                            errorText.text = ""
+
+                            // SECURITY: Use authorizeRequest if this is from a pending request
+                            // This ensures only keycard module can derive legitimate keys
+                            if (authWindow.currentAuthId) {
+                                // Secure path: authorizeRequest verifies PIN and derives key internally
+                                var result = logos.callModule("keycard", "authorizeRequest",
+                                    [authWindow.currentAuthId, pinField.text])
+
+                                try {
+                                    var parsed = JSON.parse(result)
+
+                                    if (parsed.status === "complete") {
+                                        // Success - legitimate key from hardware
+                                        refreshPendingAuths()
+                                        authWindow.currentAuthId = ""
+                                        authWindow.authorizationComplete(true, parsed.key)
+                                        authWindow.close()
+                                    } else if (parsed.status === "failed") {
+                                        errorText.text = parsed.error || "Authorization failed"
+
+                                        if (parsed.remainingAttempts !== undefined) {
+                                            authWindow.remainingAttempts = parsed.remainingAttempts
+
+                                            if (authWindow.remainingAttempts === 0) {
+                                                errorText.text = "Card blocked"
+                                                authorizeBtn.enabled = false
+                                                pinField.enabled = false
+                                            }
+                                        }
+
+                                        pinField.clear()
+                                        pinField.forceActiveFocus()
+                                    } else {
+                                        errorText.text = parsed.error || "Unknown error"
+                                    }
+                                } catch (e) {
+                                    errorText.text = "Error: " + e.toString()
+                                }
+                            } else {
+                                // Test mode: direct authorize + deriveKey (no pending request)
+                                var result = logos.callModule("keycard", "authorize", [pinField.text])
+
+                                try {
+                                    var parsed = JSON.parse(result)
+
+                                    if (parsed.authorized) {
+                                        var keyResult = logos.callModule("keycard", "deriveKey", [authWindow.domain])
+                                        var keyParsed = JSON.parse(keyResult)
+
+                                        if (keyParsed.key) {
+                                            authWindow.authorizationComplete(true, keyParsed.key)
+                                            authWindow.close()
+                                        } else {
+                                            errorText.text = keyParsed.error || "Failed to derive key"
+                                        }
+                                    } else {
+                                        errorText.text = parsed.error || "Wrong PIN"
+
+                                        if (parsed.remainingAttempts !== undefined) {
+                                            authWindow.remainingAttempts = parsed.remainingAttempts
+
+                                            if (authWindow.remainingAttempts === 0) {
+                                                errorText.text = "Card blocked"
+                                                authorizeBtn.enabled = false
+                                                pinField.enabled = false
+                                            }
+                                        }
+
+                                        pinField.clear()
+                                        pinField.forceActiveFocus()
+                                    }
+                                } catch (e) {
+                                    errorText.text = "Error: " + e.toString()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

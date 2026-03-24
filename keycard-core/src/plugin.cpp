@@ -2,6 +2,9 @@
 #include "KeycardBridge.h"
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QUuid>
+#include <QDateTime>
 #include <QDebug>
 #include <sodium.h>
 
@@ -350,4 +353,139 @@ QString KeycardPlugin::mapBridgeStateToSpec(KeycardBridge::State state)
         return "CARD_NOT_PRESENT";
     }
     return "READER_NOT_FOUND";
+}
+
+// Authorization request API implementation (Option C: Module-Managed Auth State)
+
+QString KeycardPlugin::requestAuth(const QString& domain, const QString& caller)
+{
+    // Generate unique auth request ID
+    QString authId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    AuthRequest request;
+    request.id = authId;
+    request.domain = domain;
+    request.caller = caller;
+    request.status = "pending";
+    request.timestamp = QDateTime::currentMSecsSinceEpoch();
+
+    m_authRequests.append(request);
+
+    QJsonObject result;
+    result["authId"] = authId;
+    result["status"] = "pending";
+    result["message"] = "Authorization request created. Open Keycard UI to complete.";
+
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::checkAuthStatus(const QString& authId)
+{
+    for (const auto& req : m_authRequests) {
+        if (req.id == authId) {
+            QJsonObject result;
+            result["authId"] = authId;
+            result["status"] = req.status;
+            result["domain"] = req.domain;
+            result["caller"] = req.caller;
+
+            if (req.status == "complete") {
+                result["key"] = req.key;
+            } else if (req.status == "failed") {
+                result["error"] = req.error;
+            }
+
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+    }
+
+    QJsonObject result;
+    result["error"] = "Auth request not found";
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::getPendingAuths()
+{
+    QJsonArray pending;
+
+    for (const auto& req : m_authRequests) {
+        if (req.status == "pending") {
+            QJsonObject obj;
+            obj["authId"] = req.id;
+            obj["domain"] = req.domain;
+            obj["caller"] = req.caller;
+            obj["timestamp"] = req.timestamp;
+            pending.append(obj);
+        }
+    }
+
+    QJsonObject result;
+    result["pending"] = pending;
+    result["count"] = pending.size();
+
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pin)
+{
+    qDebug() << "KeycardPlugin::authorizeRequest() called for authId:" << authId;
+
+    // Find pending request
+    AuthRequest* targetRequest = nullptr;
+    for (auto& req : m_authRequests) {
+        if (req.id == authId && req.status == "pending") {
+            targetRequest = &req;
+            break;
+        }
+    }
+
+    if (!targetRequest) {
+        QJsonObject result;
+        result["error"] = "Auth request not found or already completed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // SECURITY: Verify PIN first (hardware verification)
+    QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
+
+    if (!authResult.value("authorized").toBool()) {
+        targetRequest->status = "failed";
+        targetRequest->error = authResult.value("error").toString("PIN verification failed");
+
+        QJsonObject result;
+        result["authId"] = authId;
+        result["status"] = "failed";
+        result["error"] = targetRequest->error;
+        result["remainingAttempts"] = authResult.value("remainingAttempts").toInt();
+
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // SECURITY: Derive key from hardware (only after PIN verified)
+    QString domain = targetRequest->domain;
+    QJsonObject keyResult = QJsonDocument::fromJson(deriveKey(domain).toUtf8()).object();
+
+    if (keyResult.contains("error")) {
+        targetRequest->status = "failed";
+        targetRequest->error = keyResult.value("error").toString();
+
+        QJsonObject result;
+        result["authId"] = authId;
+        result["status"] = "failed";
+        result["error"] = targetRequest->error;
+
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Success - store legitimate hardware-derived key
+    targetRequest->status = "complete";
+    targetRequest->key = keyResult.value("key").toString();
+
+    QJsonObject result;
+    result["authId"] = authId;
+    result["status"] = "complete";
+    result["message"] = "Authorization completed successfully";
+    result["key"] = targetRequest->key;  // Return key immediately for UI
+
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
