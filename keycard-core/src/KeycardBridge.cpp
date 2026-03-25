@@ -6,7 +6,19 @@
 #include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <PCSC/winscard.h>  // For direct PC/SC reader detection
+
+// PC/SC includes for direct reader detection
+#ifdef Q_OS_MAC
+#include <PCSC/winscard.h>
+#include <PCSC/pcsclite.h>
+// macOS PCSC doesn't define these Windows-style types
+typedef uint32_t DWORD;
+typedef int32_t LONG;
+typedef char* LPSTR;
+#else
+#include <PCSC/winscard.h>
+#include <PCSC/pcsclite.h>
+#endif
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
@@ -671,6 +683,24 @@ bool KeycardBridge::isReaderPresent()
         return false;  // PC/SC not available
     }
 
+#ifdef Q_OS_MAC
+    // macOS: manually allocate buffer (SCARD_AUTOALLOCATE not supported)
+    DWORD dwReaders = 0;
+    rv = SCardListReaders(hContext, NULL, NULL, &dwReaders);
+    if (rv != SCARD_S_SUCCESS || dwReaders == 0) {
+        qDebug() << "KeycardBridge::isReaderPresent: No readers found, error:" << rv;
+        SCardReleaseContext(hContext);
+        return false;
+    }
+    char* readers = (char*)malloc(dwReaders);
+    rv = SCardListReaders(hContext, NULL, readers, &dwReaders);
+    bool hasReaders = (rv == SCARD_S_SUCCESS && dwReaders > 1);
+    if (hasReaders) {
+        qDebug() << "KeycardBridge::isReaderPresent: Found readers";
+    }
+    free(readers);
+#else
+    // Linux/Windows: use SCARD_AUTOALLOCATE
     LPSTR readers = NULL;
     DWORD dwReaders = SCARD_AUTOALLOCATE;
     rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
@@ -686,6 +716,7 @@ bool KeycardBridge::isReaderPresent()
     if (readers) {
         SCardFreeMemory(hContext, readers);
     }
+#endif
     SCardReleaseContext(hContext);
 
     return hasReaders;
@@ -702,6 +733,23 @@ bool KeycardBridge::isCardPresent()
         return false;
     }
 
+#ifdef Q_OS_MAC
+    // macOS: manually allocate buffer (SCARD_AUTOALLOCATE not supported)
+    DWORD dwReaders = 0;
+    rv = SCardListReaders(hContext, NULL, NULL, &dwReaders);
+    if (rv != SCARD_S_SUCCESS || dwReaders == 0) {
+        SCardReleaseContext(hContext);
+        return false;
+    }
+    char* readers = (char*)malloc(dwReaders);
+    rv = SCardListReaders(hContext, NULL, readers, &dwReaders);
+    if (rv != SCARD_S_SUCCESS) {
+        free(readers);
+        SCardReleaseContext(hContext);
+        return false;
+    }
+#else
+    // Linux/Windows: use SCARD_AUTOALLOCATE
     LPSTR readers = NULL;
     DWORD dwReaders = SCARD_AUTOALLOCATE;
     rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
@@ -710,9 +758,10 @@ bool KeycardBridge::isCardPresent()
         SCardReleaseContext(hContext);
         return false;
     }
+#endif
 
     // Check status of each reader
-    LPSTR reader = readers;
+    char* reader = readers;
     bool cardFound = false;
 
     while (*reader != '\0') {
@@ -774,7 +823,11 @@ bool KeycardBridge::isCardPresent()
         reader += strlen(reader) + 1;
     }
 
+#ifdef Q_OS_MAC
+    free(readers);
+#else
     SCardFreeMemory(hContext, readers);
+#endif
     SCardReleaseContext(hContext);
 
     return cardFound;

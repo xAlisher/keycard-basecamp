@@ -34,20 +34,23 @@
             pkgs.ninja
             pkgs.pkg-config
             pkgs.qt6.qtbase
+            pkgs.qt6.qtremoteobjects  # Required by logos-cpp-sdk
             pkgs.libsodium
-            pkgs.pcsclite        # PC/SC library
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+            pkgs.pcsclite        # PC/SC library (Linux only - macOS uses PCSC.framework)
             pkgs.pcsclite.dev    # PC/SC headers
           ];
 
           shellHook = ''
             export LOGOS_CPP_SDK_ROOT="${logosSdk}"
             export LOGOS_LIBLOGOS_HEADERS="${logosHeaders}/include"
-            export PKG_CONFIG_PATH="${pkgs.pcsclite.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''export PKG_CONFIG_PATH="${pkgs.pcsclite.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"''}
 
             echo "Keycard Basecamp development environment"
             echo "  Logos SDK: $LOGOS_CPP_SDK_ROOT"
             echo "  Logos Headers: $LOGOS_LIBLOGOS_HEADERS"
-            echo "  PC/SC: ${pkgs.pcsclite.dev}"
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''echo "  PC/SC: ${pkgs.pcsclite.dev}"''}
+            ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''echo "  PC/SC: macOS PCSC.framework (system)"''}
             echo ""
             echo "Build commands:"
             echo "  cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug"

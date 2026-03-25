@@ -8,8 +8,8 @@ set(CMAKE_AUTOMOC ON)
 # Fetch dependencies
 include(FetchContent)
 
-# Find Qt6 (Core required, Nfc optional for mobile)
-find_package(Qt6 REQUIRED COMPONENTS Core)
+# Find Qt6 (Core and RemoteObjects required, Nfc optional for mobile)
+find_package(Qt6 REQUIRED COMPONENTS Core RemoteObjects)
 find_package(Qt6 OPTIONAL_COMPONENTS Nfc)
 
 # Find OpenSSL (for keycard-qt's secp256k1 ECDH)
@@ -20,7 +20,10 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(sodium REQUIRED IMPORTED_TARGET libsodium)
 
 # Find PC/SC (for direct reader detection)
-pkg_check_modules(pcsclite REQUIRED IMPORTED_TARGET libpcsclite)
+# On macOS, use PCSC.framework; on Linux, use libpcsclite
+if(NOT APPLE)
+    pkg_check_modules(pcsclite REQUIRED IMPORTED_TARGET libpcsclite)
+endif()
 
 # Fetch keycard-qt (use local submodule, Nix-provided, or download)
 if(DEFINED KEYCARD_QT_SOURCE_DIR)
