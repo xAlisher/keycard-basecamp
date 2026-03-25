@@ -53,12 +53,17 @@ target_include_directories(keycard_plugin PRIVATE
 # Link Qt + Logos SDK (static) + keycard-qt + OpenSSL + libsodium + PC/SC
 target_link_libraries(keycard_plugin PRIVATE
     Qt6::Core
+    Qt6::RemoteObjects
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
     keycard-qt
     OpenSSL::Crypto
     PkgConfig::sodium
-    PkgConfig::pcsclite
 )
+
+# Link PC/SC (Linux only - macOS uses PCSC.framework via keycard-qt)
+if(NOT APPLE)
+    target_link_libraries(keycard_plugin PRIVATE PkgConfig::pcsclite)
+endif()
 
 # Link Qt6::Nfc if available (mobile platforms)
 if(TARGET Qt6::Nfc)
