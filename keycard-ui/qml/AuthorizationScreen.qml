@@ -6,12 +6,16 @@ FocusScope {
     id: root
     focus: true
 
-    signal approved()
-    signal declined()
+    signal approved(string authRequestId, string pin)
+    signal declined(string authRequestId)
 
-    property string moduleName: "Notes module"
-    property string domain: "notes_private"
-    property string path: "m/43'/60'/1581'/1437890605'/512438859'"
+    // Request data (must be set by parent)
+    property string authRequestId: ""
+    property string moduleName: ""
+    property string domain: ""
+    property string path: ""
+
+    // PIN entry
     property string pinValue: ""
     property int maxPinLength: 6
 
@@ -239,8 +243,8 @@ FocusScope {
                                 enabled: root.pinValue.length === root.maxPinLength
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
-                                    console.log("Approve clicked, PIN:", root.pinValue)
-                                    root.approved()
+                                    console.log("Approve clicked, ID:", root.authRequestId, "PIN:", root.pinValue)
+                                    root.approved(root.authRequestId, root.pinValue)
                                 }
                             }
                         }
@@ -269,8 +273,8 @@ FocusScope {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    console.log("Decline clicked")
-                                    root.declined()
+                                    console.log("Decline clicked, ID:", root.authRequestId)
+                                    root.declined(root.authRequestId)
                                 }
                             }
                         }

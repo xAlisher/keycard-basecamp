@@ -11,6 +11,9 @@ Rectangle {
     property string mode: "pin"
     property bool debugMode: false
 
+    // Current authorization request (when mode === "authorization")
+    property var currentAuthRequest: null
+
     // Keyboard shortcuts
     Keys.onPressed: (event) => {
         // Ctrl+D: Toggle debug mode
@@ -33,6 +36,16 @@ Rectangle {
             }
             event.accepted = true
         }
+        // Ctrl+A: Show mock authorization request (for testing)
+        else if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)) {
+            showAuthorizationRequest(
+                "auth_req_001",
+                "notes",
+                "notes_private",
+                "m/43'/60'/1581'/1437890605'/512438859'"
+            )
+            event.accepted = true
+        }
     }
 
     focus: true  // Enable keyboard input
@@ -46,6 +59,17 @@ Rectangle {
         console.log("Locking session...")
         // TODO: Call backend lockSession()
         mode = "pin"
+    }
+
+    function showAuthorizationRequest(requestId, moduleName, domain, path) {
+        console.log("Showing authorization request:", requestId, moduleName, domain, path)
+        currentAuthRequest = {
+            id: requestId,
+            moduleName: moduleName,
+            domain: domain,
+            path: path
+        }
+        mode = "authorization"
     }
 
     // Production UI
@@ -73,18 +97,27 @@ Rectangle {
                 })
             }
             if (item && item.approved) {
-                item.approved.connect(function() {
-                    console.log("Authorization approved")
-                    // TODO: Call backend authorize() with PIN
+                item.approved.connect(function(authRequestId, pin) {
+                    console.log("Authorization approved, ID:", authRequestId, "PIN:", pin)
+                    // TODO (#49): Call backend authorize() with authRequestId and pin
+                    root.currentAuthRequest = null
                     root.mode = "dashboard"
                 })
             }
             if (item && item.declined) {
-                item.declined.connect(function() {
-                    console.log("Authorization declined")
-                    // TODO: Call backend decline()
+                item.declined.connect(function(authRequestId) {
+                    console.log("Authorization declined, ID:", authRequestId)
+                    // TODO (#49): Call backend decline() with authRequestId
+                    root.currentAuthRequest = null
                     root.mode = "dashboard"
                 })
+            }
+            // Set request data for authorization screen
+            if (item && item.authRequestId !== undefined && root.currentAuthRequest) {
+                item.authRequestId = root.currentAuthRequest.id
+                item.moduleName = root.currentAuthRequest.moduleName
+                item.domain = root.currentAuthRequest.domain
+                item.path = root.currentAuthRequest.path
             }
             // Give focus to loaded item
             if (item) {
