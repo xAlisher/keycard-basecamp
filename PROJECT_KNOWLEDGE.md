@@ -1159,3 +1159,231 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 **Value:** Clean foundation for Phase 4 (module layout migration). Preparatory work done correctly.
 
 **Closed:** Issue #34 closed on 2026-03-26
+
+---
+
+## Issue #29 - Production UI Implementation (PR #46)
+
+**Context:** Phase 3.5 - Polish PIN entry and Management Dashboard for production quality UI before backend integration.
+
+**PR:** #46 (issue-29-production-ui branch)
+**Merged:** 2026-03-26 (commit 30aca35)
+
+### Problem
+
+Debug UI from Phase 3 had basic functionality but needed production polish:
+- Button hover effects went lighter (should go darker)
+- Inconsistent button padding across columns
+- Lock icon and "Ctrl+L" text not clickable
+- Activity log styling needed consistency
+- White icons needed proper implementation (no QtGraphicalEffects available)
+
+### Technical Discoveries
+
+**1. Signal-based communication in Loader contexts:**
+
+Problem: ManagementDashboard needed to trigger lock action in Main.qml, but was dynamically loaded via Loader component.
+
+Pattern discovered:
+```qml
+// ManagementDashboard.qml
+Rectangle {
+    id: root
+    signal lockRequested()  // Declare signal
+
+    function lockSession() {
+        console.log("Locking session...")
+        lockRequested()  // Emit signal
+    }
+}
+
+// Main.qml
+Loader {
+    onLoaded: {
+        // Connect signals after component loads
+        if (item && item.lockRequested) {
+            item.lockRequested.connect(function() {
+                root.lockSession()  // Actual mode change
+            })
+        }
+    }
+}
+```
+
+**Why this matters:**
+- Loaded QML components can't directly access parent properties
+- Signals provide clean one-way communication boundary
+- Pattern works for any dynamically loaded component needing to trigger parent actions
+
+**2. Stub function trap:**
+
+Issue: Lock icon/text had MouseArea but clicking did nothing. Multiple debugging attempts focused on MouseArea sizing/positioning.
+
+Root cause: `lockSession()` in ManagementDashboard was just logging to console, not changing UI state:
+```qml
+function lockSession() {
+    console.log("Locking session...")
+    // TODO: Actually lock
+}
+```
+
+Fix: Signal-based architecture surfaced this immediately - ManagementDashboard emits event, Main.qml handles state change.
+
+**Lesson:** When UI interaction "doesn't work", check if the function actually does anything, not just whether the click event fires.
+
+**3. Timer-based auto-focus pattern:**
+
+Discovered in PinEntryScreen - QML plugins need slight delay for focus chain:
+```qml
+Timer {
+    id: focusTimer
+    interval: 100  // 100ms delay
+    running: true
+    repeat: false
+    onTriggered: {
+        root.forceActiveFocus()
+        hiddenInput.forceActiveFocus()
+    }
+}
+```
+
+**Why:** Focus chain not fully established when component first loads. 100ms gives Qt time to complete initialization.
+
+**4. Visual effects without QtGraphicalEffects:**
+
+Problem: QtGraphicalEffects.ColorOverlay caused blank screen (module not available in Basecamp sandbox).
+
+Solution: Modified SVG source files directly:
+```svg
+<!-- Before -->
+<svg ... stroke="currentColor">
+
+<!-- After -->
+<svg ... stroke="#ffffff">
+```
+
+**Lesson:** In sandboxed QML environment, prefer static assets over runtime effects.
+
+**5. Item clip pattern for visual effects:**
+
+For colored stripe on request cards (rounded corners):
+```qml
+// Wrapper with clip
+Item {
+    anchors.left: parent.left
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    width: 8
+    clip: true
+
+    // Larger rectangle extends past clip boundary
+    Rectangle {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: 16  // Double the visible width
+        color: DesignTokens.warning
+        radius: 8  // Rounds the left edge
+    }
+}
+```
+
+**Result:** Only left 8px visible, with proper rounded corner.
+
+**Alternative tried:** QtQuick.Shapes - caused blank screen (not available/unstable in Basecamp).
+
+### Implementation Details
+
+**Button hover colors:**
+```qml
+// Approve button - darker on hover
+color: approveArea.containsMouse ? "#e64a19" : DesignTokens.primary
+
+// Decline/Disconnect - subtle highlight
+color: declineArea.containsMouse ? "#3a3a3a" : "transparent"
+```
+
+**Consistent button padding:**
+- Approve/Decline: 85px width (~14px horizontal padding for 7-char text)
+- Disconnect: 105px width (~15px horizontal padding for 10-char text)
+- Result: Visually consistent padding across all buttons
+
+**Clickable lock group:**
+```qml
+Rectangle {
+    Layout.preferredWidth: lockGroup.implicitWidth
+    Layout.preferredHeight: lockGroup.implicitHeight
+    color: "transparent"
+
+    RowLayout {
+        id: lockGroup
+        spacing: 4
+        // Icon + "Ctrl+L" text
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: lockSession()
+    }
+}
+```
+
+**Pattern:** Wrapper Rectangle with MouseArea covering entire group (icon + text).
+
+**Activity log consistency:**
+```qml
+Rectangle {
+    Layout.fillWidth: true
+    Layout.preferredHeight: 167  // Consistent across screens
+    color: DesignTokens.background
+
+    // Top border only
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: 1
+        color: DesignTokens.border
+    }
+}
+```
+
+### Review Process
+
+**Round 1:** Senty review found mock auth/data issues:
+- "why does getState() need stub JSON?"
+- "mock pendingRequests doesn't match backend API"
+
+**Response:** Reframed PR as "visual foundation only":
+- This PR: Production-quality visual components
+- Next PR (Phase 4): Backend integration with real data
+- Strategy: Separate visual polish from data binding
+
+**Round 2:** Senty LGTM - clean visual foundation ready for backend.
+
+### Files Changed
+
+- `keycard-ui/qml/PinEntryScreen.qml` - Activity log height/border
+- `keycard-ui/qml/ManagementDashboard.qml` - Button hovers, padding, lock signal
+- `keycard-ui/qml/Main.qml` - Signal connection for lock
+- `keycard-ui/icons/lock.svg` - White stroke color
+- `keycard-ui/icons/bolt.svg` - White stroke color
+
+### Patterns to Reuse
+
+1. **Signal-based parent communication:** When dynamically loaded component needs to trigger parent action
+2. **100ms focus timer:** For QML plugins needing keyboard input
+3. **Static SVG colors:** When QtGraphicalEffects unavailable
+4. **Item clip for shapes:** When QtQuick.Shapes unavailable/unstable
+5. **Visual-first PR scope:** Separate UI polish from backend integration
+
+### Anti-patterns Avoided
+
+- ❌ Trying to access parent properties directly from loaded component
+- ❌ Using QtGraphicalEffects in sandboxed environment
+- ❌ Using QtQuick.Shapes (unstable in Basecamp)
+- ❌ Mixing visual polish with backend changes in single PR
+- ❌ Assuming MouseArea works without checking function implementation
+
+**Closed:** Issue #29 closed on 2026-03-26
