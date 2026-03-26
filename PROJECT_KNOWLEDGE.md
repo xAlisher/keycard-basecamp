@@ -1051,32 +1051,40 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 | 7 | #38 | Deferred | UI refactor (depends on #29 - production UI/UX design) |
 | 8 | #39 | Deferred | Code generation patterns (evaluate after Phases 1-6) |
 
-### Phase 1 Details (Complete)
+### Phase 1 Details (Complete - Narrowed Scope)
 
-**What was done:**
-- Pinned testing tool versions in `flake.nix`:
+**What was delivered:**
+- ✅ Pinned testing tool versions in `flake.nix`:
   - `logos-logoscore-cli` - Headless backend testing
   - `logos-standalone-app` - Isolated UI testing
   - `logos-module` - Module introspection (lm CLI)
-- Created nix apps: `test-with-logoscore`, `test-ui-standalone`, `inspect-module`
-- Added wrapper scripts in `scripts/test/`
-- Documented testing workflows in README.md
+- ✅ Thin wrapper entrypoints: `test-with-logoscore`, `test-ui-standalone`, `inspect-module`
+- ✅ Wrapper scripts in `scripts/test/`
+- ✅ Documentation in README.md with clear Phase 4 dependency
+
+**Scope narrowed (per Senty Option A):**
+- Phase 1: Reproducible tool pinning + starter wrappers
+- Phase 4: Full operational workflows (after module layout migration)
+- Avoids overclaiming functionality
 
 **Key decisions:**
-- Auto-detection of module location (nix build → cmake build → install)
-- Env var overrides for custom paths
 - All tools pinned for reproducibility (no floating versions)
-- Read-only testing, no changes to core functionality
+- Wrappers are honest entrypoints, not "ready" workflows
+- Full functionality requires Basecamp directory layout from Phase 4
+- Read-only addition, no production code changes
 
-**Senty review iteration:**
-- **Issue raised:** Scripts required manual install, broke CI/fresh checkouts
-- **Fix (commit fcc80cb):** Auto-detect module in `result/lib/`, `build/keycard-core/`, or install location
-- **Impact:** CI workflow now works with `nix build && nix run .#inspect-module`
+**Senty review iterations:**
+1. **Round 1:** Scripts hard-coded to install path, broke CI
+2. **Round 2:** Wrappers found modules but tools failed (structural mismatch)
+3. **Final (Option A):** Narrow scope to pinning + starters, defer full workflows to Phase 4
 
 **Validation:**
-- ✅ Scripts auto-detect multiple locations with clear fallback chain
-- ✅ `flake.lock` tracks all dependency pins
+- ✅ Tools pinned with `flake.lock` tracking dependencies
+- ✅ Wrappers clearly document current status and Phase 4 dependency
+- ✅ No overclaiming of functionality
 - ✅ Master branch untouched (all work on feature branch)
-- ⏳ Awaiting Senty re-review on CI compatibility
+- ⏳ Awaiting Senty final review on narrowed scope
 
-**Next:** Senty re-review on #32, then proceed to Phase 2 (Builder Spike).
+**Value:** Reproducible tool pinning is real progress. Clean foundation for Phase 4.
+
+**Next:** Senty LGTM on #32, then merge and proceed to Phase 2 (Builder Spike).
