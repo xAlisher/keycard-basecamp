@@ -1025,3 +1025,51 @@ Test release for validating:
 - Session management and state transitions
 
 **Not for production use** - implementation testing only.
+
+## Logos Tutorial Adoption
+
+**Tracking Issue:** #31
+**Branch:** `adopt-logos-tutorial-patterns`
+**Status:** Phase 1 complete, awaiting Senty review
+
+### Overview
+
+Incremental adoption of best practices from [logos-tutorial](https://github.com/logos-co/logos-tutorial) to modernize build infrastructure while maintaining backward compatibility.
+
+**Strategy:** 8-phase approach with parity gates, throwaway spikes, and one module at a time migration.
+
+### Phase Status
+
+| Phase | Issue | Status | Description |
+|-------|-------|--------|-------------|
+| 1 | #32 | ✅ Complete (awaiting review) | Pin testing tools (logoscore, standalone-app, lm CLI) |
+| 2 | #33 | Planned | Builder spike (logos-module-builder throwaway test) |
+| 3 | #34 | Planned | Metadata consolidation (single source of truth) |
+| 4 | #35 | Planned | Migrate first module (keycard-core with parity gate) |
+| 5 | #36 | Planned | Migrate second module (keycard-ui with parity gate) |
+| 6 | #37 | Planned | Package management + CI workflows |
+| 7 | #38 | Deferred | UI refactor (depends on #29 - production UI/UX design) |
+| 8 | #39 | Deferred | Code generation patterns (evaluate after Phases 1-6) |
+
+### Phase 1 Details (Complete)
+
+**What was done:**
+- Pinned testing tool versions in `flake.nix`:
+  - `logos-logoscore-cli` - Headless backend testing
+  - `logos-standalone-app` - Isolated UI testing
+  - `logos-module` - Module introspection (lm CLI)
+- Created nix apps: `test-with-logoscore`, `test-ui-standalone`, `inspect-module`
+- Added wrapper scripts in `scripts/test/`
+- Documented testing workflows in README.md
+
+**Key decisions:**
+- Testing tools use installed module paths (`~/.local/share/Logos/LogosBasecampDev`)
+- All tools pinned for reproducibility (no floating versions)
+- Read-only testing, no changes to core functionality
+
+**Validation:**
+- Scripts detect missing installation and provide clear error messages
+- `flake.lock` tracks all dependency pins
+- Master branch untouched (all work on feature branch)
+
+**Next:** Awaiting Senty review on #32 before proceeding to Phase 2.
