@@ -2039,3 +2039,240 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
 - Integration: Full end-to-end testing with real auth requests from modules
 
 **Closed:** Issue #49 (pending review)
+## Issue #41 - ActivityLog UI Component (PR #53)
+
+### Summary
+
+Built reusable ActivityLog.qml component to replace hardcoded ListView implementations across all three UI screens (PinEntryScreen, ManagementDashboard, AuthorizationScreen). Added selectable text and copy-all-logs functionality.
+
+**Duration:** ~2 hours  
+**Scope confusion:** Initially thought this was Issue #45 (backend), actually Issue #41 (UI)  
+**Cherry-pick recovery:** Moved commit from wrong branch to correct branch
+
+### Key Lessons
+
+#### 1. Issue Scope - Read Issue Descriptions Carefully
+
+**Problem:** Started work thinking this was Issue #45 (Backend encrypted storage).
+
+**Reality:** 
+- Issue #45 = C++ ActivityLogger class, encrypted disk storage, backend APIs
+- Issue #41 = QML UI components including ActivityLogPanel
+
+**Impact:** Committed to `issue-45-activity-log` branch initially, had to cherry-pick to correct branch.
+
+**Prevention:** Always read full issue description before creating branch. Check if issue is backend or UI.
+
+#### 2. QML Clipboard Functionality
+
+**Challenge:** Need to copy text to clipboard from QML.
+
+**Attempt 1 (failed):**
+```qml
+logos.copyToClipboard(text)  // API doesn't exist
+```
+
+**Solution (works):**
+```qml
+// Use hidden TextEdit for clipboard operations
+TextEdit {
+    id: clipboardHelper
+    visible: false
+}
+
+function copyAllToClipboard() {
+    clipboardHelper.text = allLogsText
+    clipboardHelper.selectAll()
+    clipboardHelper.copy()
+}
+```
+
+**Why:** Qt Quick's standard clipboard API requires TextEdit/TextInput. There's no direct `Clipboard.setText()` in basic QML.
+
+**Pattern:** Hidden TextEdit is the standard QML pattern for clipboard operations.
+
+#### 3. Reusable QML Components with Public API
+
+**Design:** Created ActivityLog as reusable component with clean public API.
+
+**Public API:**
+```qml
+// Properties
+property alias model: logList.model
+
+// Methods
+function addEntry(timestamp, message, level)  // Add one entry
+function clear()                               // Clear all entries
+```
+
+**Usage in parent:**
+```qml
+ActivityLog {
+    id: activityLog
+    Layout.fillWidth: true
+    Layout.preferredHeight: 167
+    
+    Component.onCompleted: {
+        addEntry("[09:12:03]", "card reader detected", "success")
+    }
+}
+```
+
+**Benefits:**
+- Single source of truth (update once, affects all screens)
+- Consistent behavior across all screens
+- Easy to wire to backend events later (just call addEntry)
+- Memory management built-in (100 entry limit)
+
+#### 4. TextEdit vs Text for Selectable Content
+
+**Text component:** Read-only display, NOT selectable by default
+
+**TextEdit component:** Editable by default, supports:
+```qml
+TextEdit {
+    readOnly: true          // Make it read-only but selectable
+    selectByMouse: true     // Enable click-and-drag selection
+    selectByKeyboard: true  // Enable Shift+Arrow selection
+}
+```
+
+**Use case:** Activity logs need selectable text for copying individual lines, so use TextEdit with readOnly.
+
+#### 5. Git Cherry-Pick for Branch Corrections
+
+**Situation:** Committed to wrong branch (`issue-45-activity-log` instead of `issue-41-ui-components`).
+
+**Recovery steps:**
+```bash
+# 1. Create correct branch from master
+git checkout master
+git checkout -b issue-41-ui-components
+
+# 2. Cherry-pick the commit
+git cherry-pick 57c1f1b
+
+# 3. Amend commit message to reference correct issue
+git commit --amend -m "feat: ... (Issue #41)"
+
+# 4. Push correct branch
+git push -u origin issue-41-ui-components
+```
+
+**Lesson:** Cherry-pick preserves commit content while allowing branch/message changes. Cleaner than merge or rebase for single-commit moves.
+
+### UI Design Patterns
+
+#### Subtle Interactive Elements
+
+**Copy button design:**
+```qml
+Rectangle {
+    width: 20
+    height: 20
+    anchors.top: parent.top
+    anchors.right: parent.right
+    anchors.margins: 8
+    opacity: mouseArea.containsMouse ? 0.8 : 0.5
+    
+    // Simple icon (two overlapping rectangles)
+    Rectangle { /* back */ }
+    Rectangle { /* front */ }
+    
+    MouseArea {
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+    }
+    
+    ToolTip {
+        visible: mouseArea.containsMouse
+        text: "Copy all logs"
+        delay: 500
+    }
+}
+```
+
+**Principles:**
+- Small (20x20px) to stay subtle
+- Low opacity (0.5) when not hovered
+- Tooltip delay (500ms) to avoid spam
+- Simple geometric icon (no external SVG needed)
+
+#### Visual Feedback for Clipboard Actions
+
+```qml
+function copyAllToClipboard() {
+    // ... copy logic ...
+    
+    // Brief visual feedback
+    copyButton.opacity = 0.3
+    feedbackTimer.restart()
+}
+
+Timer {
+    id: feedbackTimer
+    interval: 200
+    onTriggered: copyButton.opacity = 0.5
+}
+```
+
+**Why:** User needs confirmation that copy worked. 200ms opacity flash is quick enough to notice but not jarring.
+
+### Files Changed
+
+- `keycard-ui/qml/ActivityLog.qml` - New reusable component
+- `keycard-ui/qml/PinEntryScreen.qml` - Replaced hardcoded ListView
+- `keycard-ui/qml/ManagementDashboard.qml` - Replaced hardcoded ListView
+- `keycard-ui/qml/AuthorizationScreen.qml` - Replaced hardcoded ListView
+- `keycard-ui/CMakeLists.txt` - Added ActivityLog.qml to install list
+
+### Testing Notes
+
+**What was tested:**
+- ✅ Component displays on all three screens
+- ✅ Text selection works (click and drag)
+- ✅ Copy button copies all logs to clipboard
+- ✅ Color coding works (info/success/warning/error)
+- ✅ Auto-scroll to bottom on new entries
+- ✅ Tooltip appears on hover
+
+**What wasn't tested:**
+- Real backend event integration (mock data only)
+- Memory management at 100+ entries (would need long session)
+- Concurrent addEntry calls (would need stress test)
+
+**Next:** Wire to real backend events in Issue #44 (Session Management)
+
+### Patterns to Reuse
+
+1. **Reusable components with public API** - Better than copy-paste
+2. **Hidden TextEdit for clipboard** - Standard QML pattern
+3. **Visual feedback for actions** - Brief opacity change confirms action
+4. **Subtle interactive elements** - Low opacity, small size, tooltip on hover
+5. **Cherry-pick for branch corrections** - Cleaner than merge/rebase
+
+### Anti-patterns Avoided
+
+- ❌ Assuming `logos.copyToClipboard()` exists (tested and found it doesn't)
+- ❌ Using Text component (not selectable - use TextEdit instead)
+- ❌ Committing to wrong branch and leaving it there (cherry-picked to correct branch)
+- ❌ Copy-pasting ListView code across screens (created reusable component)
+
+### Value Delivered
+
+**Immediate:**
+- All screens have consistent activity log UI
+- Users can copy logs for debugging/reporting
+- Single source of truth for activity log behavior
+
+**Preparatory:**
+- Ready to wire to backend events (just call addEntry)
+- Component tested and working on all screens
+- Clear API makes integration straightforward
+
+**Next steps:**
+- Issue #44: Wire ActivityLog to real backend events during session management
+- Issue #45: Implement backend encrypted storage (separate from UI)
+- Future: Consider adding filters (show only errors, search, etc.)
+
+**Closed:** Part of Issue #41 (ActivityLogPanel task complete)
