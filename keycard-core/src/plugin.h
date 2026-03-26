@@ -44,6 +44,7 @@ public:
 
     // SECURITY: Only keycard-ui should call this - verifies PIN and derives key internally
     Q_INVOKABLE QString authorizeRequest(const QString& authId, const QString& pin);
+    Q_INVOKABLE QString rejectRequest(const QString& authId);
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);

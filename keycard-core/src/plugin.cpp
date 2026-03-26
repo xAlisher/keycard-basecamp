@@ -489,3 +489,33 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
+
+QString KeycardPlugin::rejectRequest(const QString& authId)
+{
+    qDebug() << "KeycardPlugin::rejectRequest() called for authId:" << authId;
+
+    // Find pending request
+    AuthRequest* targetRequest = nullptr;
+    for (auto& req : m_authRequests) {
+        if (req.id == authId && req.status == "pending") {
+            targetRequest = &req;
+            break;
+        }
+    }
+
+    if (!targetRequest) {
+        QJsonObject result;
+        result["error"] = "Auth request not found or already completed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Mark as rejected
+    targetRequest->status = "rejected";
+
+    QJsonObject result;
+    result["authId"] = authId;
+    result["status"] = "rejected";
+    result["message"] = "Authorization request declined by user";
+
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
