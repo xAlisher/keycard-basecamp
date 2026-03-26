@@ -10,9 +10,23 @@
       url = "github:logos-co/logos-liblogos";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Testing tools (Phase 1 - pinned versions for reproducibility)
+    logos-logoscore-cli = {
+      url = "github:logos-co/logos-logoscore-cli";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    logos-standalone-app = {
+      url = "github:logos-co/logos-standalone-app";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    logos-module = {
+      url = "github:logos-co/logos-module";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, logos-cpp-sdk, logos-liblogos }:
+  outputs = { self, nixpkgs, flake-utils, logos-cpp-sdk, logos-liblogos, logos-logoscore-cli, logos-standalone-app, logos-module }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -166,11 +180,58 @@
         };
 
         # Canonical LGX packaging command (single-step, produces working artifacts)
-        apps.package-lgx = {
-          type = "app";
-          program = "${pkgs.writeShellScript "package-lgx" ''
-            ${builtins.readFile ./scripts/package-lgx.sh}
-          ''}";
+        apps = {
+          package-lgx = {
+            type = "app";
+            program = "${pkgs.writeShellScript "package-lgx" ''
+              ${builtins.readFile ./scripts/package-lgx.sh}
+            ''}";
+          };
+
+          # Phase 1: Testing infrastructure (pinned tools)
+          test-with-logoscore = {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-with-logoscore" ''
+              # Test keycard module with logoscore (headless)
+              echo "Testing keycard module with logoscore..."
+              ${logos-logoscore-cli.packages.${system}.default}/bin/logoscore \
+                --module result/lib/Logos/Modules/keycard
+            ''}";
+          };
+
+          test-ui-standalone = {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-ui-standalone" ''
+              # Test QML UI in isolation
+              echo "Testing keycard UI with logos-standalone-app..."
+              ${logos-standalone-app.packages.${system}.default}/bin/logos-standalone-app \
+                --ui result/lib/Logos/Plugins/keycard-ui \
+                --module result/lib/Logos/Modules/keycard
+            ''}";
+          };
+
+          inspect-module = {
+            type = "app";
+            program = "${pkgs.writeShellScript "inspect-module" ''
+              # Inspect module with lm CLI
+              MODULE_SO="result/lib/Logos/Modules/keycard/keycard_plugin.so"
+
+              if [ ! -f "$MODULE_SO" ]; then
+                echo "Error: Module not found at $MODULE_SO"
+                echo "Run 'nix build' first"
+                exit 1
+              fi
+
+              echo "=== Module Info ==="
+              ${logos-module.packages.${system}.default}/bin/lm info "$MODULE_SO"
+
+              echo -e "\n=== Available Methods ==="
+              ${logos-module.packages.${system}.default}/bin/lm methods "$MODULE_SO"
+
+              echo -e "\n=== Validation ==="
+              ${logos-module.packages.${system}.default}/bin/lm validate "$MODULE_SO"
+            ''}";
+          };
         };
       }
     );
