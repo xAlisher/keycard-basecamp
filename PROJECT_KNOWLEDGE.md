@@ -1025,3 +1025,66 @@ Test release for validating:
 - Session management and state transitions
 
 **Not for production use** - implementation testing only.
+
+## Logos Tutorial Adoption
+
+**Tracking Issue:** #31
+**Branch:** `adopt-logos-tutorial-patterns`
+**Status:** Phase 1 complete, awaiting Senty review
+
+### Overview
+
+Incremental adoption of best practices from [logos-tutorial](https://github.com/logos-co/logos-tutorial) to modernize build infrastructure while maintaining backward compatibility.
+
+**Strategy:** 8-phase approach with parity gates, throwaway spikes, and one module at a time migration.
+
+### Phase Status
+
+| Phase | Issue | Status | Description |
+|-------|-------|--------|-------------|
+| 1 | #32 | ✅ Complete (awaiting review) | Pin testing tools (logoscore, standalone-app, lm CLI) |
+| 2 | #33 | Planned | Builder spike (logos-module-builder throwaway test) |
+| 3 | #34 | Planned | Metadata consolidation (single source of truth) |
+| 4 | #35 | Planned | Migrate first module (keycard-core with parity gate) |
+| 5 | #36 | Planned | Migrate second module (keycard-ui with parity gate) |
+| 6 | #37 | Planned | Package management + CI workflows |
+| 7 | #38 | Deferred | UI refactor (depends on #29 - production UI/UX design) |
+| 8 | #39 | Deferred | Code generation patterns (evaluate after Phases 1-6) |
+
+### Phase 1 Details (Complete - Narrowed Scope)
+
+**What was delivered:**
+- ✅ Pinned testing tool versions in `flake.nix`:
+  - `logos-logoscore-cli` - Headless backend testing
+  - `logos-standalone-app` - Isolated UI testing
+  - `logos-module` - Module introspection (lm CLI)
+- ✅ Thin wrapper entrypoints: `test-with-logoscore`, `test-ui-standalone`, `inspect-module`
+- ✅ Wrapper scripts in `scripts/test/`
+- ✅ Documentation in README.md with clear Phase 4 dependency
+
+**Scope narrowed (per Senty Option A):**
+- Phase 1: Reproducible tool pinning + starter wrappers
+- Phase 4: Full operational workflows (after module layout migration)
+- Avoids overclaiming functionality
+
+**Key decisions:**
+- All tools pinned for reproducibility (no floating versions)
+- Wrappers are honest entrypoints, not "ready" workflows
+- Full functionality requires Basecamp directory layout from Phase 4
+- Read-only addition, no production code changes
+
+**Senty review iterations:**
+1. **Round 1:** Scripts hard-coded to install path, broke CI
+2. **Round 2:** Wrappers found modules but tools failed (structural mismatch)
+3. **Final (Option A):** Narrow scope to pinning + starters, defer full workflows to Phase 4
+
+**Validation:**
+- ✅ Tools pinned with `flake.lock` tracking dependencies
+- ✅ Wrappers clearly document current status and Phase 4 dependency
+- ✅ No overclaiming of functionality
+- ✅ Master branch untouched (all work on feature branch)
+- ⏳ Awaiting Senty final review on narrowed scope
+
+**Value:** Reproducible tool pinning is real progress. Clean foundation for Phase 4.
+
+**Next:** Senty LGTM on #32, then merge and proceed to Phase 2 (Builder Spike).

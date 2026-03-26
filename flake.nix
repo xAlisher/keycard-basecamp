@@ -10,9 +10,23 @@
       url = "github:logos-co/logos-liblogos";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Testing tools (Phase 1 - pinned versions for reproducibility)
+    logos-logoscore-cli = {
+      url = "github:logos-co/logos-logoscore-cli";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    logos-standalone-app = {
+      url = "github:logos-co/logos-standalone-app";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    logos-module = {
+      url = "github:logos-co/logos-module";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, logos-cpp-sdk, logos-liblogos }:
+  outputs = { self, nixpkgs, flake-utils, logos-cpp-sdk, logos-liblogos, logos-logoscore-cli, logos-standalone-app, logos-module }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -166,11 +180,119 @@
         };
 
         # Canonical LGX packaging command (single-step, produces working artifacts)
-        apps.package-lgx = {
-          type = "app";
-          program = "${pkgs.writeShellScript "package-lgx" ''
-            ${builtins.readFile ./scripts/package-lgx.sh}
-          ''}";
+        apps = {
+          package-lgx = {
+            type = "app";
+            program = "${pkgs.writeShellScript "package-lgx" ''
+              ${builtins.readFile ./scripts/package-lgx.sh}
+            ''}";
+          };
+
+          # Phase 1: Testing infrastructure (pinned tools - starter wrappers)
+          # Full functionality requires Phase 4 module layout migration
+          test-with-logoscore = {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-with-logoscore" ''
+              echo "logoscore - Headless backend testing (pinned version)"
+              echo ""
+              echo "Phase 1: Tool pinned, starter wrapper available"
+              echo "Phase 4: Full operational workflow (after module layout migration)"
+              echo ""
+              echo "Current usage requires install:"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+              echo "  export KEYCARD_MODULE_DIR=~/.local/share/Logos/LogosBasecampDev/modules/keycard"
+              echo ""
+
+              MODULE_DIR="''${KEYCARD_MODULE_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard}"
+
+              if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
+                echo "Error: Module not found at $MODULE_DIR"
+                echo "Set KEYCARD_MODULE_DIR to override"
+                exit 1
+              fi
+
+              echo "Module: $MODULE_DIR"
+              echo "Running: logoscore --modules-dir \"$MODULE_DIR\""
+              echo ""
+              ${logos-logoscore-cli.packages.${system}.default}/bin/logoscore \
+                --modules-dir "$MODULE_DIR"
+            ''}";
+          };
+
+          test-ui-standalone = {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-ui-standalone" ''
+              echo "logos-standalone-app - Isolated UI testing (pinned version)"
+              echo ""
+              echo "Phase 1: Tool pinned, starter wrapper available"
+              echo "Phase 4: Full operational workflow (after module layout migration)"
+              echo ""
+              echo "Current usage requires install:"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+              echo "  export KEYCARD_MODULE_DIR=~/.local/share/Logos/LogosBasecampDev/modules/keycard"
+              echo "  export KEYCARD_UI_DIR=~/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui"
+              echo ""
+
+              MODULE_DIR="''${KEYCARD_MODULE_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard}"
+              UI_DIR="''${KEYCARD_UI_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui}"
+
+              if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
+                echo "Error: Module not found at $MODULE_DIR"
+                exit 1
+              fi
+
+              if [ ! -f "$UI_DIR/Main.qml" ]; then
+                echo "Error: UI not found at $UI_DIR"
+                exit 1
+              fi
+
+              echo "Module: $MODULE_DIR"
+              echo "UI: $UI_DIR"
+              echo "Running: logos-standalone-app --ui \"$UI_DIR\" --module \"$MODULE_DIR\""
+              echo ""
+              ${logos-standalone-app.packages.${system}.default}/bin/logos-standalone-app \
+                --ui "$UI_DIR" \
+                --module "$MODULE_DIR"
+            ''}";
+          };
+
+          inspect-module = {
+            type = "app";
+            program = "${pkgs.writeShellScript "inspect-module" ''
+              echo "lm CLI - Module introspection (pinned version)"
+              echo ""
+              echo "Phase 1: Tool pinned, starter wrapper available"
+              echo "Phase 4: Full operational workflow (after module layout migration)"
+              echo ""
+              echo "Current usage requires install:"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+              echo "  export KEYCARD_MODULE_SO=~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so"
+              echo ""
+
+              MODULE_SO="''${KEYCARD_MODULE_SO:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so}"
+
+              if [ ! -f "$MODULE_SO" ]; then
+                echo "Error: Module not found at $MODULE_SO"
+                echo "Set KEYCARD_MODULE_SO to override"
+                exit 1
+              fi
+
+              echo "Inspecting: $MODULE_SO"
+              echo "Running: lm info / lm methods / lm validate"
+              echo ""
+
+              echo "=== Module Info ==="
+              ${logos-module.packages.${system}.default}/bin/lm info "$MODULE_SO" || echo "  (May require proper module layout)"
+
+              echo ""
+              echo "=== Available Methods ==="
+              ${logos-module.packages.${system}.default}/bin/lm methods "$MODULE_SO" || echo "  (May require proper module layout)"
+
+              echo ""
+              echo "=== Validation ==="
+              ${logos-module.packages.${system}.default}/bin/lm validate "$MODULE_SO" || echo "  (May require proper module layout)"
+            ''}";
+          };
         };
       }
     );

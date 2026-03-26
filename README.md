@@ -84,6 +84,31 @@ nix build .#lib  # Build core module only
 nix build .#ui   # Build UI plugin only
 ```
 
+### Testing
+
+**Testing tools pinned** (Phase 1 - reproducible versions):
+
+```bash
+nix run .#test-with-logoscore   # Headless backend testing
+nix run .#test-ui-standalone    # Isolated UI testing
+nix run .#inspect-module        # Module introspection
+```
+
+**Current status:** Starter wrappers are available, but **full operational workflows require Phase 4** (module layout migration). The tools expect Basecamp directory structure (`Modules/keycard/`, `Plugins/keycard-ui/`) which will be created during migration to `logos-module-builder`.
+
+**Working now:** Tools are pinned to specific versions in `flake.nix` for reproducibility.
+
+**Coming in Phase 4:** Full wrapper functionality after module packaging migration creates proper directory layout.
+
+**Manual testing (current workaround):**
+```bash
+# Install creates proper Basecamp structure
+cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev
+
+# Then wrappers can find modules in expected layout
+nix run .#inspect-module
+```
+
 ### Install to Basecamp Dev
 
 ```bash
