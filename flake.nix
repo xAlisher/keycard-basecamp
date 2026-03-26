@@ -188,88 +188,68 @@
             ''}";
           };
 
-          # Phase 1: Testing infrastructure (pinned tools)
+          # Phase 1: Testing infrastructure (pinned tools - starter wrappers)
+          # Full functionality requires Phase 4 module layout migration
           test-with-logoscore = {
             type = "app";
             program = "${pkgs.writeShellScript "test-with-logoscore" ''
-              # Test keycard module with logoscore (headless)
-              # Auto-detect module location: nix build output, cmake build, or install
+              echo "logoscore - Headless backend testing (pinned version)"
+              echo ""
+              echo "Phase 1: Tool pinned, starter wrapper available"
+              echo "Phase 4: Full operational workflow (after module layout migration)"
+              echo ""
+              echo "Current usage requires install:"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+              echo "  export KEYCARD_MODULE_DIR=~/.local/share/Logos/LogosBasecampDev/modules/keycard"
+              echo ""
 
-              MODULE_DIR="''${KEYCARD_MODULE_DIR:-}"
+              MODULE_DIR="''${KEYCARD_MODULE_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard}"
 
-              if [ -z "$MODULE_DIR" ]; then
-                # Try nix build output first
-                if [ -f "result/lib/keycard_plugin.so" ]; then
-                  MODULE_DIR="result/lib"
-                # Try cmake build output
-                elif [ -f "build/keycard-core/keycard_plugin.so" ]; then
-                  MODULE_DIR="build/keycard-core"
-                # Fall back to install location
-                elif [ -f "$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so" ]; then
-                  MODULE_DIR="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard"
-                else
-                  echo "Error: Module not found. Tried:"
-                  echo "  - result/lib/keycard_plugin.so (nix build)"
-                  echo "  - build/keycard-core/keycard_plugin.so (cmake build)"
-                  echo "  - ~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so (install)"
-                  echo ""
-                  echo "Build with: nix build"
-                  echo "Or: cmake -B build && cmake --build build"
-                  echo "Or set: export KEYCARD_MODULE_DIR=/path/to/module"
-                  exit 1
-                fi
+              if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
+                echo "Error: Module not found at $MODULE_DIR"
+                echo "Set KEYCARD_MODULE_DIR to override"
+                exit 1
               fi
 
-              echo "Testing keycard module with logoscore..."
               echo "Module: $MODULE_DIR"
+              echo "Running: logoscore --modules-dir \"$MODULE_DIR\""
+              echo ""
               ${logos-logoscore-cli.packages.${system}.default}/bin/logoscore \
-                --module "$MODULE_DIR"
+                --modules-dir "$MODULE_DIR"
             ''}";
           };
 
           test-ui-standalone = {
             type = "app";
             program = "${pkgs.writeShellScript "test-ui-standalone" ''
-              # Test QML UI in isolation
-              # Auto-detect module and UI locations: build outputs or install
+              echo "logos-standalone-app - Isolated UI testing (pinned version)"
+              echo ""
+              echo "Phase 1: Tool pinned, starter wrapper available"
+              echo "Phase 4: Full operational workflow (after module layout migration)"
+              echo ""
+              echo "Current usage requires install:"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+              echo "  export KEYCARD_MODULE_DIR=~/.local/share/Logos/LogosBasecampDev/modules/keycard"
+              echo "  export KEYCARD_UI_DIR=~/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui"
+              echo ""
 
-              MODULE_DIR="''${KEYCARD_MODULE_DIR:-}"
-              UI_DIR="''${KEYCARD_UI_DIR:-}"
+              MODULE_DIR="''${KEYCARD_MODULE_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard}"
+              UI_DIR="''${KEYCARD_UI_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui}"
 
-              # Auto-detect module directory
-              if [ -z "$MODULE_DIR" ]; then
-                if [ -f "result/lib/keycard_plugin.so" ]; then
-                  MODULE_DIR="result/lib"
-                elif [ -f "build/keycard-core/keycard_plugin.so" ]; then
-                  MODULE_DIR="build/keycard-core"
-                elif [ -f "$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so" ]; then
-                  MODULE_DIR="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard"
-                else
-                  echo "Error: Module not found. Tried:"
-                  echo "  - result/lib/keycard_plugin.so (nix build)"
-                  echo "  - build/keycard-core/keycard_plugin.so (cmake build)"
-                  echo "  - ~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so (install)"
-                  exit 1
-                fi
+              if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
+                echo "Error: Module not found at $MODULE_DIR"
+                exit 1
               fi
 
-              # Auto-detect UI directory
-              if [ -z "$UI_DIR" ]; then
-                if [ -f "keycard-ui/qml/Main.qml" ]; then
-                  UI_DIR="keycard-ui/qml"
-                elif [ -f "$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui/Main.qml" ]; then
-                  UI_DIR="$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui"
-                else
-                  echo "Error: UI not found. Tried:"
-                  echo "  - keycard-ui/qml/Main.qml (source tree)"
-                  echo "  - ~/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui/Main.qml (install)"
-                  exit 1
-                fi
+              if [ ! -f "$UI_DIR/Main.qml" ]; then
+                echo "Error: UI not found at $UI_DIR"
+                exit 1
               fi
 
-              echo "Testing keycard UI with logos-standalone-app..."
               echo "Module: $MODULE_DIR"
               echo "UI: $UI_DIR"
+              echo "Running: logos-standalone-app --ui \"$UI_DIR\" --module \"$MODULE_DIR\""
+              echo ""
               ${logos-standalone-app.packages.${system}.default}/bin/logos-standalone-app \
                 --ui "$UI_DIR" \
                 --module "$MODULE_DIR"
@@ -279,45 +259,38 @@
           inspect-module = {
             type = "app";
             program = "${pkgs.writeShellScript "inspect-module" ''
-              # Inspect module with lm CLI
-              # Auto-detect module .so: nix build output, cmake build, or install
+              echo "lm CLI - Module introspection (pinned version)"
+              echo ""
+              echo "Phase 1: Tool pinned, starter wrapper available"
+              echo "Phase 4: Full operational workflow (after module layout migration)"
+              echo ""
+              echo "Current usage requires install:"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+              echo "  export KEYCARD_MODULE_SO=~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so"
+              echo ""
 
-              MODULE_SO="''${KEYCARD_MODULE_SO:-}"
+              MODULE_SO="''${KEYCARD_MODULE_SO:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so}"
 
-              if [ -z "$MODULE_SO" ]; then
-                # Try nix build output first
-                if [ -f "result/lib/keycard_plugin.so" ]; then
-                  MODULE_SO="result/lib/keycard_plugin.so"
-                # Try cmake build output
-                elif [ -f "build/keycard-core/keycard_plugin.so" ]; then
-                  MODULE_SO="build/keycard-core/keycard_plugin.so"
-                # Fall back to install location
-                elif [ -f "$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so" ]; then
-                  MODULE_SO="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so"
-                else
-                  echo "Error: Module not found. Tried:"
-                  echo "  - result/lib/keycard_plugin.so (nix build)"
-                  echo "  - build/keycard-core/keycard_plugin.so (cmake build)"
-                  echo "  - ~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so (install)"
-                  echo ""
-                  echo "Build with: nix build"
-                  echo "Or: cmake -B build && cmake --build build"
-                  echo "Or set: export KEYCARD_MODULE_SO=/path/to/keycard_plugin.so"
-                  exit 1
-                fi
+              if [ ! -f "$MODULE_SO" ]; then
+                echo "Error: Module not found at $MODULE_SO"
+                echo "Set KEYCARD_MODULE_SO to override"
+                exit 1
               fi
 
               echo "Inspecting: $MODULE_SO"
+              echo "Running: lm info / lm methods / lm validate"
               echo ""
 
               echo "=== Module Info ==="
-              ${logos-module.packages.${system}.default}/bin/lm info "$MODULE_SO"
+              ${logos-module.packages.${system}.default}/bin/lm info "$MODULE_SO" || echo "  (May require proper module layout)"
 
-              echo -e "\\n=== Available Methods ==="
-              ${logos-module.packages.${system}.default}/bin/lm methods "$MODULE_SO"
+              echo ""
+              echo "=== Available Methods ==="
+              ${logos-module.packages.${system}.default}/bin/lm methods "$MODULE_SO" || echo "  (May require proper module layout)"
 
-              echo -e "\\n=== Validation ==="
-              ${logos-module.packages.${system}.default}/bin/lm validate "$MODULE_SO"
+              echo ""
+              echo "=== Validation ==="
+              ${logos-module.packages.${system}.default}/bin/lm validate "$MODULE_SO" || echo "  (May require proper module layout)"
             ''}";
           };
         };

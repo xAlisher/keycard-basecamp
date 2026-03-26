@@ -86,36 +86,28 @@ nix build .#ui   # Build UI plugin only
 
 ### Testing
 
-Three testing workflows with auto-detection of module location:
+**Testing tools pinned** (Phase 1 - reproducible versions):
 
-**Headless backend testing (logoscore):**
 ```bash
-nix run .#test-with-logoscore
+nix run .#test-with-logoscore   # Headless backend testing
+nix run .#test-ui-standalone    # Isolated UI testing
+nix run .#inspect-module        # Module introspection
 ```
 
-**Isolated UI testing (logos-standalone-app):**
-```bash
-nix run .#test-ui-standalone
-```
+**Current status:** Starter wrappers are available, but **full operational workflows require Phase 4** (module layout migration). The tools expect Basecamp directory structure (`Modules/keycard/`, `Plugins/keycard-ui/`) which will be created during migration to `logos-module-builder`.
 
-**Module introspection (lm CLI):**
+**Working now:** Tools are pinned to specific versions in `flake.nix` for reproducibility.
+
+**Coming in Phase 4:** Full wrapper functionality after module packaging migration creates proper directory layout.
+
+**Manual testing (current workaround):**
 ```bash
+# Install creates proper Basecamp structure
+cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev
+
+# Then wrappers can find modules in expected layout
 nix run .#inspect-module
 ```
-
-**Auto-detection:** Scripts automatically find the module in:
-1. `result/lib/` (nix build output) - preferred for CI
-2. `build/keycard-core/` (cmake build output)
-3. `~/.local/share/Logos/LogosBasecampDev/` (install location)
-
-**Override:** Set env vars to use custom paths:
-```bash
-export KEYCARD_MODULE_DIR=/path/to/module
-export KEYCARD_UI_DIR=/path/to/ui
-nix run .#test-ui-standalone
-```
-
-All testing tools are pinned to specific versions in `flake.nix` for reproducibility.
 
 ### Install to Basecamp Dev
 
