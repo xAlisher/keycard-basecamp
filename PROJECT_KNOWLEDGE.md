@@ -1043,7 +1043,7 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 |-------|-------|--------|-------------|
 | 1 | #32 | ✅ **Merged** (PR #40) | Pin testing tools (logoscore, standalone-app, lm CLI) |
 | 2 | #33 | ✅ **Complete** | Builder spike (monorepo viable, builder experimental) |
-| 3 | #34 | Planned | Metadata consolidation (single source of truth) |
+| 3 | #34 | ✅ **Merged** | Metadata consolidation (preparatory, builder-aligned) |
 | 4 | #35 | Planned | Migrate first module (keycard-core with parity gate) |
 | 5 | #36 | Planned | Migrate second module (keycard-ui with parity gate) |
 | 6 | #37 | Planned | Package management + CI workflows |
@@ -1120,3 +1120,42 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 **Closed:** Issue #33 closed on 2026-03-26
 
 **Next:** Phase 3 - Metadata Consolidation (#34)
+
+---
+
+### Phase 3 Details (Complete)
+
+**What was delivered:**
+- ✅ `keycard-core/metadata.json` - Builder-aligned metadata consolidating plugin_metadata.json + manifest.json + nix/cmake sections
+- ✅ `keycard-ui/metadata.json` - Builder-aligned metadata for UI plugin
+- ✅ README.md update documenting these as "staged migration artifacts"
+
+**Key constraint:**
+- Metadata.json files are **preparatory** (not yet consumed by build)
+- CMakeLists.txt remains operational source of truth
+- Purpose: Enable quick migration when logos-module-builder stabilizes
+
+**Review findings (Round 1):**
+1. **MEDIUM:** keycard-core/metadata.json listed wrong source files
+   - Listed: `keycard_manager.cpp`, `secure_buffer.cpp` (don't exist), `file_pairing_storage.cpp` (wrong case)
+   - Actual: `plugin.cpp`, `KeycardBridge.cpp`, `FilePairingStorage.cpp`
+   - **Fix:** Corrected `extra_sources` list to match actual src/ directory
+
+2. **MEDIUM:** keycard-ui/metadata.json changed module identity
+   - Changed name from `"keycard-ui"` to `"keycard_ui"`
+   - Changed main from `"Main.qml"` to `"qml/Main.qml"`
+   - **Fix:** Restored to match current shipped identity
+
+**Senty's guidance:**
+- "Honest framing" - Document as preparatory, not claiming "single source of truth"
+- Metadata must match current reality (no drift from actual files)
+- README.md section prevents confusion about CMake vs metadata
+
+**Final result (Round 2):**
+- ✅ Senty LGTM - accurate metadata, honest documentation
+- ✅ Merged to master (commit 04e472e)
+- ✅ Issue #34 closed
+
+**Value:** Clean foundation for Phase 4 (module layout migration). Preparatory work done correctly.
+
+**Closed:** Issue #34 closed on 2026-03-26
