@@ -1583,3 +1583,210 @@ When increasing title size on AuthorizationScreen (20px → 24px), also updated 
 - No ambiguity about what's done vs what's deferred
 
 **Closed:** Issue #42 closed on 2026-03-26
+
+---
+
+## Issue #48 - Authorization Request Binding (PR #51)
+
+**Context:** Wire authorization screen to real request objects, removing hardcoded placeholder data. First step of backend integration (UI → Backend pipeline).
+
+**PR:** #51 (issue-48-request-binding branch)
+**Merged:** 2026-03-26 (commit 22152f8)
+
+### Implementation
+
+**AuthorizationScreen.qml changes:**
+- Added `authRequestId` property for tracking requests
+- Removed hardcoded defaults: `moduleName`, `domain`, `path` now required from parent
+- Updated signal signatures: `approved(authRequestId, pin)` and `declined(authRequestId)`
+- Signals now pass data needed for backend API calls
+
+**Main.qml changes:**
+- Added `currentAuthRequest` property to store active request
+- Added `showAuthorizationRequest(id, module, domain, path)` function
+- Signal handlers updated to receive authRequestId + PIN parameters
+- Request data set on AuthorizationScreen when loaded via Loader.onLoaded
+- Added Ctrl+A shortcut for testing (temporary scaffolding)
+
+**Data flow:**
+```
+Mock trigger (Ctrl+A)
+  → Main.showAuthorizationRequest(...)
+  → currentAuthRequest stored
+  → mode = "authorization"
+  → Loader loads AuthorizationScreen
+  → onLoaded: set authRequestId, moduleName, domain, path
+  → User interacts
+  → approved(authRequestId, pin) OR declined(authRequestId)
+  → Main.qml receives signal with data
+  → (TODO #49: call backend APIs)
+```
+
+### Testing Strategy Lesson
+
+**Challenge:** Console.log messages not appearing in log file.
+
+**Initial approach:** Checked `/tmp/logos-launch.log` for console.log output.
+
+**Result:** QML console.log messages weren't captured in that log file.
+
+**Solution:** Relied on visual confirmation instead:
+- Pressed Ctrl+A to trigger authorization screen
+- Visually verified displayed data (module name, domain, path)
+- Confirmed correct data was shown in UI
+
+**Lesson:** When console logs aren't available, use visual testing:
+- Check UI displays correct data
+- Verify interactions work as expected
+- Use visual confirmation as primary test method
+- Console logs are helpful but not always available
+
+**Why this matters:** In production UI testing, visual confirmation is often more important than console logs. The user sees the UI, not the logs.
+
+### Request Data Architecture Pattern
+
+**Pattern discovered:** Store request data in parent, pass to dynamically loaded component.
+
+```qml
+// Parent (Main.qml)
+property var currentAuthRequest: null
+
+function showAuthorizationRequest(id, module, domain, path) {
+    currentAuthRequest = {
+        id: id,
+        moduleName: module,
+        domain: domain,
+        path: path
+    }
+    mode = "authorization"  // Triggers Loader
+}
+
+Loader {
+    onLoaded: {
+        // Pass request data to loaded component
+        if (item && item.authRequestId !== undefined && root.currentAuthRequest) {
+            item.authRequestId = root.currentAuthRequest.id
+            item.moduleName = root.currentAuthRequest.moduleName
+            item.domain = root.currentAuthRequest.domain
+            item.path = root.currentAuthRequest.path
+        }
+    }
+}
+```
+
+**Why this pattern:**
+- Parent owns request lifecycle (create → display → complete)
+- Loaded component is stateless (receives data, emits results)
+- Easy to test (mock data in parent, component displays it)
+- Clean separation: parent manages state, component handles UI
+
+**Alternative considered:** Pass request object directly to component.
+**Why rejected:** QML Loader doesn't support constructor parameters. Must set properties after load.
+
+### Signal Parameters Pattern
+
+**Evolution of signal signatures:**
+
+**Before (Issue #42):**
+```qml
+signal approved()  // No parameters
+signal declined()  // No parameters
+```
+
+**After (Issue #48):**
+```qml
+signal approved(string authRequestId, string pin)
+signal declined(string authRequestId)
+```
+
+**Why this matters:**
+- Signals carry data needed for backend API calls
+- No need to access component state from parent
+- Cleaner data flow: component → signal → parent → backend
+- Easy to add more parameters later if needed
+
+**Pattern:** Always include request/action ID in signals for backend operations. This allows parent to correlate UI events with backend state.
+
+### Testing Shortcuts
+
+**Ctrl+A shortcut for testing:**
+```qml
+Keys.onPressed: (event) => {
+    // Ctrl+A: Show mock authorization request (for testing)
+    if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)) {
+        showAuthorizationRequest(
+            "auth_req_001",
+            "notes",
+            "notes_private",
+            "m/43'/60'/1581'/1437890605'/512438859'"
+        )
+        event.accepted = true
+    }
+}
+```
+
+**Senty's position:** Accepted as "temporary developer scaffolding" (not a blocker).
+
+**Lesson:** Keyboard shortcuts for testing are valuable:
+- Easy to trigger during development
+- Don't require backend to be ready
+- Can be removed later or left as debug feature
+- Reviewers accept them if clearly marked as temporary
+
+**Best practice:** Add comment explaining it's temporary:
+```qml
+// Ctrl+A: Show mock authorization request (TEMPORARY - for testing Issue #48)
+```
+
+### Scope Clarity Success
+
+**Issue #48 scope:** Request binding only (not backend APIs).
+
+**Review:** Senty immediately understood scope, no debate about deferred work.
+
+**Why smooth:**
+- Issue body explicitly listed #49 for backend APIs
+- PR description clearly stated "deferred to #49"
+- Code had TODO comments pointing to #49
+- No ambiguity about what's done vs what's next
+
+**Reinforces lesson from Issue #42:** Clear scope prevents review friction.
+
+### Review Process
+
+**Single round:** LGTM immediately after code review.
+
+**Why fast:**
+- Scope was clear (request binding only)
+- Implementation matched issue description exactly
+- No hardcoded values remained
+- Proper signal architecture
+- Backend deferred explicitly (not hidden)
+
+**Senty's comment:**
+> "That is the right boundary for #48: request binding is present, while the actual backend calls remain explicitly deferred to #49."
+
+**Lesson:** When scope is clear and implementation matches, reviews are fast.
+
+### Files Changed
+
+- `keycard-ui/qml/AuthorizationScreen.qml` - Added authRequestId, removed hardcoded values, updated signals
+- `keycard-ui/qml/Main.qml` - Added request state management, showAuthorizationRequest(), Ctrl+A shortcut
+
+### Patterns to Reuse
+
+1. **Request data architecture:** Store in parent, pass to loaded component via onLoaded
+2. **Signal parameters:** Include request ID + action data in signals
+3. **Visual testing:** When console logs unavailable, verify via UI display
+4. **Testing shortcuts:** Keyboard shortcuts (Ctrl+Key) for triggering test scenarios
+5. **Clear scope boundaries:** Explicit TODO comments pointing to follow-up issues
+
+### Anti-patterns Avoided
+
+- ❌ Passing request data as component constructor (not possible with Loader)
+- ❌ Accessing component state from parent (breaks encapsulation)
+- ❌ Relying solely on console logs for testing (use visual confirmation)
+- ❌ Ambiguous scope (explicitly deferred backend to #49)
+- ❌ Hardcoded test data in component (moved to parent's test trigger)
+
+**Closed:** Issue #48 closed on 2026-03-26
