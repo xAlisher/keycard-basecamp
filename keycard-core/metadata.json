@@ -1,0 +1,50 @@
+{
+  "name": "keycard",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "security",
+  "description": "Keycard module for Basecamp app",
+  "author": "alisher",
+  "main": {
+    "linux-amd64": "keycard_plugin.so",
+    "darwin-arm64": "keycard_plugin.dylib"
+  },
+  "icon": "",
+  "dependencies": [],
+  "manifestVersion": "0.1.0",
+
+  "nix": {
+    "packages": {
+      "build": ["cmake", "ninja", "pkg-config"],
+      "runtime": ["qt6.qtbase", "openssl", "libsodium", "pcsclite"]
+    },
+    "external_libraries": [
+      {
+        "name": "keycard-qt",
+        "fetchGit": {
+          "url": "https://github.com/status-im/keycard-qt",
+          "rev": "3c01bc114f0a38e91147793e96d7a4ebd68301a6"
+        }
+      }
+    ],
+    "cmake": {
+      "find_packages": ["Qt6 COMPONENTS Core Quick", "PkgConfig", "OpenSSL"],
+      "extra_sources": [
+        "src/plugin.cpp",
+        "src/keycard_manager.cpp",
+        "src/secure_buffer.cpp",
+        "src/file_pairing_storage.cpp"
+      ],
+      "extra_include_dirs": [
+        "src"
+      ],
+      "extra_link_libraries": [
+        "Qt6::Core",
+        "Qt6::Quick",
+        "PkgConfig::sodium",
+        "OpenSSL::SSL",
+        "OpenSSL::Crypto"
+      ]
+    }
+  }
+}
