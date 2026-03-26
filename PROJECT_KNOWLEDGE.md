@@ -1029,8 +1029,7 @@ Test release for validating:
 ## Logos Tutorial Adoption
 
 **Tracking Issue:** #31
-**Branch:** `adopt-logos-tutorial-patterns`
-**Status:** Phase 1 complete, awaiting Senty review
+**Status:** Phase 1 merged to master, Phase 2+ planned
 
 ### Overview
 
@@ -1042,7 +1041,7 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 
 | Phase | Issue | Status | Description |
 |-------|-------|--------|-------------|
-| 1 | #32 | ✅ Complete (awaiting review) | Pin testing tools (logoscore, standalone-app, lm CLI) |
+| 1 | #32 | ✅ **Merged** (PR #40) | Pin testing tools (logoscore, standalone-app, lm CLI) |
 | 2 | #33 | Planned | Builder spike (logos-module-builder throwaway test) |
 | 3 | #34 | Planned | Metadata consolidation (single source of truth) |
 | 4 | #35 | Planned | Migrate first module (keycard-core with parity gate) |
@@ -1082,9 +1081,11 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 - ✅ Tools pinned with `flake.lock` tracking dependencies
 - ✅ Wrappers clearly document current status and Phase 4 dependency
 - ✅ No overclaiming of functionality
-- ✅ Master branch untouched (all work on feature branch)
-- ⏳ Awaiting Senty final review on narrowed scope
+- ✅ Senty LGTM (Round 3) - narrowed scope approved
+- ✅ **Merged to master** (PR #40, 2026-03-26)
 
 **Value:** Reproducible tool pinning is real progress. Clean foundation for Phase 4.
 
-**Next:** Senty LGTM on #32, then merge and proceed to Phase 2 (Builder Spike).
+**Merge:** PR #40 merged on 2026-03-26 at 16:19 UTC. Issue #32 closed.
+
+**Next:** Phase 2 - Builder Spike (#33)
