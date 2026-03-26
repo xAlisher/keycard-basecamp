@@ -193,15 +193,35 @@
             type = "app";
             program = "${pkgs.writeShellScript "test-with-logoscore" ''
               # Test keycard module with logoscore (headless)
-              MODULE_DIR="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard"
+              # Auto-detect module location: nix build output, cmake build, or install
 
-              if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
-                echo "Error: Module not installed at $MODULE_DIR"
-                echo "Run: cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
-                exit 1
+              MODULE_DIR="''${KEYCARD_MODULE_DIR:-}"
+
+              if [ -z "$MODULE_DIR" ]; then
+                # Try nix build output first
+                if [ -f "result/lib/keycard_plugin.so" ]; then
+                  MODULE_DIR="result/lib"
+                # Try cmake build output
+                elif [ -f "build/keycard-core/keycard_plugin.so" ]; then
+                  MODULE_DIR="build/keycard-core"
+                # Fall back to install location
+                elif [ -f "$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so" ]; then
+                  MODULE_DIR="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard"
+                else
+                  echo "Error: Module not found. Tried:"
+                  echo "  - result/lib/keycard_plugin.so (nix build)"
+                  echo "  - build/keycard-core/keycard_plugin.so (cmake build)"
+                  echo "  - ~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so (install)"
+                  echo ""
+                  echo "Build with: nix build"
+                  echo "Or: cmake -B build && cmake --build build"
+                  echo "Or set: export KEYCARD_MODULE_DIR=/path/to/module"
+                  exit 1
+                fi
               fi
 
               echo "Testing keycard module with logoscore..."
+              echo "Module: $MODULE_DIR"
               ${logos-logoscore-cli.packages.${system}.default}/bin/logoscore \
                 --module "$MODULE_DIR"
             ''}";
@@ -211,22 +231,45 @@
             type = "app";
             program = "${pkgs.writeShellScript "test-ui-standalone" ''
               # Test QML UI in isolation
-              MODULE_DIR="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard"
-              UI_DIR="$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui"
+              # Auto-detect module and UI locations: build outputs or install
 
-              if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
-                echo "Error: Module not installed at $MODULE_DIR"
-                echo "Run: cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
-                exit 1
+              MODULE_DIR="''${KEYCARD_MODULE_DIR:-}"
+              UI_DIR="''${KEYCARD_UI_DIR:-}"
+
+              # Auto-detect module directory
+              if [ -z "$MODULE_DIR" ]; then
+                if [ -f "result/lib/keycard_plugin.so" ]; then
+                  MODULE_DIR="result/lib"
+                elif [ -f "build/keycard-core/keycard_plugin.so" ]; then
+                  MODULE_DIR="build/keycard-core"
+                elif [ -f "$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so" ]; then
+                  MODULE_DIR="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard"
+                else
+                  echo "Error: Module not found. Tried:"
+                  echo "  - result/lib/keycard_plugin.so (nix build)"
+                  echo "  - build/keycard-core/keycard_plugin.so (cmake build)"
+                  echo "  - ~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so (install)"
+                  exit 1
+                fi
               fi
 
-              if [ ! -f "$UI_DIR/Main.qml" ]; then
-                echo "Error: UI not installed at $UI_DIR"
-                echo "Run: cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
-                exit 1
+              # Auto-detect UI directory
+              if [ -z "$UI_DIR" ]; then
+                if [ -f "keycard-ui/qml/Main.qml" ]; then
+                  UI_DIR="keycard-ui/qml"
+                elif [ -f "$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui/Main.qml" ]; then
+                  UI_DIR="$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui"
+                else
+                  echo "Error: UI not found. Tried:"
+                  echo "  - keycard-ui/qml/Main.qml (source tree)"
+                  echo "  - ~/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui/Main.qml (install)"
+                  exit 1
+                fi
               fi
 
               echo "Testing keycard UI with logos-standalone-app..."
+              echo "Module: $MODULE_DIR"
+              echo "UI: $UI_DIR"
               ${logos-standalone-app.packages.${system}.default}/bin/logos-standalone-app \
                 --ui "$UI_DIR" \
                 --module "$MODULE_DIR"
@@ -237,13 +280,35 @@
             type = "app";
             program = "${pkgs.writeShellScript "inspect-module" ''
               # Inspect module with lm CLI
-              MODULE_SO="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so"
+              # Auto-detect module .so: nix build output, cmake build, or install
 
-              if [ ! -f "$MODULE_SO" ]; then
-                echo "Error: Module not installed at $MODULE_SO"
-                echo "Run: cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
-                exit 1
+              MODULE_SO="''${KEYCARD_MODULE_SO:-}"
+
+              if [ -z "$MODULE_SO" ]; then
+                # Try nix build output first
+                if [ -f "result/lib/keycard_plugin.so" ]; then
+                  MODULE_SO="result/lib/keycard_plugin.so"
+                # Try cmake build output
+                elif [ -f "build/keycard-core/keycard_plugin.so" ]; then
+                  MODULE_SO="build/keycard-core/keycard_plugin.so"
+                # Fall back to install location
+                elif [ -f "$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so" ]; then
+                  MODULE_SO="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so"
+                else
+                  echo "Error: Module not found. Tried:"
+                  echo "  - result/lib/keycard_plugin.so (nix build)"
+                  echo "  - build/keycard-core/keycard_plugin.so (cmake build)"
+                  echo "  - ~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so (install)"
+                  echo ""
+                  echo "Build with: nix build"
+                  echo "Or: cmake -B build && cmake --build build"
+                  echo "Or set: export KEYCARD_MODULE_SO=/path/to/keycard_plugin.so"
+                  exit 1
+                fi
               fi
+
+              echo "Inspecting: $MODULE_SO"
+              echo ""
 
               echo "=== Module Info ==="
               ${logos-module.packages.${system}.default}/bin/lm info "$MODULE_SO"

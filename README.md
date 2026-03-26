@@ -86,22 +86,33 @@ nix build .#ui   # Build UI plugin only
 
 ### Testing
 
+Three testing workflows with auto-detection of module location:
+
 **Headless backend testing (logoscore):**
 ```bash
-# Test module without UI (fast iteration)
 nix run .#test-with-logoscore
 ```
 
 **Isolated UI testing (logos-standalone-app):**
 ```bash
-# Test QML UI without full Basecamp shell
 nix run .#test-ui-standalone
 ```
 
 **Module introspection (lm CLI):**
 ```bash
-# Inspect module structure, methods, and metadata
 nix run .#inspect-module
+```
+
+**Auto-detection:** Scripts automatically find the module in:
+1. `result/lib/` (nix build output) - preferred for CI
+2. `build/keycard-core/` (cmake build output)
+3. `~/.local/share/Logos/LogosBasecampDev/` (install location)
+
+**Override:** Set env vars to use custom paths:
+```bash
+export KEYCARD_MODULE_DIR=/path/to/module
+export KEYCARD_UI_DIR=/path/to/ui
+nix run .#test-ui-standalone
 ```
 
 All testing tools are pinned to specific versions in `flake.nix` for reproducibility.
