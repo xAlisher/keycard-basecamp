@@ -66,6 +66,11 @@ Rectangle {
                     root.mode = "dashboard"
                 })
             }
+            if (item && item.lockRequested) {
+                item.lockRequested.connect(function() {
+                    root.lockSession()
+                })
+            }
             // Give focus to loaded item
             if (item) {
                 item.focus = true

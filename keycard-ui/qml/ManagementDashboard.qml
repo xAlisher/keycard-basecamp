@@ -6,6 +6,8 @@ Rectangle {
     id: root
     color: DesignTokens.background
 
+    signal lockRequested()
+
     // Mock data
     property var pendingRequests: [
         { name: "LEZ_wallet", domain: "wallet_key" },
@@ -87,26 +89,50 @@ Rectangle {
                     RowLayout {
                         spacing: 4
 
-                        Image {
-                            id: lockIcon
+                        Rectangle {
                             width: 20
                             height: 20
-                            source: "icons/lock.svg"
-                            sourceSize: Qt.size(20, 20)
+                            color: "transparent"
+
+                            Image {
+                                id: lockIcon
+                                anchors.fill: parent
+                                source: "icons/lock.svg"
+                                sourceSize: Qt.size(20, 20)
+                            }
 
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: lockSession()
+                                onClicked: {
+                                    console.log("Lock icon clicked!")
+                                    lockSession()
+                                }
                             }
                         }
 
-                        Text {
-                            text: "Ctrl+L"
-                            color: DesignTokens.foreground
-                            font.pixelSize: 14
-                            font.weight: Font.Medium
-                            font.family: DesignTokens.fontPrimary
+                        Rectangle {
+                            width: ctrlLText.implicitWidth
+                            height: ctrlLText.implicitHeight
+                            color: "transparent"
+
+                            Text {
+                                id: ctrlLText
+                                text: "Ctrl+L"
+                                color: DesignTokens.foreground
+                                font.pixelSize: 14
+                                font.weight: Font.Medium
+                                font.family: DesignTokens.fontPrimary
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    console.log("Ctrl+L clicked!")
+                                    lockSession()
+                                }
+                            }
                         }
                     }
 
@@ -429,6 +455,6 @@ Rectangle {
 
     function lockSession() {
         console.log("Locking session...")
-        // TODO: Call backend lockSession()
+        lockRequested()
     }
 }
