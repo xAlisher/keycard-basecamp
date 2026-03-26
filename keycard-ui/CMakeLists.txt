@@ -21,5 +21,7 @@ install(FILES
 
 install(FILES
     icons/keycard.png
+    icons/lock.svg
+    icons/bolt.svg
     DESTINATION "${KEYCARD_UI_DIR}/icons"
 )

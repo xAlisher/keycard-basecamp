@@ -16,6 +16,14 @@ Rectangle {
         // Ctrl+D: Toggle debug mode
         if (event.key === Qt.Key_D && (event.modifiers & Qt.ControlModifier)) {
             debugMode = !debugMode
+            // Restore focus after toggle
+            Qt.callLater(function() {
+                if (debugMode && debugLoader.item) {
+                    debugLoader.item.forceActiveFocus()
+                } else if (!debugMode && productionLoader.item) {
+                    productionLoader.item.forceActiveFocus()
+                }
+            })
             event.accepted = true
         }
         // Ctrl+L: Lock session (when in dashboard)
@@ -28,6 +36,11 @@ Rectangle {
     }
 
     focus: true  // Enable keyboard input
+    activeFocusOnTab: true
+
+    Component.onCompleted: {
+        forceActiveFocus()
+    }
 
     function lockSession() {
         console.log("Locking session...")
@@ -53,6 +66,11 @@ Rectangle {
                     root.mode = "dashboard"
                 })
             }
+            // Give focus to loaded item
+            if (item) {
+                item.focus = true
+                item.forceActiveFocus()
+            }
         }
     }
 
@@ -62,6 +80,14 @@ Rectangle {
         anchors.fill: parent
         visible: debugMode
         source: debugMode ? "DebugPanel.qml" : ""
+
+        onLoaded: {
+            // Give focus to debug panel
+            if (item) {
+                item.focus = true
+                item.forceActiveFocus()
+            }
+        }
     }
 
     // Debug mode indicator
@@ -85,27 +111,4 @@ Rectangle {
         }
     }
 
-    // Instructions overlay (top-left corner)
-    Rectangle {
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.margins: 8
-        width: instructionsText.width + 16
-        height: instructionsText.height + 12
-        color: DesignTokens.background
-        border.color: DesignTokens.border
-        border.width: 1
-        radius: DesignTokens.radiusS
-        opacity: 0.8
-        visible: !debugMode
-
-        Text {
-            id: instructionsText
-            anchors.centerIn: parent
-            text: "Ctrl+D: Debug  |  Ctrl+L: Lock"
-            color: DesignTokens.mutedForeground
-            font.pixelSize: DesignTokens.fontSizeSmall
-            font.family: DesignTokens.fontPrimary
-        }
-    }
 }

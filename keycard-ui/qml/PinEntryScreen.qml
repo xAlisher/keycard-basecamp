@@ -2,9 +2,9 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
-Rectangle {
+FocusScope {
     id: root
-    color: DesignTokens.background
+    focus: true
 
     signal unlocked()
 
@@ -12,9 +12,63 @@ Rectangle {
     property int maxPinLength: 6
     property int attemptsRemaining: 3
 
-    ColumnLayout {
+    // Timer to ensure focus after component is fully loaded
+    Timer {
+        id: focusTimer
+        interval: 100
+        running: true
+        repeat: false
+        onTriggered: {
+            root.forceActiveFocus()
+            hiddenInput.forceActiveFocus()
+        }
+    }
+
+    // Invisible text input to capture keyboard
+    TextInput {
+        id: hiddenInput
+        visible: false
+        focus: true
+
+        onTextChanged: {
+            // Handle numeric input
+            var text = hiddenInput.text
+            if (text.length > 0) {
+                var lastChar = text.charAt(text.length - 1)
+                if (lastChar >= '0' && lastChar <= '9') {
+                    if (root.pinValue.length < root.maxPinLength) {
+                        root.pinValue += lastChar
+                        if (root.pinValue.length === root.maxPinLength) {
+                            verifyPin()
+                        }
+                    }
+                }
+                hiddenInput.text = ""  // Clear for next input
+            }
+        }
+
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Backspace) {
+                if (root.pinValue.length > 0) {
+                    root.pinValue = root.pinValue.slice(0, -1)
+                }
+                event.accepted = true
+            }
+        }
+    }
+
+    Rectangle {
         anchors.fill: parent
-        spacing: 0
+        color: DesignTokens.background
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: hiddenInput.forceActiveFocus()
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 0
 
         // PIN Input Section (centered)
         Item {
@@ -115,10 +169,17 @@ Rectangle {
         // Activity Log (bottom)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: DesignTokens.activityLogHeight
+            Layout.preferredHeight: 167
             color: DesignTokens.background
-            border.color: DesignTokens.border
-            border.width: 1
+
+            // Top border only
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: DesignTokens.border
+            }
 
             ListView {
                 id: activityLog
@@ -151,27 +212,8 @@ Rectangle {
                 }
             }
         }
-    }
-
-    // PIN Input handling
-    Keys.onPressed: (event) => {
-        if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9) {
-            if (pinValue.length < maxPinLength) {
-                pinValue += String.fromCharCode(event.key)
-                if (pinValue.length === maxPinLength) {
-                    verifyPin()
-                }
-            }
-            event.accepted = true
-        } else if (event.key === Qt.Key_Backspace) {
-            if (pinValue.length > 0) {
-                pinValue = pinValue.slice(0, -1)
-            }
-            event.accepted = true
         }
     }
-
-    focus: true
 
     function verifyPin() {
         console.log("Verifying PIN:", pinValue)

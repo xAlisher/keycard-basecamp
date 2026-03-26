@@ -6,7 +6,7 @@ Rectangle {
     id: root
     color: DesignTokens.background
 
-    // Mock data (replace with actual backend calls)
+    // Mock data
     property var pendingRequests: [
         { name: "LEZ_wallet", domain: "wallet_key" },
         { name: "Storage", domain: "storage_encryption" },
@@ -14,7 +14,7 @@ Rectangle {
     ]
 
     property var connectedModules: [
-        { name: "notes", domains: "north-wing.local", lastAccess: "2m ago" }
+        { name: "notes", domains: "north-wing.local" }
     ]
 
     property string cardHash: "0a2b3c5fh4g4e5d"
@@ -27,87 +27,101 @@ Rectangle {
         // Header
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: DesignTokens.headerHeight
+            Layout.preferredHeight: 56
             color: DesignTokens.background
-            border.color: DesignTokens.border
-            border.width: 1
+
+            // Bottom border only
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: DesignTokens.border
+            }
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: DesignTokens.spacingXl
-                anchors.rightMargin: DesignTokens.spacingXl
-                spacing: DesignTokens.spacingL
+                anchors.leftMargin: 24
+                anchors.rightMargin: 24
+                spacing: 16
 
-                // Left side: Title + Version
+                // Left: Title + Version
                 RowLayout {
-                    spacing: DesignTokens.spacingS
+                    spacing: 4
 
                     Text {
                         text: "Keycard for Basecamp"
                         color: DesignTokens.foreground
-                        font.pixelSize: DesignTokens.fontSizeTitle
+                        font.pixelSize: 20
                         font.weight: Font.Bold
                         font.family: DesignTokens.fontPrimary
                     }
 
                     Text {
                         text: root.version
-                        color: DesignTokens.mutedForeground
-                        font.pixelSize: DesignTokens.fontSizeBody
-                        font.weight: Font.Medium
+                        color: "#707070"
+                        font.pixelSize: 11
+                        font.weight: Font.Normal
                         font.family: DesignTokens.fontPrimary
+                        Layout.alignment: Qt.AlignTop
+                        Layout.topMargin: 2
                     }
                 }
 
-                Item { Layout.fillWidth: true }  // Spacer
+                Item { Layout.fillWidth: true }
 
-                // Right side: Card hash + Lock + Settings
+                // Right: Card hash + Lock + Settings
                 RowLayout {
-                    spacing: DesignTokens.spacingL
+                    spacing: 16
 
+                    // Hash (group 1)
                     Text {
                         text: root.cardHash
                         color: DesignTokens.mutedForeground
-                        font.pixelSize: DesignTokens.fontSizeBody
+                        font.pixelSize: 14
                         font.weight: Font.Medium
                         font.family: DesignTokens.fontPrimary
                     }
 
-                    // Lock button
+                    // Lock + Ctrl+L (group 2)
                     RowLayout {
-                        spacing: DesignTokens.spacingS
+                        spacing: 4
 
-                        Text {
-                            text: "🔒"  // Lock icon (TODO: use Lucide icon)
-                            color: DesignTokens.foreground
-                            font.pixelSize: DesignTokens.fontSizeBody
+                        Image {
+                            id: lockIcon
+                            width: 20
+                            height: 20
+                            source: "icons/lock.svg"
+                            sourceSize: Qt.size(20, 20)
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: lockSession()
+                            }
                         }
 
                         Text {
                             text: "Ctrl+L"
                             color: DesignTokens.foreground
-                            font.pixelSize: DesignTokens.fontSizeBody
+                            font.pixelSize: 14
                             font.weight: Font.Medium
                             font.family: DesignTokens.fontPrimary
                         }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: lockSession()
-                        }
                     }
 
-                    // Settings icon
-                    Text {
-                        text: "⚙️"  // Settings icon (TODO: use Lucide icon)
-                        color: DesignTokens.foreground
-                        font.pixelSize: DesignTokens.fontSizeTitle
+                    // Settings (group 3)
+                    Image {
+                        id: settingsIcon
+                        width: 20
+                        height: 20
+                        source: "icons/bolt.svg"
+                        sourceSize: Qt.size(20, 20)
 
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: console.log("Settings clicked (not implemented)")
+                            onClicked: console.log("Settings clicked")
                         }
                     }
                 }
@@ -118,126 +132,142 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: DesignTokens.spacingXl
-
-            Layout.margins: DesignTokens.spacingXl
+            spacing: 24
+            Layout.margins: 24
 
             // Left column: Pending Requests
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: DesignTokens.spacingXl
+                spacing: 24
 
                 Text {
                     text: "Pending requests"
                     color: DesignTokens.foreground
-                    font.pixelSize: DesignTokens.fontSizeBody
+                    font.pixelSize: 14
                     font.weight: Font.Medium
                     font.family: DesignTokens.fontPrimary
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: DesignTokens.spacingL
+                    spacing: 16
 
                     Repeater {
                         model: root.pendingRequests
 
-                        // Pending request card
+                        // Request card
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 72
-                            color: DesignTokens.secondary
-                            radius: DesignTokens.radiusM
+                            height: 64
+                            color: "#2a2a2a"  // background-secondary
+                            radius: 8
+
+                            // Yellow marker (left border) with clip
+                            Item {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 8
+                                clip: true
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: 16
+                                    color: DesignTokens.warning
+                                    radius: 8
+                                }
+                            }
 
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.margins: DesignTokens.spacingL
-                                spacing: DesignTokens.spacingL
-
-                                // Yellow indicator bar
-                                Rectangle {
-                                    width: 4
-                                    Layout.fillHeight: true
-                                    color: DesignTokens.warning
-                                    radius: 2
-                                }
+                                anchors.leftMargin: 20
+                                anchors.rightMargin: 10
+                                spacing: 8
 
                                 // Module info
                                 ColumnLayout {
-                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
                                     spacing: 4
 
                                     Text {
                                         text: modelData.name
                                         color: DesignTokens.foreground
-                                        font.pixelSize: DesignTokens.fontSizeBody
-                                        font.weight: Font.Medium
+                                        font.pixelSize: 14
+                                        font.weight: Font.Bold
                                         font.family: DesignTokens.fontPrimary
                                     }
 
                                     Text {
                                         text: "domain: " + modelData.domain
                                         color: DesignTokens.foregroundSecondary
-                                        font.pixelSize: DesignTokens.fontSizeSmall
+                                        font.pixelSize: 12
                                         font.family: DesignTokens.fontPrimary
                                     }
                                 }
 
+                                Item { Layout.fillWidth: true }  // Spacer to push buttons right
+
                                 // Approve button
-                                Button {
-                                    text: "Approve"
-                                    Layout.preferredWidth: 90
-                                    Layout.preferredHeight: DesignTokens.buttonHeight
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    width: 85
+                                    height: 32
+                                    color: approveArea.containsMouse ? "#e64a19" : DesignTokens.primary
+                                    radius: 16  // Pill shape
 
-                                    background: Rectangle {
-                                        color: parent.hovered ? DesignTokens.primaryHover : DesignTokens.primary
-                                        radius: DesignTokens.radiusS
-                                    }
-
-                                    contentItem: Text {
-                                        text: parent.text
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "Approve"
                                         color: DesignTokens.foreground
-                                        font.pixelSize: DesignTokens.fontSizeBody
+                                        font.pixelSize: 14
                                         font.weight: Font.Medium
                                         font.family: DesignTokens.fontPrimary
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
                                     }
 
-                                    onClicked: console.log("Approve:", modelData.name)
+                                    MouseArea {
+                                        id: approveArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: console.log("Approve:", modelData.name)
+                                    }
                                 }
 
                                 // Decline button
-                                Button {
-                                    text: "Decline"
-                                    Layout.preferredWidth: 90
-                                    Layout.preferredHeight: DesignTokens.buttonHeight
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    width: 85
+                                    height: 32
+                                    color: declineArea.containsMouse ? "#3a3a3a" : "transparent"
+                                    border.color: DesignTokens.border
+                                    border.width: 1
+                                    radius: 16  // Pill shape
 
-                                    background: Rectangle {
-                                        color: parent.hovered ? DesignTokens.secondaryHover : DesignTokens.secondary
-                                        border.color: DesignTokens.border
-                                        border.width: 1
-                                        radius: DesignTokens.radiusS
-                                    }
-
-                                    contentItem: Text {
-                                        text: parent.text
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "Decline"
                                         color: DesignTokens.foreground
-                                        font.pixelSize: DesignTokens.fontSizeBody
+                                        font.pixelSize: 14
                                         font.weight: Font.Medium
                                         font.family: DesignTokens.fontPrimary
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
                                     }
 
-                                    onClicked: console.log("Decline:", modelData.name)
+                                    MouseArea {
+                                        id: declineArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: console.log("Decline:", modelData.name)
+                                    }
                                 }
                             }
                         }
                     }
 
-                    Item { Layout.fillHeight: true }  // Spacer
+                    Item { Layout.fillHeight: true }
                 }
             }
 
@@ -245,19 +275,19 @@ Rectangle {
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: DesignTokens.spacingXl
+                spacing: 24
 
                 Text {
                     text: "Connected modules"
                     color: DesignTokens.foreground
-                    font.pixelSize: DesignTokens.fontSizeBody
+                    font.pixelSize: 14
                     font.weight: Font.Medium
                     font.family: DesignTokens.fontPrimary
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: DesignTokens.spacingL
+                    spacing: 16
 
                     Repeater {
                         model: root.connectedModules
@@ -265,85 +295,107 @@ Rectangle {
                         // Connected module card
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 72
-                            color: DesignTokens.secondary
-                            radius: DesignTokens.radiusM
+                            height: 64
+                            color: "#2a2a2a"  // background-secondary
+                            radius: 8
+
+                            // Green marker (left border) with clip
+                            Item {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 8
+                                clip: true
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: 16
+                                    color: DesignTokens.success
+                                    radius: 8
+                                }
+                            }
 
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.margins: DesignTokens.spacingL
-                                spacing: DesignTokens.spacingL
-
-                                // Green indicator bar
-                                Rectangle {
-                                    width: 4
-                                    Layout.fillHeight: true
-                                    color: DesignTokens.success
-                                    radius: 2
-                                }
+                                anchors.leftMargin: 20
+                                anchors.rightMargin: 10
+                                spacing: 8
 
                                 // Module info
                                 ColumnLayout {
-                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
                                     spacing: 4
 
                                     Text {
                                         text: modelData.name
                                         color: DesignTokens.foreground
-                                        font.pixelSize: DesignTokens.fontSizeBody
-                                        font.weight: Font.Medium
+                                        font.pixelSize: 14
+                                        font.weight: Font.Bold
                                         font.family: DesignTokens.fontPrimary
                                     }
 
                                     Text {
                                         text: "domains: " + modelData.domains
                                         color: DesignTokens.foregroundSecondary
-                                        font.pixelSize: DesignTokens.fontSizeSmall
+                                        font.pixelSize: 12
                                         font.family: DesignTokens.fontPrimary
                                     }
                                 }
 
+                                Item { Layout.fillWidth: true }  // Spacer to push button right
+
                                 // Disconnect button
-                                Button {
-                                    text: "Disconnect"
-                                    Layout.preferredWidth: 110
-                                    Layout.preferredHeight: DesignTokens.buttonHeight
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    width: 105
+                                    height: 32
+                                    color: disconnectArea.containsMouse ? "#3a3a3a" : "transparent"
+                                    border.color: DesignTokens.border
+                                    border.width: 1
+                                    radius: 16  // Pill shape
 
-                                    background: Rectangle {
-                                        color: parent.hovered ? DesignTokens.secondaryHover : DesignTokens.secondary
-                                        border.color: DesignTokens.border
-                                        border.width: 1
-                                        radius: DesignTokens.radiusS
-                                    }
-
-                                    contentItem: Text {
-                                        text: parent.text
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "Disconnect"
                                         color: DesignTokens.foreground
-                                        font.pixelSize: DesignTokens.fontSizeBody
+                                        font.pixelSize: 14
                                         font.weight: Font.Medium
                                         font.family: DesignTokens.fontPrimary
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
                                     }
 
-                                    onClicked: console.log("Disconnect:", modelData.name)
+                                    MouseArea {
+                                        id: disconnectArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: console.log("Disconnect:", modelData.name)
+                                    }
                                 }
                             }
                         }
                     }
 
-                    Item { Layout.fillHeight: true }  // Spacer
+                    Item { Layout.fillHeight: true }
                 }
             }
         }
 
-        // Activity Log (bottom)
+        // Activity Log (bottom with top border only)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: DesignTokens.activityLogHeight
+            Layout.preferredHeight: 167
             color: DesignTokens.background
-            border.color: DesignTokens.border
-            border.width: 1
+
+            // Top border only
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: DesignTokens.border
+            }
 
             ListView {
                 id: activityLog
@@ -367,7 +419,7 @@ Rectangle {
                         if (level === "error") return DesignTokens.error
                         return DesignTokens.info
                     }
-                    font.pixelSize: DesignTokens.fontSizeSmall
+                    font.pixelSize: 12
                     font.family: "monospace"
                     wrapMode: Text.WordWrap
                 }
