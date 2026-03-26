@@ -38,12 +38,24 @@ Rectangle {
         }
         // Ctrl+A: Show mock authorization request (for testing)
         else if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)) {
-            showAuthorizationRequest(
-                "auth_req_001",
-                "notes",
-                "notes_private",
-                "m/43'/60'/1581'/1437890605'/512438859'"
-            )
+            // Create backend request first
+            var result = logos.callModule("keycard", "requestAuth", ["notes_private", "notes"])
+            console.log("requestAuth result:", result)
+
+            try {
+                var obj = JSON.parse(result)
+                if (obj.authId) {
+                    // Use the real authId from backend
+                    showAuthorizationRequest(
+                        obj.authId,
+                        "notes",
+                        "notes_private",
+                        obj.path || "m/43'/60'/1581'/1437890605'/512438859'"
+                    )
+                }
+            } catch (e) {
+                console.error("Failed to create auth request:", e)
+            }
             event.accepted = true
         }
     }
@@ -99,15 +111,51 @@ Rectangle {
             if (item && item.approved) {
                 item.approved.connect(function(authRequestId, pin) {
                     console.log("Authorization approved, ID:", authRequestId, "PIN:", pin)
-                    // TODO (#49): Call backend authorize() with authRequestId and pin
-                    root.currentAuthRequest = null
-                    root.mode = "dashboard"
+
+                    // Call backend authorizeRequest
+                    var result = logos.callModule("keycard", "authorizeRequest", [authRequestId, pin])
+                    console.log("authorizeRequest result:", result)
+
+                    try {
+                        var obj = JSON.parse(result)
+                        if (obj.error) {
+                            console.error("Authorization failed:", obj.error)
+                            // TEMPORARY: Show error in alert for debugging
+                            logos.showMessage("Authorization Error", obj.error)
+                        } else if (obj.status === "complete") {
+                            console.log("Authorization successful, key derived")
+                            logos.showMessage("Success", "Authorization completed!")
+                            root.currentAuthRequest = null
+                            root.mode = "dashboard"
+                        } else {
+                            logos.showMessage("Debug", "Status: " + obj.status + ", Result: " + result)
+                        }
+                    } catch (e) {
+                        console.error("Failed to parse authorizeRequest response:", e)
+                        logos.showMessage("Error", "Parse error: " + e)
+                    }
                 })
             }
             if (item && item.declined) {
                 item.declined.connect(function(authRequestId) {
                     console.log("Authorization declined, ID:", authRequestId)
-                    // TODO (#49): Call backend decline() with authRequestId
+
+                    // Call backend rejectRequest
+                    var result = logos.callModule("keycard", "rejectRequest", [authRequestId])
+                    console.log("rejectRequest result:", result)
+
+                    try {
+                        var obj = JSON.parse(result)
+                        if (obj.error) {
+                            console.error("Rejection failed:", obj.error)
+                        } else if (obj.status === "rejected") {
+                            console.log("Authorization request rejected")
+                        }
+                    } catch (e) {
+                        console.error("Failed to parse rejectRequest response:", e)
+                    }
+
+                    // Always return to dashboard after decline
                     root.currentAuthRequest = null
                     root.mode = "dashboard"
                 })
