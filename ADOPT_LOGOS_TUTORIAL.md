@@ -388,38 +388,194 @@ docs/
 
 ---
 
-## Implementation Roadmap
+## Implementation Roadmap (Revised per Senty's Review - Issue #31)
 
-### Phase 1: Analyze (Current)
+**Key principle:** Optimize for reversibility and reproducibility first, then builder adoption, then ergonomics.
+
+### Phase 0: Analysis ✅ COMPLETE
 - ✅ Review logos-tutorial patterns
 - ✅ Document learnings in ADOPT_LOGOS_TUTORIAL.md
-- ⏳ Create GitHub issue
+- ✅ Create GitHub issue #31
+- ✅ Get Senty review feedback
 
-### Phase 2: Migrate Build System
-- [ ] Migrate keycard-core to logos-module-builder template
-- [ ] Consolidate metadata.json
+### Phase 1: Pin Tools + Wrapper Scripts ⏳ IN PROGRESS
+**Goal:** Reproducible testing infrastructure without changing production code.
+
+**Tasks:**
+- [ ] Pin `logos-logoscore-cli` in flake.nix
+- [ ] Pin `logos-standalone-app` in flake.nix
+- [ ] Pin `logos-module` (lm CLI) in flake.nix
+- [ ] Create `scripts/test/test-with-logoscore.sh` (calls pinned logoscore)
+- [ ] Create `scripts/test/test-ui-standalone.sh` (calls pinned standalone-app)
+- [ ] Create `scripts/test/inspect-module.sh` (calls pinned lm)
+- [ ] Document usage in README.md
+- [ ] Validate scripts work with current build
+
+**Exit criteria:**
+- ✅ Tools pinned to specific revisions (no floating `nix run github:...`)
+- ✅ Scripts reproducible across dev/CI environments
+- ✅ Documentation complete
+- ✅ Independently valuable (can merge even if later phases delayed)
+
+**Estimated effort:** 3-4 hours
+**Risk:** None (no production code changes)
+
+---
+
+### Phase 2: Builder Spike (Throwaway Branch)
+**Goal:** Learn `logos-module-builder` contract before committing to migration.
+
+**Tasks:**
+- [ ] Create throwaway spike branch from master
+- [ ] Pick easier module (probably keycard-ui, QML-only)
+- [ ] Scaffold using `logos-module-builder#ui-qml-module` template
+- [ ] Port current functionality to new structure
+- [ ] Document what metadata.json structure builder expects
+- [ ] Identify migration gotchas and risks
+- [ ] Compare artifacts: does LGX look similar?
+- [ ] Test loading in Basecamp
+- [ ] **Discard spike branch** (knowledge retained, code thrown away)
+
+**Exit criteria:**
+- ✅ Understand builder's metadata contract
+- ✅ Know what CMake patterns builder expects
+- ✅ Documented migration path with lessons learned
+- ✅ Identified risks and blockers
+
+**Estimated effort:** 4-6 hours
+**Risk:** None (throwaway branch, learning exercise)
+
+---
+
+### Phase 3: Metadata Consolidation (After Builder Proven)
+**Goal:** Single source of truth using format learned from Phase 2 spike.
+
+**Tasks:**
+- [ ] Create unified `metadata.json` matching builder's expected structure
+- [ ] Update CMakeLists.txt to read from it (incremental changes)
+- [ ] Keep old files until new system validated
+- [ ] Run parity checks:
+  - [ ] Plugin loads same methods (`lm methods` comparison)
+  - [ ] LGX contents materially identical where expected
+  - [ ] Install paths remain correct
+  - [ ] Package validation passes
+  - [ ] Manual test flows work
+- [ ] Compare binaries to ensure identical behavior
+
+**Exit criteria:**
+- ✅ All parity checks pass
+- ✅ Build reproducibility maintained
+- ✅ Old files can be safely removed
+- ✅ Documentation updated
+
+**Estimated effort:** 4-6 hours
+**Risk:** Medium (mitigated by parity checks + keeping old files as backup)
+
+---
+
+### Phase 4: Migrate First Module
+**Goal:** Adopt logos-module-builder for one module with full validation.
+
+**Tasks:**
+- [ ] Pick easier module based on Phase 2 learning (UI or core)
+- [ ] Add `logos-module-builder` as flake input
 - [ ] Update CMakeLists.txt to use `logos_module()` macro
-- [ ] Test build with new system
+- [ ] Keep old CMakeLists.txt as `.old` backup
+- [ ] Run comprehensive parity validation:
+  - [ ] Module loads correctly in Basecamp
+  - [ ] All Q_INVOKABLE methods work as before
+  - [ ] LGX packaging produces valid package
+  - [ ] Installation paths correct
+  - [ ] Hardware tests pass (reader/card detection)
+  - [ ] No regressions in functionality
+- [ ] Document any deviations from spike findings
 
-### Phase 3: Improve Testing
-- [ ] Add logoscore test scripts
-- [ ] Document logos-standalone-app usage
-- [ ] Add lm CLI examples to README
+**Exit criteria:**
+- ✅ All parity checks pass
+- ✅ No regressions in functionality
+- ✅ Build times similar or better
+- ✅ Ready for production use
+- ✅ Rollback plan documented
 
-### Phase 4: Refactor UI
-- [ ] Split Main.qml into components
-- [ ] Adopt Logos.Theme and Logos.Controls
-- [ ] Implement production UI from Issue #29 mockups
+**Estimated effort:** 6-8 hours
+**Risk:** Higher (but bounded to one module + comprehensive parity checks)
 
-### Phase 5: Improve Distribution
-- [ ] Use lgpm for installation
-- [ ] Update packaging scripts
-- [ ] Document LGX workflow
+---
 
-### Phase 6: Documentation
-- [ ] Restructure docs into focused files
-- [ ] Add tutorials
-- [ ] Improve API reference
+### Phase 5: Migrate Second Module
+**Goal:** Complete builder adoption with lessons learned from first module.
+
+**Tasks:**
+- [ ] Apply learnings from Phase 4 to second module
+- [ ] Run same comprehensive parity validation suite
+- [ ] Compare artifacts between both modules for consistency
+- [ ] Ensure build patterns consistent across modules
+- [ ] Update documentation with any new learnings
+
+**Exit criteria:**
+- ✅ Both modules use logos-module-builder
+- ✅ All parity checks pass for second module
+- ✅ Build system fully consistent
+- ✅ No regressions across entire project
+
+**Estimated effort:** 4-6 hours (faster with Phase 4 experience)
+**Risk:** Medium (well-understood patterns from Phase 4)
+
+---
+
+### Phase 6: Package Management + CI Cleanup
+**Goal:** Improve distribution workflows and automation.
+
+**Tasks:**
+- [ ] Document `lgpm` usage for module installation
+- [ ] Update packaging scripts for builder-based workflow
+- [ ] Add builder-based CI workflows
+- [ ] Document improved LGX packaging process
+- [ ] Clean up and consolidate documentation
+- [ ] Add automated parity checks to CI
+
+**Exit criteria:**
+- ✅ lgpm workflow documented and tested
+- ✅ CI runs with new build system
+- ✅ Documentation reflects current state
+- ✅ Packaging reproducible
+
+**Estimated effort:** 4-6 hours
+**Risk:** Low
+
+---
+
+### Phase 7: UI Refactor (Depends on #29 Completion) ⏸️ DEFERRED
+**Goal:** Apply logos-tutorial QML patterns to production UI.
+
+**Status:** Deferred until production UI design finalized (Issue #29)
+
+**Tasks:**
+- [ ] Split Main.qml into clean component hierarchy
+- [ ] Use Logos.Theme and Logos.Controls throughout
+- [ ] Implement production UI structure from Issue #29
+- [ ] Move debug harness to DebugPanel.qml (Ctrl+D toggle)
+- [ ] Validate all auth flows with new structure
+
+**Estimated effort:** 8-10 hours (after UI design complete)
+**Risk:** Medium (but isolated to UI, backend unchanged)
+
+---
+
+### Phase 8: Code Generation ⏸️ DEFERRED
+**Goal:** Typed C++ bindings for improved IDE support (optional optimization).
+
+**Status:** Deferred until API and UI architecture stabilize
+
+**Rationale:**
+- Current UI is QML-only (untyped anyway)
+- API still evolving with production UI work
+- Limited immediate payoff
+- Adds churn while architecture in flux
+
+**Tasks:** TBD after API stabilization
+**Estimated effort:** TBD
+**Risk:** TBD
 
 ---
 
@@ -459,11 +615,92 @@ docs/
 
 ---
 
+## Senty's Review Feedback (Incorporated)
+
+**Review date:** 2026-03-26
+**Issue:** #31
+
+### Key Improvements from Senty's Review
+
+**1. Pin Tools in flake.nix First** ✅
+- **Problem:** Using `nix run github:...` floats tool versions, breaks reproducibility
+- **Solution:** Pin specific revisions in flake.nix, scripts call pinned tools
+- **Impact:** Phase 1 revised to focus on reproducibility
+
+**2. Spike Before Metadata Consolidation** ✅
+- **Problem:** Could invent metadata format that doesn't match builder expectations
+- **Solution:** Phase 2 is throwaway spike to learn builder contract first
+- **Impact:** Avoid creating temporary format that needs re-migration
+
+**3. Migrate One Module at a Time** ✅
+- **Problem:** Migrating core + UI together = too much risk, large blast radius
+- **Solution:** Phases 4/5 migrate separately with validation between
+- **Impact:** Smaller rollback surface, clearer validation
+
+**4. Add Explicit Parity Gates** ✅
+- **Problem:** Need concrete validation that new system produces equivalent results
+- **Solution:** Comprehensive parity checks in each migration phase
+- **Checks:**
+  - Plugin loads same methods (`lm methods` comparison)
+  - LGX contents materially identical
+  - Install paths correct
+  - Package validation passes
+  - Manual test flows work
+
+**5. Defer Code Generation** ✅
+- **Problem:** API still evolving, codegen adds churn for limited payoff
+- **Solution:** Move to Phase 8, post-stabilization
+- **Impact:** Focus on foundation first, optimize later
+
+**6. Define Exit Criteria for Each Phase** ✅
+- **Problem:** Risk of all-or-nothing adoption
+- **Solution:** Each phase independently valuable and mergeable
+- **Impact:** Phase 1 can merge even if later phases delayed
+
+### Revised Sequencing Rationale
+
+**Old order:** Optimize for speed
+- Phase 1: Testing scripts
+- Phase 2: Migrate build system
+- Phase 3: Consolidate metadata
+
+**New order:** Optimize for reversibility and reproducibility
+- Phase 1: Pin tools (reproducibility foundation)
+- Phase 2: Spike builder (learn before committing)
+- Phase 3: Metadata (apply learnings, not invent format)
+- Phases 4-5: Migrate one at a time (validate between)
+
+**Result:** Lower risk, better reproducibility, each phase stands alone
+
+---
+
 ## Next Steps
 
-1. **Create GitHub issue** for tracking adoption work
-2. **Get team feedback** on roadmap and timeline
-3. **Prioritize phases** based on current needs (production UI vs build system)
-4. **Start with Phase 2** (build system migration) as foundation
+### Immediate (Phase 1)
+1. ✅ Update ADOPT_LOGOS_TUTORIAL.md with Senty's feedback
+2. ⏳ Pin testing tools in flake.nix
+3. ⏳ Create wrapper scripts
+4. ⏳ Document usage
+5. ⏳ Validate with current build
+6. ⏳ Submit PR for Phase 1 (small, low-risk)
 
-**Do not implement yet** - this is a planning document for discussion.
+### Near-term (Phase 2)
+- Create throwaway spike branch
+- Learn logos-module-builder contract
+- Document findings
+- Discard spike code, retain knowledge
+
+### Long-term (Phases 3+)
+- Proceed only after Phase 2 learnings
+- One module at a time
+- Full parity validation at each step
+- Deferred: UI refactor (after #29), code generation (after API stable)
+
+---
+
+## Status Update
+
+**Current phase:** Phase 1 (Pin Tools + Wrapper Scripts)
+**Branch:** `adopt-logos-tutorial-patterns` (all work stays here)
+**Master:** Untouched (no breaking changes)
+**Next PR:** Phase 1 only (when complete and validated)
