@@ -10,6 +10,11 @@ install(FILES
 
 install(FILES
     qml/Main.qml
+    qml/DebugPanel.qml
+    qml/PinEntryScreen.qml
+    qml/ManagementDashboard.qml
+    qml/DesignTokens.qml
+    qml/qmldir
     keycard.png
     DESTINATION "${KEYCARD_UI_DIR}"
 )
