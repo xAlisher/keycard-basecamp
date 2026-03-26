@@ -31,9 +31,8 @@
       "find_packages": ["Qt6 COMPONENTS Core Quick", "PkgConfig", "OpenSSL"],
       "extra_sources": [
         "src/plugin.cpp",
-        "src/keycard_manager.cpp",
-        "src/secure_buffer.cpp",
-        "src/file_pairing_storage.cpp"
+        "src/KeycardBridge.cpp",
+        "src/FilePairingStorage.cpp"
       ],
       "extra_include_dirs": [
         "src"

@@ -1,11 +1,11 @@
 {
-  "name": "keycard_ui",
+  "name": "keycard-ui",
   "version": "1.0.0",
   "type": "ui_qml",
   "category": "security",
   "description": "Keycard debug UI and test harness",
   "author": "alisher",
-  "main": "qml/Main.qml",
+  "main": "Main.qml",
   "icon": "icons/keycard.png",
   "dependencies": ["keycard"],
 
