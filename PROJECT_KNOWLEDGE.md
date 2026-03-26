@@ -1790,3 +1790,252 @@ Keys.onPressed: (event) => {
 - ❌ Hardcoded test data in component (moved to parent's test trigger)
 
 **Closed:** Issue #48 closed on 2026-03-26
+
+---
+
+## Issue #49 - Backend API Integration (PR #52)
+
+**Context:** Connect authorization screen to real backend APIs. Replace TODO stubs with actual `logos.callModule()` calls for approve/decline actions.
+
+**PR:** #52 (issue-49-backend-api-integration branch)
+**Merged:** (pending review)
+
+### Implementation
+
+**Backend additions (keycard-core):**
+- Added `rejectRequest(authId)` method to KeycardPlugin
+- Finds pending request, marks as rejected, returns JSON
+- Pattern: Similar to authorizeRequest but simpler (no PIN/hardware needed)
+
+**Frontend integration (Main.qml):**
+- Replaced TODO in `approved()` handler with `logos.callModule("keycard", "authorizeRequest", [authRequestId, pin])`
+- Replaced TODO in `declined()` handler with `logos.callModule("keycard", "rejectRequest", [authRequestId])`
+- Added JSON response parsing with try/catch
+- Added temporary error display (logos.showMessage) for debugging
+- Updated Ctrl+A test trigger to call `requestAuth()` first
+
+### Key Discovery: Hardware Dependency in Testing
+
+**Problem encountered:** Approve button did nothing, Decline worked fine.
+
+**Initial hypothesis:** Backend integration broken.
+
+**Debugging process:**
+1. Checked if signals were firing (yes - Decline worked)
+2. Added error messages to see what was failing
+3. Discovered: authorizeRequest requires real keycard hardware
+
+**Root cause:** `authorizeRequest()` → `authorize(pin)` → requires physical card for PIN verification.
+
+**Why Decline worked but Approve didn't:**
+- `rejectRequest`: Just updates request status in memory (no hardware needed)
+- `authorizeRequest`: Calls `authorize(pin)` which needs:
+  - Physical keycard present
+  - Valid pairing
+  - Hardware PIN verification
+  - Card to derive key from
+
+**Lesson: Hardware-dependent vs Pure Software Operations**
+
+When integrating with hardware APIs:
+
+**Pure software operations:**
+- Request state management (create, list, reject)
+- Can be tested without hardware
+- Example: rejectRequest, getPendingAuths
+
+**Hardware-dependent operations:**
+- PIN verification
+- Key derivation
+- Card pairing
+- Require physical device for testing
+- Example: authorizeRequest, pairCard, deriveKey
+
+**Testing strategy:**
+- Mock/test the software flow (request creation, rejection, state management)
+- Document hardware requirements clearly
+- Accept that full end-to-end testing requires real hardware
+- Don't treat "needs hardware" as a bug
+
+### Mock Request Evolution
+
+**Initial Ctrl+A trigger (Issue #48):**
+```qml
+// Just created UI request - no backend
+showAuthorizationRequest(
+    "auth_req_001",  // Hardcoded ID
+    "notes",
+    "notes_private",
+    "m/43'/..."
+)
+```
+
+**Problem:** Backend authorizeRequest couldn't find this request (only existed in UI).
+
+**Fixed Ctrl+A trigger (Issue #49):**
+```qml
+// Create real backend request first
+var result = logos.callModule("keycard", "requestAuth", ["notes_private", "notes"])
+var obj = JSON.parse(result)
+if (obj.authId) {
+    // Use real authId from backend
+    showAuthorizationRequest(
+        obj.authId,  // Real ID from backend
+        "notes",
+        "notes_private",
+        obj.path
+    )
+}
+```
+
+**Why this matters:**
+- UI mock triggers must create real backend state
+- Can't test approve/reject without backend request existing
+- Backend validates request IDs (security: prevent arbitrary requests)
+
+**Pattern:** Test triggers should mirror real flow:
+1. Backend creates request (requestAuth)
+2. UI displays request (showAuthorizationRequest)
+3. User responds (approve/decline)
+4. Backend processes response
+
+### Error Handling Discovery
+
+**Attempted:** Used `logos.showMessage()` for error display.
+
+**Result:** No messages appeared (logos.showMessage might not exist/work in this context).
+
+**Lesson:** Don't assume debug APIs exist. Instead:
+- Check API documentation first
+- Fallback to visual UI changes (stay on screen, highlight error field)
+- Log to console as secondary measure
+- Test error paths explicitly
+
+**Better approach for #50:**
+- Add error text field to AuthorizationScreen
+- Set errorMessage property from Main.qml
+- Display in red below PIN entry
+- Clear on next keystroke
+
+### Backend Method Design Pattern
+
+**Simple state update (rejectRequest):**
+```cpp
+QString KeycardPlugin::rejectRequest(const QString& authId)
+{
+    // Find request
+    AuthRequest* req = findPendingRequest(authId);
+    if (!req) return error("not found");
+
+    // Update state
+    req->status = "rejected";
+
+    // Return success
+    return success({{"status", "rejected"}});
+}
+```
+
+**Hardware-dependent operation (authorizeRequest):**
+```cpp
+QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pin)
+{
+    // Find request
+    AuthRequest* req = findPendingRequest(authId);
+    if (!req) return error("not found");
+
+    // HARDWARE: Verify PIN with card
+    auto authResult = authorize(pin);  // Needs physical card!
+    if (!authResult.authorized) return error(authResult.error);
+
+    // HARDWARE: Derive key from card
+    auto keyResult = deriveKey(req->domain);  // Needs card!
+    if (keyResult.hasError()) return error(keyResult.error);
+
+    // Success
+    req->status = "complete";
+    req->key = keyResult.key;
+    return success({{"status", "complete"}, {"key", req->key}});
+}
+```
+
+**Pattern difference:**
+- Pure software: Just update data structures
+- Hardware-dependent: Call hardware APIs, handle hardware errors
+
+### Testing Without Hardware
+
+**What we verified:**
+- ✅ UI calls backend correctly
+- ✅ Backend method exists and is callable
+- ✅ JSON parsing works
+- ✅ Decline flow (software-only) works end-to-end
+- ✅ Error handling structure in place
+
+**What requires hardware:**
+- ⚠️  Approve flow (authorizeRequest → authorize → hardware PIN check)
+- ⚠️  Key derivation (deriveKey → hardware operation)
+
+**Acceptable compromise:**
+- Document hardware dependency clearly
+- Verify software integration is correct
+- Accept that full flow needs real card
+- Don't block PR on hardware testing if software layer is sound
+
+### Review Expectations
+
+**What to emphasize in PR:**
+- Backend integration complete (APIs wired up)
+- Software flow verified (Decline works)
+- Hardware dependency documented (not a bug)
+- Error handling structure in place
+
+**Don't:**
+- Present as "fully tested" when hardware-dependent parts untested
+- Claim Approve "works" without testing with real card
+- Hide hardware requirements
+
+**Do:**
+- Be explicit: "Decline verified, Approve requires hardware"
+- Explain why: "authorizeRequest needs PIN verification from physical card"
+- Show what's testable: "Software integration complete and correct"
+
+### Files Changed
+
+- `keycard-core/src/plugin.h` - Added rejectRequest declaration
+- `keycard-core/src/plugin.cpp` - Implemented rejectRequest method
+- `keycard-ui/qml/Main.qml` - Wired backend APIs, updated test trigger
+
+### Patterns to Reuse
+
+1. **Distinguish hardware vs software operations** early in design
+2. **Test what's testable** - don't block on hardware if software layer is correct
+3. **Mock triggers create real backend state** - UI-only mocks won't work for backend APIs
+4. **Document hardware dependencies** clearly in PR descriptions
+5. **Error message fallbacks** - if debug API doesn't work, use UI changes
+
+### Anti-patterns Avoided
+
+- ❌ UI-only mock data (created real backend request)
+- ❌ Assuming debug APIs exist (logos.showMessage might not work)
+- ❌ Treating "needs hardware" as implementation bug
+- ❌ Blocking PR on untestable hardware operations
+- ❌ Hiding hardware requirements from reviewers
+
+### Value Delivered
+
+**Immediate:**
+- Backend API integration complete
+- Software flow verified working
+- Clear path for hardware testing when available
+
+**Process:**
+- Clear distinction between software and hardware operations
+- Realistic testing expectations documented
+- Error handling structure in place for #50
+
+**Next steps:**
+- #50: Add visual error feedback in UI
+- Hardware testing: Once card available, verify Approve flow
+- Integration: Full end-to-end testing with real auth requests from modules
+
+**Closed:** Issue #49 (pending review)
