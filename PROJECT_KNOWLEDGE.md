@@ -1042,7 +1042,7 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 | Phase | Issue | Status | Description |
 |-------|-------|--------|-------------|
 | 1 | #32 | ✅ **Merged** (PR #40) | Pin testing tools (logoscore, standalone-app, lm CLI) |
-| 2 | #33 | Planned | Builder spike (logos-module-builder throwaway test) |
+| 2 | #33 | ✅ **Complete** | Builder spike (monorepo viable, builder experimental) |
 | 3 | #34 | Planned | Metadata consolidation (single source of truth) |
 | 4 | #35 | Planned | Migrate first module (keycard-core with parity gate) |
 | 5 | #36 | Planned | Migrate second module (keycard-ui with parity gate) |
@@ -1088,4 +1088,35 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 
 **Merge:** PR #40 merged on 2026-03-26 at 16:19 UTC. Issue #32 closed.
 
-**Next:** Phase 2 - Builder Spike (#33)
+---
+
+### Phase 2 Details (Complete)
+
+**What was tested:**
+- Dual-builder invocation from monorepo (Senty's recommendation)
+- Created metadata.json for keycard-ui and keycard-core
+- Added logos-module-builder to top-level flake
+- Attempted build with mkLogosQmlModule
+
+**Key findings:**
+- ✅ Monorepo + dual-builder = architecturally viable
+- ✅ No hard "one module per repo" constraint
+- ❌ Builder experimental (official warning: "do not use")
+- ❌ Builder has basic bugs (cp without -r flag)
+
+**Senty's verdict:**
+- Phase 2 = successful learning ✅
+- Keep monorepo (don't split repos)
+- Don't block on builder stabilization
+- Proceed with metadata consolidation (Phase 3)
+
+**Deliverable:**
+- `SPIKE_LOGOS_MODULE_BUILDER.md` - full findings documented
+- Spike branch discarded (per plan)
+- Commit 730dc0f on master
+
+**Value:** Proved architectural viability, identified tool maturity blocker, clear path forward.
+
+**Closed:** Issue #33 closed on 2026-03-26
+
+**Next:** Phase 3 - Metadata Consolidation (#34)
