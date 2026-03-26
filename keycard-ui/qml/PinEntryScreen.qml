@@ -88,7 +88,7 @@ FocusScope {
                         Layout.alignment: Qt.AlignHCenter
                         text: "Enter Keycard PIN to unlock"
                         color: DesignTokens.foreground
-                        font.pixelSize: DesignTokens.fontSizeTitle
+                        font.pixelSize: 24
                         font.weight: Font.Bold
                         font.family: DesignTokens.fontPrimary
                     }

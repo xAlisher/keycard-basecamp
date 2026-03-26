@@ -7,7 +7,7 @@ Rectangle {
     height: 733
     color: DesignTokens.background
 
-    // UI Mode: "pin", "dashboard", "debug"
+    // UI Mode: "pin", "dashboard", "authorization"
     property string mode: "pin"
     property bool debugMode: false
 
@@ -56,6 +56,7 @@ Rectangle {
         source: {
             if (mode === "pin") return "PinEntryScreen.qml"
             if (mode === "dashboard") return "ManagementDashboard.qml"
+            if (mode === "authorization") return "AuthorizationScreen.qml"
             return ""
         }
 
@@ -69,6 +70,20 @@ Rectangle {
             if (item && item.lockRequested) {
                 item.lockRequested.connect(function() {
                     root.lockSession()
+                })
+            }
+            if (item && item.approved) {
+                item.approved.connect(function() {
+                    console.log("Authorization approved")
+                    // TODO: Call backend authorize() with PIN
+                    root.mode = "dashboard"
+                })
+            }
+            if (item && item.declined) {
+                item.declined.connect(function() {
+                    console.log("Authorization declined")
+                    // TODO: Call backend decline()
+                    root.mode = "dashboard"
                 })
             }
             // Give focus to loaded item

@@ -13,6 +13,7 @@ install(FILES
     qml/DebugPanel.qml
     qml/PinEntryScreen.qml
     qml/ManagementDashboard.qml
+    qml/AuthorizationScreen.qml
     qml/DesignTokens.qml
     qml/qmldir
     keycard.png
