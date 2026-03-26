@@ -14,6 +14,7 @@ install(FILES
     qml/PinEntryScreen.qml
     qml/ManagementDashboard.qml
     qml/AuthorizationScreen.qml
+    qml/ActivityLog.qml
     qml/DesignTokens.qml
     qml/qmldir
     keycard.png
