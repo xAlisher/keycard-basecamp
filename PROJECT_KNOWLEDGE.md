@@ -1063,13 +1063,20 @@ Incremental adoption of best practices from [logos-tutorial](https://github.com/
 - Documented testing workflows in README.md
 
 **Key decisions:**
-- Testing tools use installed module paths (`~/.local/share/Logos/LogosBasecampDev`)
+- Auto-detection of module location (nix build → cmake build → install)
+- Env var overrides for custom paths
 - All tools pinned for reproducibility (no floating versions)
 - Read-only testing, no changes to core functionality
 
-**Validation:**
-- Scripts detect missing installation and provide clear error messages
-- `flake.lock` tracks all dependency pins
-- Master branch untouched (all work on feature branch)
+**Senty review iteration:**
+- **Issue raised:** Scripts required manual install, broke CI/fresh checkouts
+- **Fix (commit fcc80cb):** Auto-detect module in `result/lib/`, `build/keycard-core/`, or install location
+- **Impact:** CI workflow now works with `nix build && nix run .#inspect-module`
 
-**Next:** Awaiting Senty review on #32 before proceeding to Phase 2.
+**Validation:**
+- ✅ Scripts auto-detect multiple locations with clear fallback chain
+- ✅ `flake.lock` tracks all dependency pins
+- ✅ Master branch untouched (all work on feature branch)
+- ⏳ Awaiting Senty re-review on CI compatibility
+
+**Next:** Senty re-review on #32, then proceed to Phase 2 (Builder Spike).
