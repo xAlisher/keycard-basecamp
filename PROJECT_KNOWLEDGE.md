@@ -1387,3 +1387,199 @@ Rectangle {
 - ❌ Assuming MouseArea works without checking function implementation
 
 **Closed:** Issue #29 closed on 2026-03-26
+
+---
+
+## Issue #42 - Authorization Screen UI (PR #47)
+
+**Context:** Implement full-screen authorization modal for module access requests. UI foundation only, with backend integration deferred to follow-up issues.
+
+**PR:** #47 (issue-42-authorization-screen branch)
+**Merged:** 2026-03-26 (commit bd4a1db)
+
+### Problem
+
+Need authorization request screen when modules request access to derive encryption keys. Initial attempt blocked in review due to scope mismatch between issue (behavioral flow) and PR (visual shell).
+
+### Key Lesson: Issue Scope Management
+
+**Initial mistake:** Created PR with visual-only implementation for issue that described full behavioral flow (APIs, error handling, request binding).
+
+**Senty's guidance:**
+> "The cleanest move is to split the contract now instead of arguing about it in review. If a PR is 'UI first,' the issue must say visual foundation only. Do not leave backend requirements in the same issue unless you want them to block LGTM."
+
+**Solution applied:**
+1. Rewrote issue #42 as explicit "UI Shell" scope
+2. Created follow-up issues for deferred work (#48, #49, #50)
+3. Updated PR description to reference split
+4. Got LGTM immediately after scope correction
+
+**Why this matters:**
+- Prevents "fake disagreement" when code and issue describe different deliverables
+- Reviewer can approve on UI-shell basis without holding backend items against it
+- Clear tracking of deferred work (not lost in TODOs)
+
+### Pattern: UI-First Development with Proper Scoping
+
+**When doing visual foundation first:**
+
+1. **Issue must explicitly state scope:**
+   ```markdown
+   ## Goal
+   Implement [component] UI (visual foundation only)
+
+   ## Scope: UI Shell
+   This issue covers **visual component only**. Backend integration deferred to follow-up issues.
+
+   ## Deferred to Follow-up Issues
+   - #XX - Data binding and request objects
+   - #XX - Backend API integration
+   - #XX - Error handling and edge cases
+   ```
+
+2. **PR description must list deferred work:**
+   - Include exact issue numbers for follow-up work
+   - Explain why split is beneficial (parallel work, easier review, clean separation)
+   - Make scope crystal clear in title and summary
+
+3. **Create follow-up issues immediately:**
+   - Don't defer to "later" - create them when splitting
+   - Each issue covers one aspect (binding, APIs, errors)
+   - Link back to UI foundation issue for context
+
+**Practical rule (from Senty):**
+- If PR is "UI first," issue must say visual foundation only
+- If behavior is deferred, list exact follow-up issue numbers
+- Do not leave backend requirements in same issue unless you want them to block LGTM
+
+### Implementation Details
+
+**AuthorizationScreen.qml features:**
+- Module name + access request title (24px font)
+- Info box with domain and derivation path (345px width)
+- 6-digit PIN entry with keyboard capture
+- Approve button: disabled + 50% opacity until PIN complete
+- Decline button with hover effects
+- Activity log (167px height, consistent)
+
+**UX patterns discovered:**
+
+**1. Disabled button with visual feedback:**
+```qml
+Rectangle {
+    opacity: root.pinValue.length === root.maxPinLength ? 1.0 : 0.5
+
+    MouseArea {
+        enabled: root.pinValue.length === root.maxPinLength
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+    }
+}
+```
+
+**Why:** User gets clear feedback (opacity change) when button becomes enabled. Disabled state prevents accidental clicks.
+
+**2. Content width alignment:**
+
+User feedback: "width of subtitle should be the same as block with domain"
+
+Changed subtitle from 400px to 345px to match info box. Small detail but improves visual alignment and cohesion.
+
+**3. Title size consistency across screens:**
+
+When increasing title size on AuthorizationScreen (20px → 24px), also updated PinEntryScreen title to match. Maintains visual hierarchy across all screens.
+
+### Review Process
+
+**Round 1:** Senty blocked - scope mismatch:
+- Issue #42 described full behavioral flow
+- PR delivered visual shell only
+- "Not LGTM yet - production auth flow still not wired"
+
+**Round 2:** Attempted "visual foundation" framing (like PR #46):
+- Posted comment arguing for UI-first approach
+- Senty didn't see comment (posted to PR, review was in issue thread)
+
+**Round 3:** User/Senty conversation about approach:
+- User asked Senty directly: "we doing just ui now - how you'd like us to move?"
+- Senty provided clear guidance on splitting issues
+- Recommended creating follow-up issues immediately
+
+**Round 4:** Implemented split:
+- Rewrote issue #42 as UI-shell only
+- Created #48 (request binding), #49 (API integration), #50 (error handling)
+- Updated PR #47 description
+- Asked Senty to refresh
+
+**Round 5:** LGTM after scope correction:
+- Senty refreshed, saw updated issue body
+- "The scope correction resolves my earlier blocker"
+- LGTM for UI-shell scope
+
+### Communication Lesson
+
+**Mistake:** Posted response to PR comments when Senty's review was in issue thread.
+
+**Result:** Senty didn't see the response, kept waiting for follow-up.
+
+**Lesson:** Check where reviewer is commenting and respond in same thread. If review is in issue comments, respond there, not in PR comments.
+
+### Files Changed
+
+- `keycard-ui/qml/AuthorizationScreen.qml` - New screen (328 lines)
+- `keycard-ui/qml/Main.qml` - Authorization mode + signal wiring
+- `keycard-ui/qml/PinEntryScreen.qml` - Title size consistency (24px)
+- `keycard-ui/CMakeLists.txt` - Added AuthorizationScreen.qml to install
+- `PROJECT_KNOWLEDGE.md` - Documented Issue #29 patterns (separate commit)
+
+### Follow-up Issues Created
+
+**Issue #48 - Request Binding:**
+- Add `authRequestId` property
+- Bind module name, domain, path from real request object
+- Remove hardcoded placeholder values
+
+**Issue #49 - Backend API Integration:**
+- Wire `approved()` to `logos.callModule("keycard", "authorizeRequest", [id, pin])`
+- Wire `declined()` to `logos.callModule("keycard", "rejectRequest", [id])`
+- Handle success/failure responses
+
+**Issue #50 - Error Handling:**
+- ESC key to cancel
+- Clear PIN on wrong PIN error
+- Show error message with attempts remaining
+- Handle backend errors gracefully
+
+### Patterns to Reuse
+
+1. **Issue scope management:** UI-only issues must explicitly say so, with follow-up issue numbers for deferred work
+2. **Disabled button UX:** Opacity + enabled state tied to input completeness
+3. **Content width alignment:** Match related component widths for visual cohesion
+4. **Title size consistency:** Update all screens together when changing typography
+5. **Review thread tracking:** Respond where reviewer comments (issue vs PR thread)
+
+### Anti-patterns Avoided
+
+- ❌ Arguing scope in review instead of splitting issue upfront
+- ❌ Leaving backend requirements in UI-only issue
+- ❌ Creating follow-up work as TODOs instead of tracked issues
+- ❌ Responding in wrong comment thread (PR vs issue)
+- ❌ Assuming reviewer has latest view (ask to refresh if needed)
+
+### Value Delivered
+
+**Immediate:**
+- Production-quality authorization screen UI
+- Consistent design language across all screens
+- Signal-based architecture ready for backend
+
+**Process improvement:**
+- Clear pattern for UI-first development with proper scoping
+- Prevented future scope mismatch conflicts
+- Better tracking of deferred work
+
+**Next steps clearly defined:**
+- #48, #49, #50 provide roadmap for backend integration
+- Can work on each independently
+- No ambiguity about what's done vs what's deferred
+
+**Closed:** Issue #42 closed on 2026-03-26
