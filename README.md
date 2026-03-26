@@ -39,6 +39,19 @@ Built on **keycard-qt** (native C++/Qt library) for direct PC/SC smart card comm
 
 See [SPEC.md](SPEC.md) for complete implementation specification.
 
+### Metadata Files (Preparatory)
+
+**Note:** `metadata.json` files in `keycard-core/` and `keycard-ui/` are **staged migration artifacts** for future `logos-module-builder` adoption (Phase 3 of logos-tutorial adoption plan).
+
+**Current status:**
+- `metadata.json` = Builder-aligned format (preparatory, not yet consumed by build)
+- `CMakeLists.txt` = Operational source of truth (current build system)
+- Old metadata files = Kept until full migration
+
+**Purpose:** When `logos-module-builder` stabilizes (currently experimental), these files enable quick migration to simplified build system.
+
+See [SPIKE_LOGOS_MODULE_BUILDER.md](SPIKE_LOGOS_MODULE_BUILDER.md) for context.
+
 ## Development
 
 ### Clone
