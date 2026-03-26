@@ -193,9 +193,17 @@
             type = "app";
             program = "${pkgs.writeShellScript "test-with-logoscore" ''
               # Test keycard module with logoscore (headless)
+              MODULE_DIR="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard"
+
+              if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
+                echo "Error: Module not installed at $MODULE_DIR"
+                echo "Run: cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+                exit 1
+              fi
+
               echo "Testing keycard module with logoscore..."
               ${logos-logoscore-cli.packages.${system}.default}/bin/logoscore \
-                --module result/lib/Logos/Modules/keycard
+                --module "$MODULE_DIR"
             ''}";
           };
 
@@ -203,10 +211,25 @@
             type = "app";
             program = "${pkgs.writeShellScript "test-ui-standalone" ''
               # Test QML UI in isolation
+              MODULE_DIR="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard"
+              UI_DIR="$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui"
+
+              if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
+                echo "Error: Module not installed at $MODULE_DIR"
+                echo "Run: cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+                exit 1
+              fi
+
+              if [ ! -f "$UI_DIR/Main.qml" ]; then
+                echo "Error: UI not installed at $UI_DIR"
+                echo "Run: cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+                exit 1
+              fi
+
               echo "Testing keycard UI with logos-standalone-app..."
               ${logos-standalone-app.packages.${system}.default}/bin/logos-standalone-app \
-                --ui result/lib/Logos/Plugins/keycard-ui \
-                --module result/lib/Logos/Modules/keycard
+                --ui "$UI_DIR" \
+                --module "$MODULE_DIR"
             ''}";
           };
 
@@ -214,21 +237,21 @@
             type = "app";
             program = "${pkgs.writeShellScript "inspect-module" ''
               # Inspect module with lm CLI
-              MODULE_SO="result/lib/Logos/Modules/keycard/keycard_plugin.so"
+              MODULE_SO="$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so"
 
               if [ ! -f "$MODULE_SO" ]; then
-                echo "Error: Module not found at $MODULE_SO"
-                echo "Run 'nix build' first"
+                echo "Error: Module not installed at $MODULE_SO"
+                echo "Run: cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
                 exit 1
               fi
 
               echo "=== Module Info ==="
               ${logos-module.packages.${system}.default}/bin/lm info "$MODULE_SO"
 
-              echo -e "\n=== Available Methods ==="
+              echo -e "\\n=== Available Methods ==="
               ${logos-module.packages.${system}.default}/bin/lm methods "$MODULE_SO"
 
-              echo -e "\n=== Validation ==="
+              echo -e "\\n=== Validation ==="
               ${logos-module.packages.${system}.default}/bin/lm validate "$MODULE_SO"
             ''}";
           };

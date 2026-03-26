@@ -84,6 +84,28 @@ nix build .#lib  # Build core module only
 nix build .#ui   # Build UI plugin only
 ```
 
+### Testing
+
+**Headless backend testing (logoscore):**
+```bash
+# Test module without UI (fast iteration)
+nix run .#test-with-logoscore
+```
+
+**Isolated UI testing (logos-standalone-app):**
+```bash
+# Test QML UI without full Basecamp shell
+nix run .#test-ui-standalone
+```
+
+**Module introspection (lm CLI):**
+```bash
+# Inspect module structure, methods, and metadata
+nix run .#inspect-module
+```
+
+All testing tools are pinned to specific versions in `flake.nix` for reproducibility.
+
 ### Install to Basecamp Dev
 
 ```bash
