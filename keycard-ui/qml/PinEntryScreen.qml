@@ -167,49 +167,18 @@ FocusScope {
         }
 
         // Activity Log (bottom)
-        Rectangle {
+        ActivityLog {
+            id: activityLog
             Layout.fillWidth: true
             Layout.preferredHeight: 167
-            color: DesignTokens.background
 
-            // Top border only
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: DesignTokens.border
-            }
-
-            ListView {
-                id: activityLog
-                anchors.fill: parent
-                anchors.margins: 18
-                spacing: 4
-                clip: true
-                model: ListModel {
-                    ListElement { timestamp: "[09:12:03]"; message: "looking for smart card reader..."; level: "info" }
-                    ListElement { timestamp: "[09:08:11]"; message: "card reader detected"; level: "success" }
-                    ListElement { timestamp: "[09:12:03]"; message: "looking for Keycard..."; level: "info" }
-                    ListElement { timestamp: "[09:08:11]"; message: "Keycard detected"; level: "success" }
-                    ListElement { timestamp: "[09:11:47]"; message: "waiting for PIN"; level: "warning" }
-                    ListElement { timestamp: "[09:11:47]"; message: "wrong PIN - 2 attempts left"; level: "error" }
-                    ListElement { timestamp: "[09:11:47]"; message: "waiting for PIN"; level: "warning" }
-                }
-
-                delegate: Text {
-                    width: activityLog.width
-                    text: timestamp + " " + message
-                    color: {
-                        if (level === "success") return DesignTokens.success
-                        if (level === "warning") return DesignTokens.warning
-                        if (level === "error") return DesignTokens.error
-                        return DesignTokens.info
-                    }
-                    font.pixelSize: DesignTokens.fontSizeSmall
-                    font.family: "monospace"
-                    wrapMode: Text.WordWrap
-                }
+            Component.onCompleted: {
+                // Mock data for now - will be replaced with real backend events
+                addEntry("[09:12:03]", "looking for smart card reader...", "info")
+                addEntry("[09:08:11]", "card reader detected", "success")
+                addEntry("[09:12:03]", "looking for Keycard...", "info")
+                addEntry("[09:08:11]", "Keycard detected", "success")
+                addEntry("[09:11:47]", "waiting for PIN", "warning")
             }
         }
         }

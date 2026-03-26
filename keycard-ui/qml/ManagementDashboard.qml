@@ -408,47 +408,18 @@ Rectangle {
             }
         }
 
-        // Activity Log (bottom with top border only)
-        Rectangle {
+        // Activity Log (bottom)
+        ActivityLog {
+            id: activityLog
             Layout.fillWidth: true
             Layout.preferredHeight: 167
-            color: DesignTokens.background
 
-            // Top border only
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: DesignTokens.border
-            }
-
-            ListView {
-                id: activityLog
-                anchors.fill: parent
-                anchors.margins: 18
-                spacing: 4
-                clip: true
-                model: ListModel {
-                    ListElement { timestamp: "[14:23:45]"; message: "notes requested access to notes.private"; level: "warning" }
-                    ListElement { timestamp: "[14:23:50]"; message: "authorized notes.private (Key: ff21fc...)"; level: "success" }
-                    ListElement { timestamp: "[14:25:12]"; message: "wallet requested access to wallet.ethereum"; level: "warning" }
-                    ListElement { timestamp: "[14:25:15]"; message: "user denied request"; level: "error" }
-                }
-
-                delegate: Text {
-                    width: activityLog.width
-                    text: timestamp + " " + message
-                    color: {
-                        if (level === "success") return DesignTokens.success
-                        if (level === "warning") return DesignTokens.warning
-                        if (level === "error") return DesignTokens.error
-                        return DesignTokens.info
-                    }
-                    font.pixelSize: 12
-                    font.family: "monospace"
-                    wrapMode: Text.WordWrap
-                }
+            Component.onCompleted: {
+                // Mock data for now - will be replaced with real backend events
+                addEntry("[14:23:45]", "notes requested access to notes.private", "warning")
+                addEntry("[14:23:50]", "authorized notes.private (Key: ff21fc...)", "success")
+                addEntry("[14:25:12]", "wallet requested access to wallet.ethereum", "warning")
+                addEntry("[14:25:15]", "user denied request", "error")
             }
         }
     }
