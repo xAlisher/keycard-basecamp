@@ -937,3 +937,331 @@ static void debugLog(const QString& msg) {
 
 ---
 
+
+## Issue #44 - Session Management + Core APIs
+
+**Date:** 2026-03-27  
+**Context:** Implementing session timeout, lock functionality, and module authorization tracking for production dashboard UI.
+
+### Lesson: Security Boundaries Must Be Enforced in Backend, Not UI
+
+**What happened:**
+Initial implementation exposed `completeAuthRequest(authId, key)` accepting key parameter from QML. Senty caught this in code review as a critical security flaw - it allowed UI code to inject arbitrary keys instead of forcing backend to derive from hardware.
+
+**Why it's wrong:**
+- QML is untrusted boundary - malicious code could inject fake keys
+- Breaks security model where only keycard module talks to hardware
+- Session state becomes meaningless if keys can be supplied externally
+- Same pattern was already rejected in Issue #23
+
+**Correct pattern:**
+```cpp
+// ✅ Backend derives key internally when session active
+QString KeycardPlugin::completeAuthRequest(const QString& authId) {
+    if (m_sessionState != SessionState::Active) {
+        return error("Session not active");
+    }
+
+    // SECURITY: Derive from hardware, don't accept external keys
+    QString domain = targetRequest->domain;
+    QJsonObject keyResult = QJsonDocument::fromJson(deriveKey(domain).toUtf8()).object();
+    targetRequest->key = keyResult.value("key").toString();
+}
+```
+
+**Wrong pattern:**
+```cpp
+// ❌ Accepts external key - security boundary violated
+QString KeycardPlugin::completeAuthRequest(const QString& authId, const QString& key) {
+    targetRequest->key = key;  // DANGER: No verification
+}
+```
+
+**Prevention:**
+- Security operations (PIN, keys, crypto) must happen in backend
+- UI should only pass identifiers (authId, domain, moduleName), never secrets
+- Code review security checklist: "Does any Q_INVOKABLE method accept key material?"
+
+### Lesson: UI State Changes Must Call Backend APIs to Sync State
+
+**What happened:**
+Lock button only changed UI mode to "pin" without calling backend `lockSession()` API. Session state remained active, keys stayed in memory, timer kept running.
+
+**Why it's wrong:**
+- Backend and frontend state diverged
+- Security risk: UI shows locked but keys still accessible
+- Success criterion "keys cleared on lock" not met
+
+**Correct pattern:**
+```qml
+function lockSession() {
+    // Call backend FIRST to clear state
+    var result = logos.callModule("keycard", "lockSession", [])
+    processActivity(result)
+    
+    // Then update UI
+    mode = "pin"
+}
+```
+
+**Wrong pattern:**
+```qml
+function lockSession() {
+    // TODO: Call backend lockSession
+    mode = "pin"  // Only UI change, backend state unchanged
+}
+```
+
+**Prevention:**
+- Search codebase for "TODO" before declaring feature complete
+- UI state transitions should always call corresponding backend API
+- Test backend state (logs, getSessionInfo) after UI state changes
+
+### Lesson: Public API Contracts Must Use Consistent Naming
+
+**What happened:**
+`getSessionInfo()` returned `"SESSION_LOCKED"` while `getState()` returned `"SESSION_CLOSED"` for the same state. Different APIs described same state with different names.
+
+**Why it's wrong:**
+- Consumers can't key UI behavior off documented states
+- Forces clients to maintain mapping tables
+- Creates confusion: are LOCKED and CLOSED different states or same?
+
+**Correct pattern:**
+```cpp
+// All APIs use same name for same state
+if (m_sessionState == SessionState::Locked) {
+    result["state"] = "SESSION_LOCKED";  // getState()
+}
+
+// Elsewhere
+info["state"] = "SESSION_LOCKED";  // getSessionInfo()
+```
+
+**Prevention:**
+- Define state constants in header, reference them everywhere
+- Code review: grep for state strings across all API implementations
+- Integration test: verify getState() matches getSessionInfo() state
+
+### Lesson: ListView vs ScrollView for Dynamic QML Content
+
+**What happened:**
+Used ScrollView + Repeater for pending requests. Resulted in blank screen after unlock when width references broke.
+
+**Why ListView is better:**
+- Built-in scrolling and clipping
+- Proper width/height management
+- Performance: only renders visible items
+- No manual width calculations needed
+
+**Correct pattern:**
+```qml
+ListView {
+    Layout.fillWidth: true
+    Layout.fillHeight: true
+    spacing: 16
+    clip: true
+    model: root.pendingRequests
+    delegate: Rectangle {
+        width: ListView.view.width  // Automatic width from ListView
+        height: 64
+        // ... delegate content
+    }
+}
+```
+
+**Wrong pattern:**
+```qml
+ScrollView {
+    Layout.fillWidth: true
+    Layout.fillHeight: true
+    ColumnLayout {
+        width: parent.width  // Can break when parent not ready
+        Repeater {
+            model: root.pendingRequests
+            // ... item content
+        }
+    }
+}
+```
+
+**When to use each:**
+- ListView: Dynamic lists of identical-structure items (requests, modules, messages)
+- ScrollView: Static content with mixed layouts (settings panels, forms)
+
+### Lesson: Activity Log Deduplication Pattern
+
+**What happened:**
+Pending requests were logged multiple times - once on PIN screen, again on dashboard, then on every poll.
+
+**Solution: QSet + request ID tracking:**
+```cpp
+// In plugin.h
+QSet<QString> m_loggedRequestIds;
+
+// In getPendingAuths()
+for (const auto& req : m_authRequests) {
+    if (req.status == "pending") {
+        // Only log if not already logged
+        if (!m_loggedRequestIds.contains(req.id)) {
+            logActivity(QString("New request from %1").arg(req.caller), "warning");
+            m_loggedRequestIds.insert(req.id);
+        }
+    }
+}
+
+// Cleanup when request completes
+m_loggedRequestIds.remove(authId);
+```
+
+**Why this pattern works:**
+- Each request logged exactly once
+- Works across multiple screens polling same API
+- Automatic cleanup prevents memory leak
+- QSet provides O(1) lookup and insert
+
+**Alternative considered:**
+- Timestamp-based deduplication: Fragile, breaks if system clock changes
+- Count-based: Doesn't work when count goes down then up
+- Client-side tracking: Duplicates logic across QML files
+
+### Lesson: Polling Timer Pattern for Backend State Sync
+
+**Pattern implemented:**
+```qml
+Timer {
+    id: requestPoller
+    interval: 1000
+    running: true
+    repeat: true
+    onTriggered: {
+        checkPendingRequests()
+        updateSessionTime()
+    }
+}
+
+function checkPendingRequests() {
+    var result = logos.callModule("keycard", "getPendingAuths", [])
+    var response = JSON.parse(result)
+    
+    // Process activity log
+    if (response._activity && Array.isArray(response._activity)) {
+        for (var i = 0; i < response._activity.length; i++) {
+            activityLog.addEntry(response._activity[i].timestamp, ...)
+        }
+    }
+    
+    // Update UI model
+    root.pendingRequests = response.pending.map(...)
+}
+```
+
+**Benefits:**
+- UI always shows current backend state
+- Works across module boundaries (other modules create requests)
+- Handles race conditions (approve while polling)
+- Activity logs automatically synced
+
+**Tradeoffs:**
+- 1Hz polling overhead (acceptable for dashboard, would drain battery on mobile)
+- Could use signals for instant updates, but polling is simpler and works
+
+**When to use:**
+- Dashboard/management UIs where real-time state matters
+- Cross-module coordination (keycard sees requests from other modules)
+- States that change externally (timeouts, background operations)
+
+### Lesson: Activity Log Processing Pattern with _activity Arrays
+
+**Backend pattern:**
+```cpp
+// In any API method
+void KeycardPlugin::someMethod() {
+    logActivity("Something happened", "info");
+    
+    // At end of method
+    QJsonObject result;
+    result["success"] = true;
+    addActivityToResponse(result);  // Injects _activity array
+    return QJsonDocument(result).toJson();
+}
+
+void KeycardPlugin::addActivityToResponse(QJsonObject& response) {
+    QJsonArray activity;
+    for (const auto& entry : m_recentActivity) {
+        QJsonObject obj;
+        obj["timestamp"] = entry.timestamp;
+        obj["message"] = entry.message;
+        obj["level"] = entry.level;
+        activity.append(obj);
+    }
+    response["_activity"] = activity;
+    m_recentActivity.clear();  // Consume queue
+}
+```
+
+**Frontend pattern:**
+```qml
+function processActivity(responseJson) {
+    var response = JSON.parse(responseJson)
+    if (response._activity && Array.isArray(response._activity)) {
+        for (var i = 0; i < response._activity.length; i++) {
+            var entry = response._activity[i]
+            activityLog.addEntry(entry.timestamp, entry.message, entry.level)
+        }
+    }
+}
+
+// After any callModule
+var result = logos.callModule("keycard", "someMethod", [])
+processActivity(result)
+```
+
+**Benefits:**
+- Activity logs sync with API responses (no separate logging calls)
+- Works with polling (getPendingAuths returns its own activity)
+- No race conditions (activity tied to response that caused it)
+- QML code stays DRY (processActivity helper reused everywhere)
+
+### Files Changed
+
+**Backend:**
+- `keycard-core/src/plugin.h` - Added SessionState, AuthorizationRecord, m_loggedRequestIds
+- `keycard-core/src/plugin.cpp` - Implemented session timer, completeAuthRequest, activity logging
+
+**Frontend:**
+- `keycard-ui/qml/Main.qml` - Lock button handler, approval/decline signal wiring
+- `keycard-ui/qml/ManagementDashboard.qml` - Countdown timer, ListView, polling
+- `keycard-ui/qml/PinEntryScreen.qml` - Pending count, activity processing
+
+**Demo:**
+- `auth_showcase-core/` - Example module showing Keycard integration
+- `auth_showcase-ui/qml/Main.qml` - "Connect with Keycard" demo
+
+### Review Feedback
+
+**Senty Round 1 (3 blocking issues):**
+1. HIGH - Security: completeAuthRequest accepted external keys
+2. MEDIUM - Functionality: Lock button didn't call backend
+3. MEDIUM - Consistency: SESSION_CLOSED vs SESSION_LOCKED naming
+
+**Senty Round 2 (LGTM):**
+All issues resolved, noted residual drift in DebugPanel.qml (non-blocking).
+
+### Commits
+
+- `32ceae6` - Main session management implementation
+- `ca92527` - UI improvements (countdown, pending count, activity logs)
+- `516f55c` - Fix security and consistency issues from code review
+- `8466ca6` - Document lesson #37: Authorization API security boundary
+
+### Value Delivered
+
+- ✅ Session timeout prevents unauthorized access after 5 minutes
+- ✅ Lock button gives users explicit control over security
+- ✅ Module authorization tracking enables "who has access" visibility
+- ✅ Countdown timer provides session awareness
+- ✅ Activity logs improve observability
+- ✅ Auth showcase demonstrates integration pattern for other modules
+- ✅ Security boundary maintained (keys never leave backend)
+
