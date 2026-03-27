@@ -11,11 +11,90 @@ FocusScope {
     property string pinValue: ""
     property int maxPinLength: 6
     property int attemptsRemaining: 3
+    property alias activityLog: activityLog
+    property bool cardPresent: false
+    property bool readerPresent: false
+    property bool initialLoadComplete: false
+    property bool verifyingPin: false
+    property int pendingRequestCount: 0
+
+    // Monitor card/reader state
+    Timer {
+        id: stateMonitor
+        interval: 1000
+        running: true
+        repeat: true
+        onTriggered: {
+            checkState()
+            checkPendingRequests()
+        }
+    }
+
+    function checkPendingRequests() {
+        var result = logos.callModule("keycard", "getPendingAuths", [])
+        try {
+            var response = JSON.parse(result)
+
+            // Process activity log
+            if (response._activity && Array.isArray(response._activity)) {
+                for (var i = 0; i < response._activity.length; i++) {
+                    var entry = response._activity[i]
+                    activityLog.addEntry(entry.timestamp, entry.message, entry.level)
+                }
+            }
+
+            if (response.count !== undefined) {
+                root.pendingRequestCount = response.count
+            }
+        } catch (e) {
+            console.error("Failed to check pending requests:", e)
+        }
+    }
+
+    function checkState() {
+        var result = logos.callModule("keycard", "getState", [])
+        try {
+            var response = JSON.parse(result)
+            var state = response.state
+
+            var wasCardPresent = cardPresent
+            var wasReaderPresent = readerPresent
+
+            // Update state
+            readerPresent = (state !== "READER_NOT_FOUND" && state !== "NO_PCSC")
+            cardPresent = (state === "CARD_PRESENT" || state === "READY" || state === "SESSION_ACTIVE")
+
+            // Detect disconnects and reconnects
+            var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
+
+            if (wasReaderPresent && !readerPresent) {
+                activityLog.addEntry(timestamp, "Smart card reader not found", "error")
+                activityLog.addEntry(timestamp, "Looking for smart card reader...", "info")
+            } else if (!wasReaderPresent && readerPresent) {
+                activityLog.addEntry(timestamp, "Smart card reader detected", "success")
+                // If no card present, start looking for keycard
+                if (!cardPresent) {
+                    activityLog.addEntry(timestamp, "Looking for Keycard...", "info")
+                }
+            }
+
+            if (wasCardPresent && !cardPresent && readerPresent) {
+                activityLog.addEntry(timestamp, "Keycard not found", "error")
+                activityLog.addEntry(timestamp, "Looking for Keycard...", "info")
+            } else if (!wasCardPresent && cardPresent && readerPresent && initialLoadComplete) {
+                // Card reconnected (skip during initial load) - get UID and show PIN prompt
+                var cardResult = logos.callModule("keycard", "discoverCard", [])
+                processActivity(cardResult)
+            }
+        } catch (e) {
+            console.error("Failed to check state:", e)
+        }
+    }
 
     // Timer to ensure focus after component is fully loaded
     Timer {
         id: focusTimer
-        interval: 100
+        interval: 200
         running: true
         repeat: false
         onTriggered: {
@@ -29,6 +108,7 @@ FocusScope {
         id: hiddenInput
         visible: false
         focus: true
+        enabled: cardPresent && readerPresent
 
         onTextChanged: {
             // Handle numeric input
@@ -96,8 +176,8 @@ FocusScope {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.preferredWidth: 345
-                        text: "Never enter PIN in modules you don't trust"
-                        color: DesignTokens.foregroundSecondary
+                        text: root.pendingRequestCount === 0 ? "No pending requests" : root.pendingRequestCount + " pending request" + (root.pendingRequestCount > 1 ? "s" : "")
+                        color: root.pendingRequestCount === 0 ? DesignTokens.foregroundSecondary : DesignTokens.warning
                         font.pixelSize: DesignTokens.fontSizeSmall
                         font.weight: Font.Medium
                         font.family: DesignTokens.fontPrimary
@@ -110,6 +190,7 @@ FocusScope {
                 RowLayout {
                     Layout.alignment: Qt.AlignHCenter
                     spacing: DesignTokens.spacingM
+                    opacity: root.verifyingPin ? 0.5 : 1.0
 
                     Repeater {
                         model: root.maxPinLength
@@ -119,10 +200,17 @@ FocusScope {
                             height: DesignTokens.pinDigitSize
                             color: "transparent"
                             border.color: {
-                                if (index === root.pinValue.length) return DesignTokens.primary  // Active
+                                if ((root.cardPresent && root.readerPresent) && index === root.pinValue.length) {
+                                    return DesignTokens.primary  // Active focus
+                                }
                                 return DesignTokens.border  // Empty or filled
                             }
-                            border.width: index === root.pinValue.length ? 2 : 1
+                            border.width: {
+                                if ((root.cardPresent && root.readerPresent) && index === root.pinValue.length) {
+                                    return 2  // Active focus
+                                }
+                                return 1  // Normal
+                            }
                             radius: DesignTokens.radiusM
 
                             // Filled dot
@@ -141,7 +229,7 @@ FocusScope {
                                 width: 2
                                 height: 20
                                 color: DesignTokens.primary
-                                visible: index === root.pinValue.length
+                                visible: (root.cardPresent && root.readerPresent) && index === root.pinValue.length
 
                                 SequentialAnimation on opacity {
                                     running: parent.visible
@@ -154,15 +242,6 @@ FocusScope {
                     }
                 }
 
-                // Error message (wrong PIN)
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: attemptsRemaining < 3 ? `Wrong PIN - ${attemptsRemaining} attempts remaining` : ""
-                    color: DesignTokens.error
-                    font.pixelSize: DesignTokens.fontSizeSmall
-                    font.family: DesignTokens.fontPrimary
-                    visible: text !== ""
-                }
             }
         }
 
@@ -171,29 +250,76 @@ FocusScope {
             id: activityLog
             Layout.fillWidth: true
             Layout.preferredHeight: 167
-
-            Component.onCompleted: {
-                // Mock data for now - will be replaced with real backend events
-                addEntry("[09:12:03]", "looking for smart card reader...", "info")
-                addEntry("[09:08:11]", "card reader detected", "success")
-                addEntry("[09:12:03]", "looking for Keycard...", "info")
-                addEntry("[09:08:11]", "Keycard detected", "success")
-                addEntry("[09:11:47]", "waiting for PIN", "warning")
-            }
         }
+        }
+    }
+
+    Component.onCompleted: {
+        // Discover reader and card AFTER UI loads (non-blocking)
+        Qt.callLater(function() {
+            var readerResult = logos.callModule("keycard", "discoverReader", [])
+            processActivity(readerResult)
+
+            try {
+                var readerResponse = JSON.parse(readerResult)
+                readerPresent = readerResponse.found || false
+            } catch (e) {}
+
+            var cardResult = logos.callModule("keycard", "discoverCard", [])
+            processActivity(cardResult)
+
+            try {
+                var cardResponse = JSON.parse(cardResult)
+                cardPresent = cardResponse.found || false
+            } catch (e) {}
+
+            // Check pending requests
+            checkPendingRequests()
+
+            // Mark initial load as complete
+            initialLoadComplete = true
+        })
+    }
+
+    function processActivity(responseJson) {
+        try {
+            var response = JSON.parse(responseJson)
+            if (response._activity && Array.isArray(response._activity)) {
+                for (var i = 0; i < response._activity.length; i++) {
+                    var entry = response._activity[i]
+                    activityLog.addEntry(entry.timestamp, entry.message, entry.level)
+                }
+            }
+        } catch (e) {
+            console.error("Failed to process activity:", e)
         }
     }
 
     function verifyPin() {
         console.log("Verifying PIN:", pinValue)
 
-        // TODO: Call backend authorize(pin)
-        // Mock: accept PIN "123456"
-        if (pinValue === "123456") {
-            unlocked()
-        } else {
-            attemptsRemaining--
-            pinValue = ""
+        verifyingPin = true
+
+        // Show verifying message
+        var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
+        activityLog.addEntry(timestamp, "Verifying PIN...", "info")
+
+        // Call backend authorize
+        var result = logos.callModule("keycard", "authorize", [pinValue])
+        processActivity(result)
+
+        verifyingPin = false
+
+        try {
+            var response = JSON.parse(result)
+            if (response.authorized) {
+                unlocked()
+            } else {
+                attemptsRemaining = response.remainingAttempts || 0
+                pinValue = ""
+            }
+        } catch (e) {
+            console.error("Failed to parse authorize response:", e)
         }
     }
 }

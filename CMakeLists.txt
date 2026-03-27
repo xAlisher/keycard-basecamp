@@ -46,3 +46,5 @@ endif()
 # Include subdirectories
 add_subdirectory(keycard-core)
 add_subdirectory(keycard-ui)
+add_subdirectory(auth_showcase-core)
+add_subdirectory(auth_showcase-ui)

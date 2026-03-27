@@ -2371,7 +2371,7 @@
                       "descendants": {
                         "647bT": {
                           "width": "fill_container",
-                          "y": 11.999999999999996,
+                          "y": 12.000000000000007,
                           "height": "fit_content",
                           "x": 26
                         },
@@ -2388,7 +2388,7 @@
                           "width": "fit_content",
                           "height": "fit_content",
                           "x": 252,
-                          "y": 13.999999999999996
+                          "y": 14.000000000000005
                         },
                         "IkGza": {
                           "width": "fit_content"
@@ -2415,7 +2415,7 @@
                       "name": "card3",
                       "x": 0,
                       "height": "fit_content",
-                      "y": 74,
+                      "y": 74.00000000000001,
                       "stroke": {
                         "align": "inside",
                         "thickness": {
@@ -2426,7 +2426,7 @@
                       "descendants": {
                         "647bT": {
                           "width": "fill_container",
-                          "y": 11.99999999999999,
+                          "y": 12.000000000000007,
                           "height": "fit_content",
                           "x": 26
                         },
@@ -2443,7 +2443,7 @@
                           "width": "fit_content",
                           "height": "fit_content",
                           "x": 252,
-                          "y": 13.99999999999999
+                          "y": 14.000000000000009
                         },
                         "IkGza": {
                           "width": "fit_content"
@@ -2470,7 +2470,7 @@
                       "name": "card4",
                       "x": 0,
                       "height": "fit_content",
-                      "y": 147.99999999999997,
+                      "y": 148.00000000000003,
                       "stroke": {
                         "align": "inside",
                         "thickness": {
@@ -2481,7 +2481,7 @@
                       "descendants": {
                         "647bT": {
                           "width": "fill_container",
-                          "y": 11.999999999999996,
+                          "y": 12.000000000000007,
                           "height": "fit_content",
                           "x": 26
                         },
@@ -2498,7 +2498,7 @@
                           "width": "fit_content",
                           "height": "fit_content",
                           "x": 252,
-                          "y": 13.999999999999996
+                          "y": 14.000000000000005
                         },
                         "IkGza": {
                           "width": "fit_content"
@@ -2582,7 +2582,7 @@
                         "FA5IU": {
                           "width": "fit_content",
                           "height": "fit_content",
-                          "x": 339,
+                          "x": 318,
                           "y": 14
                         },
                         "IkGza": {
@@ -2600,7 +2600,8 @@
                         "6FEys/yEPME": {
                           "fontWeight": "\\$--font-weight-medium",
                           "x": 16,
-                          "y": 8
+                          "y": 8,
+                          "content": "Disconnect"
                         }
                       }
                     }
@@ -3317,7 +3318,7 @@
                   "ref": "JBTO9",
                   "name": "Pin 1",
                   "x": 36.5,
-                  "y": 15.999984198069285,
+                  "y": 16.000000005136023,
                   "descendants": {
                     "6f3t5": {
                       "x": 19,
@@ -3331,7 +3332,7 @@
                   "ref": "JBTO9",
                   "name": "Pin 2",
                   "x": 96.5,
-                  "y": 15.999984198069285,
+                  "y": 16.000000005136023,
                   "descendants": {
                     "6f3t5": {
                       "x": 19,
@@ -3345,7 +3346,7 @@
                   "ref": "JBTO9",
                   "name": "Pin 3",
                   "x": 156.5,
-                  "y": 15.999984198069285,
+                  "y": 16.000000005136023,
                   "descendants": {
                     "6f3t5": {
                       "x": 19,
@@ -3359,7 +3360,7 @@
                   "ref": "JBTO9",
                   "name": "Pin 4",
                   "x": 216.5,
-                  "y": 15.999984198069285,
+                  "y": 16.000000005136023,
                   "descendants": {
                     "6f3t5": {
                       "x": 19,
@@ -3373,7 +3374,7 @@
                   "ref": "JBTO9",
                   "name": "Pin 5",
                   "x": 276.5,
-                  "y": 15.999984198069285,
+                  "y": 16.000000005136023,
                   "descendants": {
                     "6f3t5": {
                       "x": 19,
@@ -3387,7 +3388,7 @@
                   "ref": "yTZq8",
                   "name": "Pin 6",
                   "x": 336.5,
-                  "y": 15.999984198069285,
+                  "y": 16.000000005136023,
                   "descendants": {
                     "l4IW3": {
                       "x": 23,

@@ -1,0 +1,10 @@
+{
+  "author": "alisher",
+  "category": "demo",
+  "dependencies": ["keycard"],
+  "description": "Auth showcase module - demonstrates Keycard integration",
+  "main": "auth_showcase_plugin",
+  "name": "auth_showcase",
+  "type": "core",
+  "version": "1.0.0"
+}
