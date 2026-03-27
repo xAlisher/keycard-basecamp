@@ -16,6 +16,7 @@ FocusScope {
     property bool readerPresent: false
     property bool initialLoadComplete: false
     property bool verifyingPin: false
+    property int pendingRequestCount: 0
 
     // Monitor card/reader state
     Timer {
@@ -23,7 +24,31 @@ FocusScope {
         interval: 1000
         running: true
         repeat: true
-        onTriggered: checkState()
+        onTriggered: {
+            checkState()
+            checkPendingRequests()
+        }
+    }
+
+    function checkPendingRequests() {
+        var result = logos.callModule("keycard", "getPendingAuths", [])
+        try {
+            var response = JSON.parse(result)
+
+            // Process activity log
+            if (response._activity && Array.isArray(response._activity)) {
+                for (var i = 0; i < response._activity.length; i++) {
+                    var entry = response._activity[i]
+                    activityLog.addEntry(entry.timestamp, entry.message, entry.level)
+                }
+            }
+
+            if (response.count !== undefined) {
+                root.pendingRequestCount = response.count
+            }
+        } catch (e) {
+            console.error("Failed to check pending requests:", e)
+        }
     }
 
     function checkState() {
@@ -151,8 +176,8 @@ FocusScope {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.preferredWidth: 345
-                        text: "Never enter PIN in modules you don't trust"
-                        color: DesignTokens.foregroundSecondary
+                        text: root.pendingRequestCount === 0 ? "No pending requests" : root.pendingRequestCount + " pending request" + (root.pendingRequestCount > 1 ? "s" : "")
+                        color: root.pendingRequestCount === 0 ? DesignTokens.foregroundSecondary : DesignTokens.warning
                         font.pixelSize: DesignTokens.fontSizeSmall
                         font.weight: Font.Medium
                         font.family: DesignTokens.fontPrimary
@@ -247,6 +272,9 @@ FocusScope {
                 var cardResponse = JSON.parse(cardResult)
                 cardPresent = cardResponse.found || false
             } catch (e) {}
+
+            // Check pending requests
+            checkPendingRequests()
 
             // Mark initial load as complete
             initialLoadComplete = true

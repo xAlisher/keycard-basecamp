@@ -17,6 +17,7 @@ Rectangle {
 
     property string cardHash: "0a2b3c5fh4g4e5d"
     property string version: "0.1"
+    property int sessionRemainingMs: 0
 
     // Poll for pending requests
     Timer {
@@ -24,7 +25,29 @@ Rectangle {
         interval: 1000
         running: true
         repeat: true
-        onTriggered: checkPendingRequests()
+        onTriggered: {
+            checkPendingRequests()
+            updateSessionTime()
+        }
+    }
+
+    function updateSessionTime() {
+        var result = logos.callModule("keycard", "getSessionInfo", [])
+        try {
+            var response = JSON.parse(result)
+            if (response.remainingSeconds !== undefined) {
+                root.sessionRemainingMs = response.remainingSeconds * 1000
+            }
+        } catch (e) {
+            console.error("Failed to get session info:", e)
+        }
+    }
+
+    function formatTime(ms) {
+        var totalSeconds = Math.floor(ms / 1000)
+        var minutes = Math.floor(totalSeconds / 60)
+        var seconds = totalSeconds % 60
+        return minutes + ":" + (seconds < 10 ? "0" : "") + seconds
     }
 
     function checkPendingRequests() {
@@ -129,11 +152,20 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                // Right: Card hash + Lock + Settings
+                // Right: Countdown + Card hash + Lock + Settings
                 RowLayout {
                     spacing: 16
 
-                    // Hash (group 1)
+                    // Countdown timer
+                    Text {
+                        text: formatTime(root.sessionRemainingMs)
+                        color: DesignTokens.mutedForeground
+                        font.pixelSize: 14
+                        font.weight: Font.Medium
+                        font.family: DesignTokens.fontPrimary
+                    }
+
+                    // Hash
                     Text {
                         text: root.cardHash
                         color: DesignTokens.mutedForeground
@@ -472,7 +504,23 @@ Rectangle {
     Component.onCompleted: {
         var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
         activityLog.addEntry(timestamp, "Session active", "success")
+
+        // Check for pending requests and log them
+        var result = logos.callModule("keycard", "getPendingAuths", [])
+        try {
+            var response = JSON.parse(result)
+            if (response.pending && Array.isArray(response.pending) && response.pending.length > 0) {
+                for (var i = 0; i < response.pending.length; i++) {
+                    var req = response.pending[i]
+                    activityLog.addEntry(timestamp, "Pending request from module " + req.caller + " for domain " + req.domain, "warning")
+                }
+            }
+        } catch (e) {
+            console.error("Failed to check pending requests on load:", e)
+        }
+
         checkPendingRequests()
+        updateSessionTime()
     }
 
     function lockSession() {

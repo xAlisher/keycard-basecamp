@@ -103,17 +103,24 @@ Rectangle {
 
                     try {
                         var response = JSON.parse(result)
+                        console.log("Parsed response:", JSON.stringify(response))
                         if (response.authId) {
                             root.authRequestId = response.authId
                             root.connectionStatus = "pending"
-                            statusText.text = "Waiting for authorization in Keycard..."
+                            statusText.text = "Switch to Keycard to approve"
                             statusText.color = "#ff9800"
                         } else if (response.error) {
                             statusText.text = "Error: " + response.error
                             statusText.color = "#f44336"
+                        } else {
+                            // No authId and no error - show what we got
+                            statusText.text = "Unexpected response: " + result.substring(0, 50)
+                            statusText.color = "#f44336"
                         }
                     } catch (e) {
-                        statusText.text = "Failed to parse response"
+                        console.error("Parse error:", e, "Raw result:", result)
+                        // Even if parsing failed, try to show a helpful message
+                        statusText.text = "Error: " + (result ? result.substring(0, 100) : "No response")
                         statusText.color = "#f44336"
                     }
                 }
