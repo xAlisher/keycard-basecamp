@@ -101,6 +101,41 @@ find temp/ -name "libpcsclite.so*" -delete
 
 **Why:** pcsclite uses IPC with pcscd daemon. Bundled version has wrong socket paths and version mismatches.
 
+### 37. Authorization APIs must never accept external keys — maintain security boundary
+**Critical:** When implementing authorization request completion, backend must derive keys internally. Never accept keys as parameters from UI or other modules.
+
+**Wrong (security flaw):**
+```cpp
+// ❌ UI can inject arbitrary keys
+QString completeAuthRequest(const QString& authId, const QString& key) {
+    targetRequest->key = key;  // DANGER: No verification this came from hardware
+}
+```
+
+**Correct:**
+```cpp
+// ✅ Backend derives key from hardware when session is active
+QString completeAuthRequest(const QString& authId) {
+    if (m_sessionState != SessionState::Active) {
+        return error("Session not active");
+    }
+
+    // SECURITY: Derive from hardware internally
+    QString domain = targetRequest->domain;
+    QJsonObject keyResult = QJsonDocument::fromJson(deriveKey(domain).toUtf8()).object();
+
+    targetRequest->key = keyResult.value("key").toString();
+}
+```
+
+**Why this matters:**
+- QML is untrusted boundary - malicious code could inject fake keys
+- Only keycard module should talk to hardware and derive keys
+- Session state ensures PIN was verified before key derivation
+- Violating this boundary breaks entire security model
+
+**Related:** Issue #44 code review caught this flaw in original implementation.
+
 ## Keycard-Specific Knowledge
 
 ### Hybrid Key Derivation Architecture
