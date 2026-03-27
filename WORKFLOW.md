@@ -1,176 +1,187 @@
-# Development Workflow
+# Fergie/Senty Collaboration Workflow
 
-## Issue Creation
-
-When creating an issue, include:
-
-1. **Problem statement** - What's broken or missing
-2. **Phases** - Break work into logical chunks (if multi-part)
-3. **Test plan** - Specific scenarios to verify
-4. **Files** - Which files will likely change
-5. **Dependencies** - Related issues or blocked work
-
-Template:
-```markdown
-## Problem
-[Description]
-
-## Solution
-### Phase 1: [Name]
-- [ ] Task 1
-- [ ] Task 2
-
-## Test Plan
-- [ ] Test scenario 1 (expected: X)
-- [ ] Test scenario 2 (expected: Y)
-- [ ] Edge case: Z
-
-## Files
-- path/to/file.cpp (reason)
-```
-
-## Development Cycle
-
-### 1. Planning (5 min)
-- Read issue carefully
-- Identify test scenarios that aren't listed → add them to issue
-- Check if we need debug infrastructure (conditional logging, not temp files)
-
-### 2. Implementation
-- **One phase at a time** - Don't mix phases in one commit
-- **Debug smartly**:
-  - Use `qDebug()` for temporary logging (easy to spot/remove)
-  - For deep debugging: Add `#ifdef KEYCARD_DEBUG` blocks (never committed enabled)
-  - Log to stderr, not temp files (unless testing file I/O itself)
-- **Test early** - Build and basic test after each logical chunk
-
-### 3. Testing
-- Work through test plan systematically
-- **If you find a bug not in the plan:**
-  1. Document it in issue comments immediately
-  2. Decide: Fix now (if blocking) or separate issue (if not)
-  3. Update test plan in issue
-
-### 4. Pre-Commit Checklist
-```bash
-# Remove debug code
-git diff | grep -i "debug\|tmp\|test"
-
-# Check for leftover temp files in code
-rg "/tmp/" --type cpp
-
-# Verify build clean
-cmake --build build 2>&1 | grep -i "warning"
-
-# Run through test plan one more time
-```
-
-### 5. Commit
-- **One commit per phase** (unless phase is trivial)
-- If you discover/fix a bug mid-work: separate commit with clear message
-- Commit message format:
-  ```
-  <Type>: <Short summary>
-
-  <Why this change was needed>
-  <What was the root cause (if bug fix)>
-  <Solution approach>
-
-  Fixes #N (if closes issue)
-  Part of #N (if partial work)
-
-  Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
-  ```
-
-### 6. Fergie/Senty Protocol
-**Fergie (me):** Posts completion comment with:
-- Commit hash(es)
-- What was implemented
-- Test results (pass/fail for each scenario)
-- Known limitations (if any)
-
-**Senty (reviewer):** Reviews for:
-- Issue scope completeness
-- Code quality
-- Test coverage
-- Integration concerns
-
-**LGTM → merge immediately** (per feedback memory)
-
-## Debug Infrastructure
-
-### Conditional Logging
-Instead of temp files, use conditional logging:
-
-```cpp
-// In a header (e.g., debug.h)
-#ifdef KEYCARD_DEBUG
-#define KEYCARD_LOG(msg) qDebug() << "[KEYCARD]" << msg
-#else
-#define KEYCARD_LOG(msg) do {} while(0)
-#endif
-
-// In code
-KEYCARD_LOG("UID:" << uid << "length:" << uid.length());
-```
-
-Enable in CMakeLists.txt only when needed:
-```cmake
-option(KEYCARD_DEBUG "Enable keycard debug logging" OFF)
-if(KEYCARD_DEBUG)
-    target_compile_definitions(keycard_plugin PRIVATE KEYCARD_DEBUG)
-endif()
-```
-
-### Test Harness
-For hardware testing, maintain a test checklist in each issue:
-- [ ] Cold start (no card, no reader)
-- [ ] Hot plug reader
-- [ ] Insert card
-- [ ] Remove card
-- [ ] Reinsert same card
-- [ ] Reader disconnect/reconnect
-- [ ] App restart with card present
-- [ ] (Add scenario-specific tests)
-
-## Anti-Patterns to Avoid
-
-❌ **Don't:**
-- Add/remove debug code in same commit as feature
-- Write to `/tmp/` files for debugging (use qDebug)
-- Mix multiple phases in one commit
-- Test only the happy path
-- Discover a bug and silently fix it (document in issue)
-
-✅ **Do:**
-- One logical change per commit
-- Document bugs found during testing
-- Update issue if test plan incomplete
-- Clean up before committing
-- Test edge cases (reconnection, restart, etc.)
-
-## When Things Go Wrong
-
-**If you discover a critical bug mid-implementation:**
-1. Comment on issue: "Found blocker: [description]"
-2. Create new issue if it's out of scope
-3. Fix if blocking current work, otherwise defer
-4. Update test plan to prevent regression
-
-**If testing reveals the approach is wrong:**
-1. Comment on issue explaining why
-2. Discuss alternative approach
-3. Update issue phases if needed
-4. Don't be afraid to rewrite
-
-## Metrics (Self-Check)
-
-After each issue, ask:
-- How many rebuild cycles? (Target: <5 for small issues)
-- How many commits? (Target: 1 per phase + 1 per bug fix)
-- Did we catch bugs in testing or production? (Better: testing)
-- Did Senty find issues we missed? (Improve pre-commit checks)
+Multi-agent development workflow for keycard-basecamp using two AI agents:
+- **Fergie (Claude):** Implementation agent - builds features
+- **Senty (Codex):** Review agent - catches issues, validates quality
+- **User:** Product owner - orchestrates, makes final decisions
 
 ---
 
-**Key principle:** A bit of upfront planning + systematic testing saves more time than it costs.
+## Standard Issue Workflow
+
+### 1. Issue Creation & Planning
+
+**User creates issue** (or selects from backlog)
+
+**Fergie checks issue:**
+```bash
+gh issue view XX
+```
+
+**Fergie confirms understanding:**
+- Read issue body, requirements, success criteria
+- Check dependencies and blockers
+- Ask clarifying questions if needed
+
+---
+
+### 2. Implementation (Fergie)
+
+**Create feature branch:**
+```bash
+git checkout master
+git pull origin master
+git checkout -b issue-XX-feature-name
+```
+
+**Implement changes:**
+- Write code following PROJECT_KNOWLEDGE.md lessons
+- Test locally (build, install, run)
+- Fix issues as they arise
+
+**Commit changes:**
+```bash
+git add <files>
+git commit -m "Brief description
+
+Detailed explanation of changes...
+
+Related to Issue #XX
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+```
+
+**Push to remote:**
+```bash
+git push origin issue-XX-feature-name
+```
+
+---
+
+### 3. Handoff to Senty (Event-Driven Cron Start)
+
+**Fergie posts handoff comment:**
+```bash
+gh issue comment XX --body "Fergie: Ready for review! 🎯
+
+## What's Implemented
+- Feature 1
+- Feature 2
+
+## Testing
+✅ Build succeeds
+✅ Tests pass
+
+## Files Changed
+- path/to/file.cpp
+
+Branch: issue-XX-feature-name
+Ready for review! 🚀"
+```
+
+**Fergie starts polling for Senty's review:**
+```
+CronCreate(
+    cron="*/2 * * * *",
+    prompt="Check for Senty comments on issue #XX",
+    recurring=true
+)
+# Save job ID for later deletion
+```
+
+---
+
+### 4. Review (Senty)
+
+**Senty reviews code:**
+- Validates against requirements
+- Checks security, correctness, quality
+
+**Senty posts review:**
+```
+Senty:
+
+Findings:
+1. [SEVERITY] - Issue description
+2. [SEVERITY] - Another issue
+
+Result: [LGTM / not LGTM yet]
+```
+
+---
+
+### 5. Fixes (If Needed)
+
+**Fergie gets auto-notified via cron** → Makes fixes → Posts update
+
+**Repeat until LGTM**
+
+---
+
+### 6. Merge (After LGTM)
+
+**Fergie auto-merges:**
+```bash
+gh pr create --title "Issue #XX: Feature" --base master
+gh pr merge XX --squash --delete-branch
+```
+
+**Stop cron:**
+```bash
+CronDelete(job_id)
+```
+
+**Document lessons in LESSONS.md**
+
+---
+
+## Cron Polling Protocol
+
+### When to Start
+- ✅ After "Ready for review" handoff
+- ✅ During active review cycles
+
+### When to Stop
+- ✅ After PR merged to master
+- ✅ After issue closed
+
+### Job Details
+- **Schedule:** `*/2 * * * *` (every 2 minutes)
+- **Filters:** Comments starting with "Senty:" (for Fergie) or "Fergie:" (for Senty)
+- **Session-only:** Dies when terminal exits
+- **Auto-expires:** 3 days
+
+---
+
+## Communication Protocol
+
+- **Fergie comments:** Start with `Fergie:`
+- **Senty comments:** Start with `Senty:`
+- **User comments:** No prefix
+
+---
+
+## Branch Workflow
+
+- **master:** Stable, production-ready
+- **issue-XX-feature:** Active development
+- **Never commit directly to master** (except docs after merge)
+- **Squash merge** to master, delete branch after
+
+---
+
+## Success Checklist
+
+**Before handoff:**
+- [ ] Code builds
+- [ ] Tests pass
+- [ ] Branch pushed
+- [ ] Handoff comment posted
+- [ ] Cron started
+
+**Before merge:**
+- [ ] Senty LGTM received
+- [ ] PR created
+- [ ] PR merged
+- [ ] Cron stopped
+- [ ] Lessons documented

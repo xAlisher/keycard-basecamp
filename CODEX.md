@@ -53,6 +53,53 @@ When Alisher says `run`, treat it as this ordered routine:
 6. If a reviewed branch was merged, update `PROJECT_KNOWLEDGE.md` for any security-relevant fixes, regressions, or residual risks from that merge
 7. Report both GitHub updates and local results, not just test output
 
+## Cron Polling Protocol (Event-Driven Review Notifications)
+
+### When to Start Cron Polling
+
+Start polling when Fergie posts a handoff comment (starts with "Fergie: Ready for review"):
+
+```python
+# After seeing Fergie's handoff on issue #XX
+CronCreate(
+    cron="*/2 * * * *",  # Every 2 minutes
+    prompt="""Check for new GitHub comments from Fergie on issue #XX.
+
+Run: gh api repos/xAlisher/keycard-basecamp/issues/XX/comments --jq '.[] | select(.created_at > "$(date -u -d '5 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')") | select(.body | startswith("Fergie:")) | {created: .created_at, preview: .body[0:200]}'
+
+If found: Notify "💬 Fergie posted update on issue #XX" and fetch full comment.
+If not found: Say "No new updates from Fergie" (keep brief).
+""",
+    recurring=True
+)
+# Save job ID for later deletion
+```
+
+### When to Stop Cron Polling
+
+Stop polling after posting LGTM and PR is merged:
+
+```python
+# After Fergie merges PR
+CronDelete(job_id)
+```
+
+### Cron Job Details
+
+- **Schedule:** Every 2 minutes (`*/2 * * * *`)
+- **Filter:** Comments starting with "Fergie:"
+- **Scope:** Only the specific issue under review
+- **Session-only:** Dies when Codex terminal exits (restart if needed)
+- **Auto-expires:** After 3 days
+
+### Workflow Integration
+
+1. **Fergie posts handoff** → Start your cron polling
+2. **You get auto-notified** → Review code, post findings
+3. **Fergie posts fixes** → Auto-notified again
+4. **Repeat until LGTM** → Post LGTM
+5. **Fergie merges** → Stop your cron polling
+
 ---
 
 ## How to Build and Test
