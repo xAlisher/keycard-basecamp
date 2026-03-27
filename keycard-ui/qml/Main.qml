@@ -127,7 +127,8 @@ Rectangle {
 
     function lockSession() {
         console.log("Locking session...")
-        // TODO: Call backend lockSession()
+        var result = logos.callModule("keycard", "lockSession", [])
+        processActivity(result)
         mode = "pin"
     }
 
@@ -170,25 +171,17 @@ Rectangle {
                 item.requestApprove.connect(function(requestId, moduleName, domain) {
                     console.log("Request approve:", requestId, moduleName, domain)
 
-                    // Derive key directly (session is active, no PIN needed)
-                    var result = logos.callModule("keycard", "deriveKey", [domain])
+                    // SECURITY: Backend derives key internally (session is active, no PIN needed)
+                    var result = logos.callModule("keycard", "completeAuthRequest", [requestId])
                     processActivity(result)
 
                     try {
                         var obj = JSON.parse(result)
-                        if (obj.key) {
-                            // Success - mark auth request as complete in backend
-                            var completeResult = logos.callModule("keycard", "completeAuthRequest", [requestId, obj.key])
-                            processActivity(completeResult)
-
-                            // Add to activity log
-                            var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
-                            if (item.activityLog) {
-                                item.activityLog.addEntry(timestamp, "Request from module " + moduleName + " approved", "success")
-                            }
-
+                        if (obj.status === "complete") {
                             // Note: Don't manually update pending/connected lists here
                             // The polling timer will update them from backend state
+                        } else if (obj.error) {
+                            console.error("Failed to complete request:", obj.error)
                         }
                     } catch (e) {
                         console.error("Failed to approve request:", e)

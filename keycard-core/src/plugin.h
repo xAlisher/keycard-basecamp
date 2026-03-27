@@ -48,7 +48,7 @@ public:
 
     // SECURITY: Only keycard-ui should call this - verifies PIN and derives key internally
     Q_INVOKABLE QString authorizeRequest(const QString& authId, const QString& pin);
-    Q_INVOKABLE QString completeAuthRequest(const QString& authId, const QString& key);  // Complete request when session active
+    Q_INVOKABLE QString completeAuthRequest(const QString& authId);  // Complete request when session active (derives key internally)
     Q_INVOKABLE QString rejectRequest(const QString& authId);
 
     // Session Management (Issue #44)

@@ -341,8 +341,8 @@ QString KeycardPlugin::getState()
         qDebug() << "KeycardPlugin::getState() - returning SESSION_ACTIVE";
         result["state"] = "SESSION_ACTIVE";
     } else if (m_sessionState == SessionState::Locked) {
-        qDebug() << "KeycardPlugin::getState() - returning SESSION_CLOSED";
-        result["state"] = "SESSION_CLOSED";
+        qDebug() << "KeycardPlugin::getState() - returning SESSION_LOCKED";
+        result["state"] = "SESSION_LOCKED";
     } else {
         QString mappedState = mapBridgeStateToSpec(bridgeState);
         qDebug() << "KeycardPlugin::getState() - returning bridge state:" << mappedState << "(bridge state enum:" << static_cast<int>(bridgeState) << ")";
@@ -356,7 +356,7 @@ QString KeycardPlugin::closeSession()
 {
     qDebug() << "KeycardPlugin::closeSession() called";
 
-    // Enter SESSION_CLOSED state (keep bridge running for re-auth)
+    // Enter SESSION_LOCKED state (keep bridge running for re-auth)
     m_sessionState = SessionState::Locked;
 
     QJsonObject result;
@@ -590,9 +590,17 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::completeAuthRequest(const QString& authId, const QString& key)
+QString KeycardPlugin::completeAuthRequest(const QString& authId)
 {
     qDebug() << "KeycardPlugin::completeAuthRequest() called for authId:" << authId;
+
+    // SECURITY: Session must be active to complete without PIN
+    if (m_sessionState != SessionState::Active) {
+        QJsonObject result;
+        result["error"] = "Session not active - cannot complete request";
+        result["authId"] = authId;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
 
     // Find pending request
     AuthRequest* targetRequest = nullptr;
@@ -609,16 +617,31 @@ QString KeycardPlugin::completeAuthRequest(const QString& authId, const QString&
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Mark as complete with provided key (session already active, no PIN needed)
+    // SECURITY: Derive key from hardware (session is active, no PIN needed)
+    QString domain = targetRequest->domain;
+    QJsonObject keyResult = QJsonDocument::fromJson(deriveKey(domain).toUtf8()).object();
+
+    if (keyResult.contains("error")) {
+        targetRequest->status = "failed";
+        targetRequest->error = keyResult.value("error").toString();
+
+        QJsonObject result;
+        result["authId"] = authId;
+        result["status"] = "failed";
+        result["error"] = targetRequest->error;
+
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Success - mark as complete with hardware-derived key
     targetRequest->status = "complete";
-    targetRequest->key = key;
+    targetRequest->key = keyResult.value("key").toString();
 
     // Remove from logged set (cleanup)
     m_loggedRequestIds.remove(authId);
 
     // Track authorized module
     QString moduleName = targetRequest->caller;
-    QString domain = targetRequest->domain;
 
     if (m_authorizedModules.contains(moduleName)) {
         m_authorizedModules[moduleName].lastAccess = QDateTime::currentDateTime();
@@ -631,6 +654,11 @@ QString KeycardPlugin::completeAuthRequest(const QString& authId, const QString&
         record.accessCount = 1;
         m_authorizedModules[moduleName] = record;
     }
+
+    // Log authorization
+    QString keyPrefix = targetRequest->key.left(8);
+    logActivity(QString("Request from module %1 approved").arg(moduleName), "success");
+    logActivity(QString("Module %1 derived key %2...").arg(moduleName, keyPrefix), "success");
 
     QJsonObject result;
     result["authId"] = authId;
