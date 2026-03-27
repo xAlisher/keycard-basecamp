@@ -483,6 +483,7 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
     } catch (const std::exception& e) {
         result["authorized"] = false;
         result["error"] = e.what();
+        result["remainingAttempts"] = -1;  // Unknown attempts remaining due to exception
         m_lastError = e.what();
         KEYCARD_LOG(QString("KeycardBridge::authorize() exception: %1").arg(e.what()));
     }

@@ -1,0 +1,13 @@
+{
+  "name": "auth_showcase_ui",
+  "version": "1.0.0",
+  "description": "Auth showcase UI - demonstrates Keycard integration",
+  "author": "alisher",
+  "type": "ui_qml",
+  "pluginType": "qml",
+  "main": "Main.qml",
+  "dependencies": ["keycard", "auth_showcase"],
+  "category": "demo",
+  "capabilities": [],
+  "icon": ""
+}

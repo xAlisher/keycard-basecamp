@@ -8,6 +8,7 @@ FocusScope {
 
     signal approved(string authRequestId, string pin)
     signal declined(string authRequestId)
+    property alias activityLog: activityLog
 
     // Request data (must be set by parent)
     property string authRequestId: ""
@@ -287,16 +288,6 @@ FocusScope {
                 id: activityLog
                 Layout.fillWidth: true
                 Layout.preferredHeight: 167
-
-                Component.onCompleted: {
-                    // Mock data for now - will be replaced with real backend events
-                    addEntry("[09:11:47]", "Notes module requesting access to domain: notes_private", "warning")
-                    addEntry("[09:12:03]", "looking for smart card reader...", "info")
-                    addEntry("[09:08:11]", "card reader detected", "success")
-                    addEntry("[09:12:03]", "looking for Keycard...", "info")
-                    addEntry("[09:08:11]", "Keycard detected", "success")
-                    addEntry("[09:11:47]", "waiting for PIN", "warning")
-                }
             }
         }
     }

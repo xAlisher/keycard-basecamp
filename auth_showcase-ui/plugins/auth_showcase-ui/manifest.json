@@ -1,0 +1,14 @@
+{
+  "author": "alisher",
+  "category": "demo",
+  "dependencies": ["keycard", "auth_showcase"],
+  "description": "Auth showcase UI - demonstrates Keycard integration",
+  "icon": "",
+  "main": {
+    "linux-amd64": "Main.qml"
+  },
+  "manifestVersion": "0.1.0",
+  "name": "auth_showcase-ui",
+  "type": "ui_qml",
+  "version": "1.0.0"
+}
