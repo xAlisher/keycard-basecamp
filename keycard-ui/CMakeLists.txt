@@ -12,8 +12,6 @@ install(FILES
     qml/Main.qml
     qml/DebugPanel.qml
     qml/PinEntryScreen.qml
-    qml/ManagementDashboard.qml
-    qml/AuthorizationScreen.qml
     qml/ActivityLog.qml
     qml/DesignTokens.qml
     qml/qmldir
