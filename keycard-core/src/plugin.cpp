@@ -300,6 +300,7 @@ QString KeycardPlugin::deriveKey(const QString& domain)
 
     QJsonObject result;
     result["key"] = QString::fromUtf8(derivedKey.toHex());
+    result["path"] = eip1581Path;
 
     // Clear sensitive data
     sodium_memzero(derivedKey.data(), derivedKey.size());
@@ -553,10 +554,11 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     targetRequest->status = "complete";
     targetRequest->key = keyResult.value("key").toString();
 
-    // Log authorization
+    // Log authorization with domain and BIP32 path
     QString moduleName = targetRequest->caller;
+    QString derivedPath = keyResult.value("path").toString();
     logActivity(QString("Request from %1 approved for domain %2").arg(moduleName, domain), "success");
-    logActivity(QString("Key derived for module %1 following approved path").arg(moduleName), "success");
+    logActivity(QString("Key derived for module %1 following approved path %2").arg(moduleName, derivedPath), "success");
 
     QJsonObject result;
     result["authId"] = authId;
@@ -589,6 +591,7 @@ QString KeycardPlugin::rejectRequest(const QString& authId)
 
     // Mark as rejected
     targetRequest->status = "rejected";
+    logActivity(QString("Request from %1 declined for domain %2").arg(targetRequest->caller, targetRequest->domain), "warning");
 
     // Remove from logged set (cleanup)
     m_loggedRequestIds.remove(authId);
