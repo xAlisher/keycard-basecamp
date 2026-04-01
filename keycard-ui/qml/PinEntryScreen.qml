@@ -6,8 +6,6 @@ FocusScope {
     id: root
     focus: true
 
-    signal unlocked()
-
     property string pinValue: ""
     property int maxPinLength: 6
     property int attemptsRemaining: 3
@@ -16,9 +14,21 @@ FocusScope {
     property bool readerPresent: false
     property bool initialLoadComplete: false
     property bool verifyingPin: false
-    property int pendingRequestCount: 0
 
-    // Monitor card/reader state
+    // Current pending request (null = no requests, object = show request)
+    property var currentRequest: null
+    property var pendingQueue: []
+
+    // Auto-advance timer for multiple requests
+    Timer {
+        id: nextRequestTimer
+        interval: 3000
+        running: false
+        repeat: false
+        onTriggered: showNextRequest()
+    }
+
+    // Monitor card/reader state and pending requests
     Timer {
         id: stateMonitor
         interval: 1000
@@ -43,11 +53,47 @@ FocusScope {
                 }
             }
 
-            if (response.count !== undefined) {
-                root.pendingRequestCount = response.count
+            if (response.requests && Array.isArray(response.requests)) {
+                pendingQueue = response.requests
+                // If no current request and there are pending ones, show first
+                if (!currentRequest && pendingQueue.length > 0) {
+                    currentRequest = pendingQueue[0]
+                    pinValue = ""
+                    hiddenInput.forceActiveFocus()
+                }
+                // If current request was handled, clear it
+                if (currentRequest) {
+                    var stillPending = false
+                    for (var j = 0; j < pendingQueue.length; j++) {
+                        if (pendingQueue[j].id === currentRequest.id) {
+                            stillPending = true
+                            break
+                        }
+                    }
+                    if (!stillPending) {
+                        currentRequest = null
+                        pinValue = ""
+                        // Show next if available
+                        if (pendingQueue.length > 0) {
+                            nextRequestTimer.start()
+                        }
+                    }
+                }
+            } else if (response.count !== undefined && response.count === 0) {
+                currentRequest = null
+                pendingQueue = []
+                pinValue = ""
             }
         } catch (e) {
             console.error("Failed to check pending requests:", e)
+        }
+    }
+
+    function showNextRequest() {
+        if (pendingQueue.length > 0) {
+            currentRequest = pendingQueue[0]
+            pinValue = ""
+            hiddenInput.forceActiveFocus()
         }
     }
 
@@ -60,11 +106,9 @@ FocusScope {
             var wasCardPresent = cardPresent
             var wasReaderPresent = readerPresent
 
-            // Update state
             readerPresent = (state !== "READER_NOT_FOUND" && state !== "NO_PCSC")
             cardPresent = (state === "CARD_PRESENT" || state === "READY" || state === "SESSION_ACTIVE")
 
-            // Detect disconnects and reconnects
             var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
 
             if (wasReaderPresent && !readerPresent) {
@@ -72,7 +116,6 @@ FocusScope {
                 activityLog.addEntry(timestamp, "Looking for smart card reader...", "info")
             } else if (!wasReaderPresent && readerPresent) {
                 activityLog.addEntry(timestamp, "Smart card reader detected", "success")
-                // If no card present, start looking for keycard
                 if (!cardPresent) {
                     activityLog.addEntry(timestamp, "Looking for Keycard...", "info")
                 }
@@ -82,7 +125,6 @@ FocusScope {
                 activityLog.addEntry(timestamp, "Keycard not found", "error")
                 activityLog.addEntry(timestamp, "Looking for Keycard...", "info")
             } else if (!wasCardPresent && cardPresent && readerPresent && initialLoadComplete) {
-                // Card reconnected (skip during initial load) - get UID and show PIN prompt
                 var cardResult = logos.callModule("keycard", "discoverCard", [])
                 processActivity(cardResult)
             }
@@ -103,27 +145,23 @@ FocusScope {
         }
     }
 
-    // Invisible text input to capture keyboard
+    // Invisible text input to capture keyboard (for PIN entry)
     TextInput {
         id: hiddenInput
         visible: false
         focus: true
-        enabled: cardPresent && readerPresent
+        enabled: cardPresent && readerPresent && currentRequest !== null
 
         onTextChanged: {
-            // Handle numeric input
             var text = hiddenInput.text
             if (text.length > 0) {
                 var lastChar = text.charAt(text.length - 1)
                 if (lastChar >= '0' && lastChar <= '9') {
                     if (root.pinValue.length < root.maxPinLength) {
                         root.pinValue += lastChar
-                        if (root.pinValue.length === root.maxPinLength) {
-                            verifyPin()
-                        }
                     }
                 }
-                hiddenInput.text = ""  // Clear for next input
+                hiddenInput.text = ""
             }
         }
 
@@ -150,112 +188,197 @@ FocusScope {
             anchors.fill: parent
             spacing: 0
 
-        // PIN Input Section (centered)
-        Item {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            // Main Content Area (centered)
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
 
-            ColumnLayout {
-                anchors.centerIn: parent
-                spacing: DesignTokens.spacing3xl
-
-                // Header
+                // State 1: No pending requests
                 ColumnLayout {
-                    Layout.alignment: Qt.AlignHCenter
-                    spacing: DesignTokens.spacingS
+                    anchors.centerIn: parent
+                    spacing: DesignTokens.spacingM
+                    visible: currentRequest === null
 
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: "Enter Keycard PIN to unlock"
-                        color: DesignTokens.foreground
+                        text: "No pending requests"
+                        color: DesignTokens.foregroundSecondary
                         font.pixelSize: 24
-                        font.weight: Font.Bold
-                        font.family: DesignTokens.fontPrimary
-                    }
-
-                    Text {
-                        Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 345
-                        text: root.pendingRequestCount === 0 ? "No pending requests" : root.pendingRequestCount + " pending request" + (root.pendingRequestCount > 1 ? "s" : "")
-                        color: root.pendingRequestCount === 0 ? DesignTokens.foregroundSecondary : DesignTokens.warning
-                        font.pixelSize: DesignTokens.fontSizeSmall
                         font.weight: Font.Medium
                         font.family: DesignTokens.fontPrimary
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
                     }
                 }
 
-                // PIN Digit Display
-                RowLayout {
-                    Layout.alignment: Qt.AlignHCenter
-                    spacing: DesignTokens.spacingM
-                    opacity: root.verifyingPin ? 0.5 : 1.0
+                // State 2: Pending request with PIN input
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: DesignTokens.spacing3xl
+                    visible: currentRequest !== null
 
-                    Repeater {
-                        model: root.maxPinLength
+                    // Request info card
+                    Rectangle {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 400
+                        Layout.preferredHeight: requestInfoLayout.implicitHeight + DesignTokens.spacingXl * 2
+                        color: DesignTokens.surface
+                        border.color: DesignTokens.warning
+                        border.width: 1
+                        radius: DesignTokens.radiusM
 
-                        Rectangle {
-                            width: DesignTokens.pinDigitSize
-                            height: DesignTokens.pinDigitSize
-                            color: "transparent"
-                            border.color: {
-                                if ((root.cardPresent && root.readerPresent) && index === root.pinValue.length) {
-                                    return DesignTokens.primary  // Active focus
-                                }
-                                return DesignTokens.border  // Empty or filled
-                            }
-                            border.width: {
-                                if ((root.cardPresent && root.readerPresent) && index === root.pinValue.length) {
-                                    return 2  // Active focus
-                                }
-                                return 1  // Normal
-                            }
-                            radius: DesignTokens.radiusM
+                        ColumnLayout {
+                            id: requestInfoLayout
+                            anchors.centerIn: parent
+                            width: parent.width - DesignTokens.spacingXl * 2
+                            spacing: DesignTokens.spacingS
 
-                            // Filled dot
-                            Rectangle {
-                                anchors.centerIn: parent
-                                width: 8
-                                height: 8
-                                radius: 4
+                            Text {
+                                Layout.fillWidth: true
+                                text: currentRequest ? currentRequest.caller + " requests authorization" : ""
                                 color: DesignTokens.foreground
-                                visible: index < root.pinValue.length
+                                font.pixelSize: 18
+                                font.weight: Font.Bold
+                                font.family: DesignTokens.fontPrimary
+                                wrapMode: Text.WordWrap
                             }
 
-                            // Active cursor
-                            Rectangle {
-                                anchors.centerIn: parent
-                                width: 2
-                                height: 20
-                                color: DesignTokens.primary
-                                visible: (root.cardPresent && root.readerPresent) && index === root.pinValue.length
+                            Text {
+                                Layout.fillWidth: true
+                                text: currentRequest ? "domain: " + currentRequest.domain : ""
+                                color: DesignTokens.foregroundSecondary
+                                font.pixelSize: DesignTokens.fontSizeSmall
+                                font.family: DesignTokens.fontPrimary
+                            }
+                        }
+                    }
 
-                                SequentialAnimation on opacity {
-                                    running: parent.visible
-                                    loops: Animation.Infinite
-                                    NumberAnimation { from: 1; to: 0; duration: 530 }
-                                    NumberAnimation { from: 0; to: 1; duration: 530 }
+                    // PIN header
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "Enter PIN to approve"
+                        color: DesignTokens.foreground
+                        font.pixelSize: 16
+                        font.weight: Font.Medium
+                        font.family: DesignTokens.fontPrimary
+                    }
+
+                    // PIN Digit Display
+                    RowLayout {
+                        Layout.alignment: Qt.AlignHCenter
+                        spacing: DesignTokens.spacingM
+                        opacity: root.verifyingPin ? 0.5 : 1.0
+
+                        Repeater {
+                            model: root.maxPinLength
+
+                            Rectangle {
+                                width: DesignTokens.pinDigitSize
+                                height: DesignTokens.pinDigitSize
+                                color: "transparent"
+                                border.color: {
+                                    if ((root.cardPresent && root.readerPresent) && index === root.pinValue.length) {
+                                        return DesignTokens.primary
+                                    }
+                                    return DesignTokens.border
+                                }
+                                border.width: {
+                                    if ((root.cardPresent && root.readerPresent) && index === root.pinValue.length) {
+                                        return 2
+                                    }
+                                    return 1
+                                }
+                                radius: DesignTokens.radiusM
+
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: 8
+                                    height: 8
+                                    radius: 4
+                                    color: DesignTokens.foreground
+                                    visible: index < root.pinValue.length
+                                }
+
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: 2
+                                    height: 20
+                                    color: DesignTokens.primary
+                                    visible: (root.cardPresent && root.readerPresent) && index === root.pinValue.length
+
+                                    SequentialAnimation on opacity {
+                                        running: parent.visible
+                                        loops: Animation.Infinite
+                                        NumberAnimation { from: 1; to: 0; duration: 530 }
+                                        NumberAnimation { from: 0; to: 1; duration: 530 }
+                                    }
                                 }
                             }
                         }
                     }
+
+                    // Approve / Decline buttons
+                    RowLayout {
+                        Layout.alignment: Qt.AlignHCenter
+                        spacing: DesignTokens.spacingL
+
+                        Button {
+                            text: "Approve"
+                            enabled: root.pinValue.length === root.maxPinLength && !root.verifyingPin
+                            onClicked: approveRequest()
+
+                            contentItem: Text {
+                                text: parent.text
+                                color: parent.enabled ? DesignTokens.background : DesignTokens.foregroundSecondary
+                                font.pixelSize: DesignTokens.fontSizeBody
+                                font.weight: Font.Bold
+                                font.family: DesignTokens.fontPrimary
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            background: Rectangle {
+                                implicitWidth: 120
+                                implicitHeight: 40
+                                color: parent.enabled ? DesignTokens.success : DesignTokens.surface
+                                radius: DesignTokens.radiusM
+                                border.color: parent.enabled ? DesignTokens.success : DesignTokens.border
+                            }
+                        }
+
+                        Button {
+                            text: "Decline"
+                            enabled: !root.verifyingPin
+                            onClicked: declineRequest()
+
+                            contentItem: Text {
+                                text: parent.text
+                                color: DesignTokens.foreground
+                                font.pixelSize: DesignTokens.fontSizeBody
+                                font.weight: Font.Medium
+                                font.family: DesignTokens.fontPrimary
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            background: Rectangle {
+                                implicitWidth: 120
+                                implicitHeight: 40
+                                color: "transparent"
+                                radius: DesignTokens.radiusM
+                                border.color: DesignTokens.border
+                            }
+                        }
+                    }
                 }
-
             }
-        }
 
-        // Activity Log (bottom)
-        ActivityLog {
-            id: activityLog
-            Layout.fillWidth: true
-            Layout.preferredHeight: 167
-        }
+            // Activity Log (always visible at bottom)
+            ActivityLog {
+                id: activityLog
+                Layout.fillWidth: true
+                Layout.preferredHeight: 167
+            }
         }
     }
 
     Component.onCompleted: {
-        // Discover reader and card AFTER UI loads (non-blocking)
         Qt.callLater(function() {
             var readerResult = logos.callModule("keycard", "discoverReader", [])
             processActivity(readerResult)
@@ -273,10 +396,7 @@ FocusScope {
                 cardPresent = cardResponse.found || false
             } catch (e) {}
 
-            // Check pending requests
             checkPendingRequests()
-
-            // Mark initial load as complete
             initialLoadComplete = true
         })
     }
@@ -295,31 +415,44 @@ FocusScope {
         }
     }
 
-    function verifyPin() {
-        console.log("Verifying PIN:", pinValue)
+    function approveRequest() {
+        if (!currentRequest) return
 
         verifyingPin = true
 
-        // Show verifying message
         var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
-        activityLog.addEntry(timestamp, "Verifying PIN...", "info")
+        activityLog.addEntry(timestamp, "Authorizing request from " + currentRequest.caller + "...", "info")
 
-        // Call backend authorize
-        var result = logos.callModule("keycard", "authorize", [pinValue])
+        var result = logos.callModule("keycard", "authorizeRequest", [currentRequest.id, pinValue])
         processActivity(result)
 
         verifyingPin = false
 
         try {
             var response = JSON.parse(result)
-            if (response.authorized) {
-                unlocked()
+            if (response.status === "complete") {
+                // Success — clear current request, return to empty state
+                currentRequest = null
+                pinValue = ""
             } else {
+                // PIN failed or error
                 attemptsRemaining = response.remainingAttempts || 0
                 pinValue = ""
+                hiddenInput.forceActiveFocus()
             }
         } catch (e) {
-            console.error("Failed to parse authorize response:", e)
+            console.error("Failed to authorize request:", e)
+            pinValue = ""
         }
+    }
+
+    function declineRequest() {
+        if (!currentRequest) return
+
+        var result = logos.callModule("keycard", "rejectRequest", [currentRequest.id])
+        processActivity(result)
+
+        currentRequest = null
+        pinValue = ""
     }
 }
