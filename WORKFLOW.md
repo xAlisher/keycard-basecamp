@@ -158,11 +158,22 @@ tmux-bridge keys senty Enter
 
 ---
 
-### 6. Merge (After LGTM)
+### 6. Merge Sub-issues to Epic Branch (After LGTM)
 
-**Fergie merges:**
+After each sub-issue gets Senty's LGTM, commit it to the epic branch. **Do not merge to master yet.**
+
+### 7. User Testing Gate
+
+When all sub-issues are committed to the epic branch:
+1. Push the branch
+2. Notify the user that the branch is ready for manual testing
+3. **Wait for user confirmation** — do not merge to master without it
+
+### 8. Merge to Master (After User Test)
+
+Only after user confirms the branch works:
 ```bash
-gh pr create --title "Issue #XX: Feature" --base master
+gh pr create --title "Epic #XX: Feature" --base master
 gh pr merge XX --squash --delete-branch
 ```
 
