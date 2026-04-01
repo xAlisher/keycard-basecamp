@@ -9,9 +9,7 @@
   },
   "manifestVersion": "0.1.0",
   "name": "auth_showcase-ui",
-  "permissions": [],
   "capabilities": ["auth-showcase-debug-ui"],
-  "requiredLogosVersion": "0.1.0",
   "type": "ui_qml",
   "version": "1.0.0"
 }
