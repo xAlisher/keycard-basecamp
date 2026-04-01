@@ -177,7 +177,14 @@ gh pr create --title "Epic #XX: Feature" --base master
 gh pr merge XX --squash --delete-branch
 ```
 
-**Document lessons in LESSONS.md**
+### 9. Document Lessons (Immediately After Merge)
+
+**This step is mandatory — do not wait for a prompt.**
+
+After every merge to master:
+1. Add lessons to `PROJECT_KNOWLEDGE.md` under a section for the epic/issue
+2. Commit and push the lessons to master
+3. Cover: what went wrong, what Senty caught, workflow improvements, system-level findings
 
 ---
 

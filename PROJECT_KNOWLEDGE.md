@@ -2328,3 +2328,29 @@ Only add manifest fields with confirmed upstream evidence. Senty found that `per
 
 ### Lesson: CMake install paths should be relative to CMAKE_INSTALL_PREFIX
 Hardcoding absolute install paths (`$HOME/.local/share/Logos/LogosBasecamp`) breaks `cmake --install --prefix`. Use relative paths (`modules/keycard`, `plugins/keycard-ui`) so the prefix flag works correctly.
+
+## Epic #55 Lessons — Single-Screen Architecture
+
+### Lesson: UI-first, then backend cleanup
+When removing backend APIs that the UI calls, do the UI cutover first (stop calling old APIs), then remove the backend code. Senty caught that backend-first deletion would create broken intermediate builds. Execution order matters for staged refactors.
+
+### Lesson: replace_all on enum values is dangerous
+Blindly replacing `SessionState::Locked` → `SessionState::NoSession` across plugin.cpp broke guard conditions that were meant to distinguish between "locked" and "never had a session". Each replacement site needs individual review — some guards should be removed entirely, not just have the enum swapped.
+
+### Lesson: QML field names must exactly match backend response keys
+`getPendingAuths()` returns `{ pending: [...] }` with `authId` field. QML initially expected `{ requests: [...] }` with `id` field. Always verify the backend response shape before writing QML consumers. Senty caught this before it hit runtime.
+
+### Lesson: DesignTokens — don't reference undefined properties
+Using `DesignTokens.surface` when `surface` doesn't exist in DesignTokens.qml causes QML to default to white/transparent, breaking dark theme styling. Always check DesignTokens.qml before using a token name.
+
+### Lesson: Basecamp loads plugins from LogosBasecamp/, not LogosApp/
+Despite CLAUDE.md saying to install to LogosApp/, Basecamp actually loads modules from `~/.local/share/Logos/LogosBasecamp/`. Must install to both or to the correct path. Check `ps aux | grep logos_host` to see which path Basecamp actually uses.
+
+### Lesson: nix flake update can break pcsclite protocol compatibility
+After `nix flake update`, the nix pcsclite (2.3.0, protocol 4:5) may not match the system pcscd (2.0.3, protocol 4:4). Symptoms: `SCardEstablishContext` fails silently, reader detection loops forever. Fix: patch RPATH to use system libpcsclite. Long-term: automate RPATH patch in install/package scripts. Tracked in #67.
+
+### Lesson: every GitHub comment needs a tmux-bridge ping
+Posted a pcsclite addendum on #55 without pinging Senty — he missed it in his final review. Rule added to WORKFLOW.md: un-pinged updates are invisible to the other agent.
+
+### Lesson: always document lessons after merge
+This should happen automatically as part of the merge workflow — not require a prompt from the user. Adding this as a self-reminder.
