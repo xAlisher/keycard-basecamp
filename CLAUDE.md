@@ -416,6 +416,14 @@ Always consult these before implementing:
 - Test via debug UI before claiming something works
 - Document test results in GitHub issues
 
+### Session Setup (one-time per work session)
+
+Label your pane so Senty can reach you:
+
+```bash
+tmux-bridge name "$(tmux-bridge id)" fergie
+```
+
 ### GitHub Communication Protocol
 
 **Your role:** Fergie (implementer)
@@ -441,7 +449,18 @@ Not verified:
 Ready for review, Senty!
 ```
 
-**Senty will respond:**
+**After posting, notify Senty via tmux-bridge:**
+```bash
+tmux-bridge read senty 20
+tmux-bridge message senty '/btw check issue #XX'
+tmux-bridge read senty 20
+tmux-bridge keys senty Enter
+```
+
+**Senty will post findings on GitHub and ping you back** (`/btw check issue #XX` arrives in your pane).
+Read with `gh issue view XX`, address findings, re-comment, and ping again.
+
+**Senty's review format:**
 ```
 Senty: Reviewed — Round N
 
@@ -450,8 +469,6 @@ Findings:
 
 Overall: LGTM / needs fixes
 ```
-
-After Senty's review, address findings and comment again starting with "Fergie:"
 
 ## Documentation Management
 
@@ -512,4 +529,3 @@ git checkout -b issue-2-pcsc-integration
 **When user posts issue number:**
 - If path is clear → create branch and start immediately
 - Only ask if issue is ambiguous or multiple approaches exist
-
