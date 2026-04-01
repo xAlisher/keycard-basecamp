@@ -11,6 +11,12 @@ else()
     set(LOGOS_LIBLOGOS_HEADERS "/nix/store/092zxk8qbm9zxqigq1z0a5l901a068cz-logos-liblogos-headers-0.1.0/include")
 endif()
 
+if(DEFINED ENV{LOGOS_MODULE_HEADERS})
+    set(LOGOS_MODULE_HEADERS "$ENV{LOGOS_MODULE_HEADERS}")
+else()
+    set(LOGOS_MODULE_HEADERS "/nix/store/fjgzpcmqv6sczf8gxpz6zf42igjxsgak-logos-module-0.1.0/include")
+endif()
+
 # Debug option
 option(KEYCARD_DEBUG "Enable verbose keycard debug logging" OFF)
 
@@ -43,6 +49,7 @@ set_target_properties(keycard_plugin PROPERTIES
 # Include Logos SDK headers + keycard-qt headers
 target_include_directories(keycard_plugin PRIVATE
     src
+    "${LOGOS_MODULE_HEADERS}"
     "${LOGOS_LIBLOGOS_HEADERS}"
     "${LOGOS_CPP_SDK}/include"
     "${LOGOS_CPP_SDK}/include/cpp"
@@ -71,13 +78,13 @@ if(KEYCARD_DEBUG)
     message(STATUS "Keycard debug logging enabled")
 endif()
 
-# Install paths (use LogosBasecamp for development)
-set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
-set(KEYCARD_MODULE_DIR "${LOGOS_APP_DATA}/modules/keycard")
+# Install paths — relative to CMAKE_INSTALL_PREFIX
+# Default: cmake --install build --prefix ~/.local/share/Logos/LogosApp
+set(KEYCARD_MODULE_DIR "modules/keycard")
 
 # Cleanup stale backups (Lesson #33)
 install(CODE "
-    set(_modules_dir \"${LOGOS_APP_DATA}/modules\")
+    set(_modules_dir \"\${CMAKE_INSTALL_PREFIX}/modules\")
     file(GLOB _old_keycard \"\${_modules_dir}/keycard.*\")
     foreach(_dir \${_old_keycard})
         message(STATUS \"Removing old keycard module: \${_dir}\")

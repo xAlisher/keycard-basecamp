@@ -9,6 +9,7 @@
   },
   "manifestVersion": "0.1.0",
   "name": "keycard",
+  "capabilities": ["smartcard-auth", "key-derivation"],
   "type": "core",
   "version": "1.0.0"
 }

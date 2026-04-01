@@ -11,6 +11,12 @@ else()
     set(LOGOS_LIBLOGOS_HEADERS "/nix/store/092zxk8qbm9zxqigq1z0a5l901a068cz-logos-liblogos-headers-0.1.0/include")
 endif()
 
+if(DEFINED ENV{LOGOS_MODULE_HEADERS})
+    set(LOGOS_MODULE_HEADERS "$ENV{LOGOS_MODULE_HEADERS}")
+else()
+    set(LOGOS_MODULE_HEADERS "/nix/store/fjgzpcmqv6sczf8gxpz6zf42igjxsgak-logos-module-0.1.0/include")
+endif()
+
 # Plugin sources
 set(PLUGIN_SOURCES
     src/plugin.h
@@ -36,6 +42,7 @@ set_target_properties(auth_showcase_plugin PROPERTIES
 # Include Logos SDK headers
 target_include_directories(auth_showcase_plugin PRIVATE
     src
+    "${LOGOS_MODULE_HEADERS}"
     "${LOGOS_LIBLOGOS_HEADERS}"
     "${LOGOS_CPP_SDK}/include"
     "${LOGOS_CPP_SDK}/include/cpp"
@@ -48,9 +55,9 @@ target_link_libraries(auth_showcase_plugin PRIVATE
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
 )
 
-# Install paths
-set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
-set(AUTH_SHOWCASE_MODULE_DIR "${LOGOS_APP_DATA}/modules/auth_showcase")
+# Install paths — relative to CMAKE_INSTALL_PREFIX
+# Default: cmake --install build --prefix ~/.local/share/Logos/LogosApp
+set(AUTH_SHOWCASE_MODULE_DIR "modules/auth_showcase")
 
 # Install .so and manifest
 install(TARGETS auth_showcase_plugin

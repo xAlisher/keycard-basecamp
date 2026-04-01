@@ -5,7 +5,10 @@
   "author": "alisher",
   "type": "ui_qml",
   "pluginType": "qml",
-  "main": "Main.qml",
+  "main": {
+    "linux-amd64": "Main.qml",
+    "darwin-arm64": "Main.qml"
+  },
   "dependencies": ["keycard", "auth_showcase"],
   "category": "demo",
   "capabilities": [],

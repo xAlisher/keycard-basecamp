@@ -9,6 +9,7 @@
   },
   "manifestVersion": "0.1.0",
   "name": "keycard-ui",
+  "capabilities": ["keycard-debug-ui"],
   "type": "ui_qml",
   "version": "1.0.0"
 }

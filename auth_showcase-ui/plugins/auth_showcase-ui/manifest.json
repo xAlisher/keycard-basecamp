@@ -9,6 +9,7 @@
   },
   "manifestVersion": "0.1.0",
   "name": "auth_showcase-ui",
+  "capabilities": ["auth-showcase-debug-ui"],
   "type": "ui_qml",
   "version": "1.0.0"
 }

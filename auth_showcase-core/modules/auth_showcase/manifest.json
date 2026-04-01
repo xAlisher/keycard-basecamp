@@ -10,6 +10,7 @@
   },
   "manifestVersion": "0.1.0",
   "name": "auth_showcase",
+  "capabilities": ["auth-showcase-demo"],
   "type": "core",
   "version": "1.0.0"
 }
