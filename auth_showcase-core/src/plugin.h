@@ -2,7 +2,7 @@
 
 #include <QObject>
 #include <QString>
-#include <core/interface.h>
+#include <module_lib/interface.h>
 
 class AuthShowcasePlugin : public QObject, public PluginInterface
 {

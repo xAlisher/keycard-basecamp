@@ -32,6 +32,7 @@
         pkgs = import nixpkgs { inherit system; };
         logosSdk = logos-cpp-sdk.packages.${system}.default;
         logosHeaders = logos-liblogos.packages.${system}.default;
+        logosModule = logos-module.packages.${system}.default;
 
         # Fetch keycard-qt dependency
         keycard-qt-src = pkgs.fetchFromGitHub {
@@ -56,6 +57,7 @@
           shellHook = ''
             export LOGOS_CPP_SDK_ROOT="${logosSdk}"
             export LOGOS_LIBLOGOS_HEADERS="${logosHeaders}/include"
+            export LOGOS_MODULE_HEADERS="${logosModule}/include"
             export PKG_CONFIG_PATH="${pkgs.pcsclite.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
 
             echo "Keycard Basecamp development environment"
@@ -166,6 +168,7 @@
             preConfigure = ''
               export LOGOS_CPP_SDK_ROOT="${logosSdk}"
               export LOGOS_LIBLOGOS_HEADERS="${logosHeaders}/include"
+              export LOGOS_MODULE_HEADERS="${logosModule}/include"
             '';
             buildPhase = ''
               cmake --build . --target keycard_plugin -j$NIX_BUILD_CORES
