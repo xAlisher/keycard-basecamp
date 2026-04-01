@@ -2311,3 +2311,20 @@ Timer {
 - Future: Consider adding filters (show only errors, search, etc.)
 
 **Closed:** Part of Issue #41 (ActivityLogPanel task complete)
+
+## Epic #56 Lessons — Basecamp Upstream Compatibility
+
+### Lesson: logos-module PluginInterface is identical to logos-liblogos
+The `PluginInterface` class in `module_lib/interface.h` (logos-module) is byte-for-byte identical to `core/interface.h` (logos-liblogos) — same methods, same IID. Migration is just an include path change. `logos_api.h` resolves via logos-cpp-sdk include path.
+
+### Lesson: nix flake replace_all misses blocks with different indentation
+When using editor replace_all on flake.nix, `preConfigure` blocks with 10-space indent vs 12-space indent are treated as different strings. Always verify all `preConfigure` blocks individually. Senty caught this when `nix build .#lib` failed while dev build passed.
+
+### Lesson: verify both build surfaces — dev shell AND nix build
+`nix develop --command cmake --build build` and `nix build .#lib` exercise different code paths with different env var wiring. A change can pass one and fail the other. Always check both.
+
+### Lesson: don't add speculative upstream schema fields
+Only add manifest fields with confirmed upstream evidence. Senty found that `permissions` and `requiredLogosVersion` had no upstream code consuming them — only `capabilities` was supported. Adding guessed fields creates schema drift.
+
+### Lesson: CMake install paths should be relative to CMAKE_INSTALL_PREFIX
+Hardcoding absolute install paths (`$HOME/.local/share/Logos/LogosBasecamp`) breaks `cmake --install --prefix`. Use relative paths (`modules/keycard`, `plugins/keycard-ui`) so the prefix flag works correctly.
