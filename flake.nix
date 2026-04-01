@@ -103,6 +103,7 @@
           preConfigure = ''
             export LOGOS_CPP_SDK_ROOT="${logosSdk}"
             export LOGOS_LIBLOGOS_HEADERS="${logosHeaders}/include"
+            export LOGOS_MODULE_HEADERS="${logosModule}/include"
           '';
           # Only build the core plugin target
           buildPhase = ''
