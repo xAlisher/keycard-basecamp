@@ -78,13 +78,13 @@ if(KEYCARD_DEBUG)
     message(STATUS "Keycard debug logging enabled")
 endif()
 
-# Install paths (use LogosBasecamp for development)
-set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
-set(KEYCARD_MODULE_DIR "${LOGOS_APP_DATA}/modules/keycard")
+# Install paths — relative to CMAKE_INSTALL_PREFIX
+# Default: cmake --install build --prefix ~/.local/share/Logos/LogosApp
+set(KEYCARD_MODULE_DIR "modules/keycard")
 
 # Cleanup stale backups (Lesson #33)
 install(CODE "
-    set(_modules_dir \"${LOGOS_APP_DATA}/modules\")
+    set(_modules_dir \"\${CMAKE_INSTALL_PREFIX}/modules\")
     file(GLOB _old_keycard \"\${_modules_dir}/keycard.*\")
     foreach(_dir \${_old_keycard})
         message(STATUS \"Removing old keycard module: \${_dir}\")

@@ -68,7 +68,7 @@
             echo "Build commands:"
             echo "  cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug"
             echo "  cmake --build build"
-            echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
+            echo "  cmake --install build --prefix ~/.local/share/Logos/LogosApp"
           '';
         };
 
@@ -203,11 +203,11 @@
               echo "Phase 4: Full operational workflow (after module layout migration)"
               echo ""
               echo "Current usage requires install:"
-              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
-              echo "  export KEYCARD_MODULE_DIR=~/.local/share/Logos/LogosBasecampDev/modules/keycard"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosApp"
+              echo "  export KEYCARD_MODULE_DIR=~/.local/share/Logos/LogosApp/modules/keycard"
               echo ""
 
-              MODULE_DIR="''${KEYCARD_MODULE_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard}"
+              MODULE_DIR="''${KEYCARD_MODULE_DIR:-$HOME/.local/share/Logos/LogosApp/modules/keycard}"
 
               if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
                 echo "Error: Module not found at $MODULE_DIR"
@@ -232,13 +232,13 @@
               echo "Phase 4: Full operational workflow (after module layout migration)"
               echo ""
               echo "Current usage requires install:"
-              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
-              echo "  export KEYCARD_MODULE_DIR=~/.local/share/Logos/LogosBasecampDev/modules/keycard"
-              echo "  export KEYCARD_UI_DIR=~/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosApp"
+              echo "  export KEYCARD_MODULE_DIR=~/.local/share/Logos/LogosApp/modules/keycard"
+              echo "  export KEYCARD_UI_DIR=~/.local/share/Logos/LogosApp/plugins/keycard-ui"
               echo ""
 
-              MODULE_DIR="''${KEYCARD_MODULE_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard}"
-              UI_DIR="''${KEYCARD_UI_DIR:-$HOME/.local/share/Logos/LogosBasecampDev/plugins/keycard-ui}"
+              MODULE_DIR="''${KEYCARD_MODULE_DIR:-$HOME/.local/share/Logos/LogosApp/modules/keycard}"
+              UI_DIR="''${KEYCARD_UI_DIR:-$HOME/.local/share/Logos/LogosApp/plugins/keycard-ui}"
 
               if [ ! -f "$MODULE_DIR/keycard_plugin.so" ]; then
                 echo "Error: Module not found at $MODULE_DIR"
@@ -269,11 +269,11 @@
               echo "Phase 4: Full operational workflow (after module layout migration)"
               echo ""
               echo "Current usage requires install:"
-              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev"
-              echo "  export KEYCARD_MODULE_SO=~/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so"
+              echo "  cmake --install build --prefix ~/.local/share/Logos/LogosApp"
+              echo "  export KEYCARD_MODULE_SO=~/.local/share/Logos/LogosApp/modules/keycard/keycard_plugin.so"
               echo ""
 
-              MODULE_SO="''${KEYCARD_MODULE_SO:-$HOME/.local/share/Logos/LogosBasecampDev/modules/keycard/keycard_plugin.so}"
+              MODULE_SO="''${KEYCARD_MODULE_SO:-$HOME/.local/share/Logos/LogosApp/modules/keycard/keycard_plugin.so}"
 
               if [ ! -f "$MODULE_SO" ]; then
                 echo "Error: Module not found at $MODULE_SO"

@@ -55,9 +55,9 @@ target_link_libraries(auth_showcase_plugin PRIVATE
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
 )
 
-# Install paths
-set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
-set(AUTH_SHOWCASE_MODULE_DIR "${LOGOS_APP_DATA}/modules/auth_showcase")
+# Install paths — relative to CMAKE_INSTALL_PREFIX
+# Default: cmake --install build --prefix ~/.local/share/Logos/LogosApp
+set(AUTH_SHOWCASE_MODULE_DIR "modules/auth_showcase")
 
 # Install .so and manifest
 install(TARGETS auth_showcase_plugin

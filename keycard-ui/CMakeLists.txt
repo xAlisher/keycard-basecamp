@@ -1,6 +1,6 @@
-# Install QML and metadata (use LogosBasecamp for development)
-set(LOGOS_APP_DATA "$ENV{HOME}/.local/share/Logos/LogosBasecamp")
-set(KEYCARD_UI_DIR "${LOGOS_APP_DATA}/plugins/keycard-ui")
+# Install QML and metadata — relative to CMAKE_INSTALL_PREFIX
+# Default: cmake --install build --prefix ~/.local/share/Logos/LogosApp
+set(KEYCARD_UI_DIR "plugins/keycard-ui")
 
 install(FILES
     plugins/keycard-ui/manifest.json
