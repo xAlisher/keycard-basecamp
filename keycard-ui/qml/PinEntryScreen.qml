@@ -53,8 +53,8 @@ FocusScope {
                 }
             }
 
-            if (response.requests && Array.isArray(response.requests)) {
-                pendingQueue = response.requests
+            if (response.pending && Array.isArray(response.pending)) {
+                pendingQueue = response.pending
                 // If no current request and there are pending ones, show first
                 if (!currentRequest && pendingQueue.length > 0) {
                     currentRequest = pendingQueue[0]
@@ -65,7 +65,7 @@ FocusScope {
                 if (currentRequest) {
                     var stillPending = false
                     for (var j = 0; j < pendingQueue.length; j++) {
-                        if (pendingQueue[j].id === currentRequest.id) {
+                        if (pendingQueue[j].authId === currentRequest.authId) {
                             stillPending = true
                             break
                         }
@@ -423,7 +423,7 @@ FocusScope {
         var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
         activityLog.addEntry(timestamp, "Authorizing request from " + currentRequest.caller + "...", "info")
 
-        var result = logos.callModule("keycard", "authorizeRequest", [currentRequest.id, pinValue])
+        var result = logos.callModule("keycard", "authorizeRequest", [currentRequest.authId, pinValue])
         processActivity(result)
 
         verifyingPin = false
@@ -449,7 +449,7 @@ FocusScope {
     function declineRequest() {
         if (!currentRequest) return
 
-        var result = logos.callModule("keycard", "rejectRequest", [currentRequest.id])
+        var result = logos.callModule("keycard", "rejectRequest", [currentRequest.authId])
         processActivity(result)
 
         currentRequest = null
