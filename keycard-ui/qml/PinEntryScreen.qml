@@ -215,50 +215,83 @@ FocusScope {
                     spacing: DesignTokens.spacing3xl
                     visible: currentRequest !== null
 
-                    // Request info card
-                    Rectangle {
+                    // Header
+                    ColumnLayout {
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 400
-                        Layout.preferredHeight: requestInfoLayout.implicitHeight + DesignTokens.spacingXl * 2
-                        color: DesignTokens.surface
-                        border.color: DesignTokens.warning
-                        border.width: 1
-                        radius: DesignTokens.radiusM
+                        spacing: DesignTokens.spacingS
 
-                        ColumnLayout {
-                            id: requestInfoLayout
-                            anchors.centerIn: parent
-                            width: parent.width - DesignTokens.spacingXl * 2
-                            spacing: DesignTokens.spacingS
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: currentRequest ? currentRequest.caller + " requesting access" : ""
+                            color: DesignTokens.foreground
+                            font.pixelSize: 24
+                            font.weight: Font.Bold
+                            font.family: DesignTokens.fontPrimary
+                        }
 
-                            Text {
-                                Layout.fillWidth: true
-                                text: currentRequest ? currentRequest.caller + " requests authorization" : ""
-                                color: DesignTokens.foreground
-                                font.pixelSize: 18
-                                font.weight: Font.Bold
-                                font.family: DesignTokens.fontPrimary
-                                wrapMode: Text.WordWrap
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: currentRequest ? "domain: " + currentRequest.domain : ""
-                                color: DesignTokens.foregroundSecondary
-                                font.pixelSize: DesignTokens.fontSizeSmall
-                                font.family: DesignTokens.fontPrimary
-                            }
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.preferredWidth: 345
+                            text: "Approve will allow the module to derive an encryption key only for approved path"
+                            color: DesignTokens.foregroundSecondary
+                            font.pixelSize: DesignTokens.fontSizeSmall
+                            font.weight: Font.Medium
+                            font.family: DesignTokens.fontPrimary
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
                         }
                     }
 
-                    // PIN header
-                    Text {
+                    // Info box (matching old AuthorizationScreen)
+                    Rectangle {
                         Layout.alignment: Qt.AlignHCenter
-                        text: "Enter PIN to approve"
-                        color: DesignTokens.foreground
-                        font.pixelSize: 16
-                        font.weight: Font.Medium
-                        font.family: DesignTokens.fontPrimary
+                        Layout.preferredWidth: 345
+                        Layout.preferredHeight: infoLayout.implicitHeight + 32
+                        color: "#2a2a2a"
+                        radius: DesignTokens.radiusM
+
+                        ColumnLayout {
+                            id: infoLayout
+                            anchors.fill: parent
+                            anchors.margins: 16
+                            spacing: 16
+
+                            ColumnLayout {
+                                spacing: 4
+
+                                Text {
+                                    text: "domain"
+                                    color: DesignTokens.mutedForeground
+                                    font.pixelSize: DesignTokens.fontSizeSmall
+                                    font.family: DesignTokens.fontPrimary
+                                }
+
+                                Text {
+                                    text: currentRequest ? currentRequest.domain : ""
+                                    color: DesignTokens.foreground
+                                    font.pixelSize: DesignTokens.fontSizeBody
+                                    font.family: DesignTokens.fontPrimary
+                                }
+                            }
+
+                            ColumnLayout {
+                                spacing: 4
+
+                                Text {
+                                    text: "module"
+                                    color: DesignTokens.mutedForeground
+                                    font.pixelSize: DesignTokens.fontSizeSmall
+                                    font.family: DesignTokens.fontPrimary
+                                }
+
+                                Text {
+                                    text: currentRequest ? currentRequest.caller : ""
+                                    color: DesignTokens.foreground
+                                    font.pixelSize: DesignTokens.fontSizeBody
+                                    font.family: DesignTokens.fontPrimary
+                                }
+                            }
+                        }
                     }
 
                     // PIN Digit Display
@@ -315,54 +348,61 @@ FocusScope {
                         }
                     }
 
-                    // Approve / Decline buttons
+                    // Buttons (pill style, matching old AuthorizationScreen)
                     RowLayout {
                         Layout.alignment: Qt.AlignHCenter
-                        spacing: DesignTokens.spacingL
+                        spacing: 12
 
-                        Button {
-                            text: "Approve"
-                            enabled: root.pinValue.length === root.maxPinLength && !root.verifyingPin
-                            onClicked: approveRequest()
+                        Rectangle {
+                            width: 85
+                            height: 32
+                            color: approveArea.containsMouse ? "#e64a19" : DesignTokens.primary
+                            radius: 16
+                            opacity: root.pinValue.length === root.maxPinLength ? 1.0 : 0.5
 
-                            contentItem: Text {
-                                text: parent.text
-                                color: parent.enabled ? DesignTokens.background : DesignTokens.foregroundSecondary
-                                font.pixelSize: DesignTokens.fontSizeBody
-                                font.weight: Font.Bold
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Approve"
+                                color: DesignTokens.foreground
+                                font.pixelSize: 14
+                                font.weight: Font.Medium
                                 font.family: DesignTokens.fontPrimary
-                                horizontalAlignment: Text.AlignHCenter
                             }
 
-                            background: Rectangle {
-                                implicitWidth: 120
-                                implicitHeight: 40
-                                color: parent.enabled ? DesignTokens.success : DesignTokens.surface
-                                radius: DesignTokens.radiusM
-                                border.color: parent.enabled ? DesignTokens.success : DesignTokens.border
+                            MouseArea {
+                                id: approveArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: root.pinValue.length === root.maxPinLength && !root.verifyingPin
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: approveRequest()
                             }
                         }
 
-                        Button {
-                            text: "Decline"
-                            enabled: !root.verifyingPin
-                            onClicked: declineRequest()
+                        Rectangle {
+                            width: 85
+                            height: 32
+                            color: declineArea.containsMouse ? "#3a3a3a" : "transparent"
+                            border.color: DesignTokens.border
+                            border.width: 1
+                            radius: 16
 
-                            contentItem: Text {
-                                text: parent.text
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Decline"
                                 color: DesignTokens.foreground
-                                font.pixelSize: DesignTokens.fontSizeBody
+                                font.pixelSize: 14
                                 font.weight: Font.Medium
                                 font.family: DesignTokens.fontPrimary
-                                horizontalAlignment: Text.AlignHCenter
                             }
 
-                            background: Rectangle {
-                                implicitWidth: 120
-                                implicitHeight: 40
-                                color: "transparent"
-                                radius: DesignTokens.radiusM
-                                border.color: DesignTokens.border
+                            MouseArea {
+                                id: declineArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: !root.verifyingPin
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: declineRequest()
                             }
                         }
                     }

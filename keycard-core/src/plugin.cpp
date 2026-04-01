@@ -115,10 +115,7 @@ QString KeycardPlugin::discoverCard()
             logActivity(QString("Existing pairing found, slot %1").arg(slot), "success");
         }
 
-        logActivity("Enter PIN", "warning");
-
-        // Session state persists until card is removed or user re-authorizes
-        // (Closed state should stay closed until explicit re-auth)
+        logActivity("Ready", "success");
     } else {
         result["found"] = false;
         logActivity("Keycard not found", "error");
@@ -230,14 +227,14 @@ QString KeycardPlugin::authorize(const QString& pin)
             logActivity("Wrong PIN, Keycard blocked", "error");
         } else if (remaining == 1) {
             logActivity("Wrong PIN, 1 attempt left", "error");
-            logActivity("Enter PIN", "warning");
+            logActivity("Try again", "warning");
         } else if (remaining > 1) {
             logActivity(QString("Wrong PIN, %1 attempts left").arg(remaining), "error");
-            logActivity("Enter PIN", "warning");
+            logActivity("Try again", "warning");
         } else {
             // remaining == -1 (unknown)
             logActivity("Wrong PIN", "error");
-            logActivity("Enter PIN", "warning");
+            logActivity("Try again", "warning");
         }
     }
 
@@ -559,6 +556,7 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     QString derivedPath = keyResult.value("path").toString();
     logActivity(QString("Request from %1 approved for domain %2").arg(moduleName, domain), "success");
     logActivity(QString("Key derived for module %1 following approved path %2").arg(moduleName, derivedPath), "success");
+    logActivity(QString("Go back to %1 module to continue").arg(moduleName), "warning");
 
     QJsonObject result;
     result["authId"] = authId;
