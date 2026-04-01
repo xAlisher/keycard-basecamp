@@ -29,23 +29,27 @@ Profile:
 
 **Always start GitHub comments with:** `Senty:`
 **Call the implementer:** "Fergie" (not "Claude Code" or "Claude")
-**Fergie will ask for review at end of implementation comments**
+**Fergie will notify you via tmux-bridge when ready for review**
 
 ---
 
 ## Session Start Checklist
 
-1. Read `PROJECT_KNOWLEDGE.md` — note security patterns and current development phase
-2. Read `SPEC.md` — understand state machine, security properties, and method contracts
-3. Check GitHub for new issue comments, issue state changes, and branch pushes from Claude (tagged `[Claude Code]`)
-4. Identify what needs review this session
-5. Only then begin
+1. Label your pane:
+   ```bash
+   tmux-bridge name "$(tmux-bridge id)" senty
+   ```
+2. Read `PROJECT_KNOWLEDGE.md` — note security patterns and current development phase
+3. Read `SPEC.md` — understand state machine, security properties, and method contracts
+4. Check GitHub for new issue comments, issue state changes, and branch pushes from Fergie
+5. Identify what needs review this session
+6. Only then begin
 
 ## Run Routine
 
 When Alisher says `run`, treat it as this ordered routine:
 
-1. Check GitHub for new issue comments, issue state changes, and new Claude handoff items
+1. Check GitHub for new issue comments, issue state changes, and new Fergie handoff items
 2. React to any open review/follow-up work before doing local verification
 3. Check local repo state (`git status`, relevant instructions, current branch context)
 4. Rebuild first if the reviewed branch adds or changes tests, packaging outputs, or build wiring
@@ -53,52 +57,27 @@ When Alisher says `run`, treat it as this ordered routine:
 6. If a reviewed branch was merged, update `PROJECT_KNOWLEDGE.md` for any security-relevant fixes, regressions, or residual risks from that merge
 7. Report both GitHub updates and local results, not just test output
 
-## Cron Polling Protocol (Event-Driven Review Notifications)
+## Notification Protocol
 
-### When to Start Cron Polling
+Fergie notifies you via tmux-bridge when work is ready. You notify Fergie when your review is posted.
 
-Start polling when Fergie posts a handoff comment (starts with "Fergie: Ready for review"):
+**Format:** `/btw check [issue|pr] #XX`
 
-```python
-# After seeing Fergie's handoff on issue #XX
-CronCreate(
-    cron="*/2 * * * *",  # Every 2 minutes
-    prompt="""Check for new GitHub comments from Fergie on issue #XX.
+GitHub is the record. tmux-bridge is the nudge. No polling, no cron.
 
-Run: gh api repos/xAlisher/keycard-basecamp/issues/XX/comments --jq '.[] | select(.created_at > "$(date -u -d '5 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')") | select(.body | startswith("Fergie:")) | {created: .created_at, preview: .body[0:200]}'
+**When Fergie pings you** (`/btw check issue #XX` arrives in your pane):
+1. Run `gh issue view XX` — read the full handoff comment
+2. Review the branch
+3. Post findings as a GitHub comment (`Senty: ...`)
+4. Ping Fergie back:
+   ```bash
+   tmux-bridge read fergie 20
+   tmux-bridge message fergie '/btw check issue #XX'
+   tmux-bridge read fergie 20
+   tmux-bridge keys fergie Enter
+   ```
 
-If found: Notify "💬 Fergie posted update on issue #XX" and fetch full comment.
-If not found: Say "No new updates from Fergie" (keep brief).
-""",
-    recurring=True
-)
-# Save job ID for later deletion
-```
-
-### When to Stop Cron Polling
-
-Stop polling after posting LGTM and PR is merged:
-
-```python
-# After Fergie merges PR
-CronDelete(job_id)
-```
-
-### Cron Job Details
-
-- **Schedule:** Every 2 minutes (`*/2 * * * *`)
-- **Filter:** Comments starting with "Fergie:"
-- **Scope:** Only the specific issue under review
-- **Session-only:** Dies when Codex terminal exits (restart if needed)
-- **Auto-expires:** After 3 days
-
-### Workflow Integration
-
-1. **Fergie posts handoff** → Start your cron polling
-2. **You get auto-notified** → Review code, post findings
-3. **Fergie posts fixes** → Auto-notified again
-4. **Repeat until LGTM** → Post LGTM
-5. **Fergie merges** → Stop your cron polling
+**Repeat until LGTM.**
 
 ---
 
@@ -311,9 +290,10 @@ Before ending any session:
 
 ## Fergie ↔ Senty Communication
 
-- GitHub issues are the shared communication channel
+- GitHub issues are the shared communication channel and permanent record
 - **Your comments start with:** `Senty:`
 - **Fergie's comments start with:** `Fergie:`
+- tmux-bridge is used for lightweight nudges only — all content lives on GitHub
 - Fergie's handoff comments must include:
   - exact branch tip SHA
   - exact commands run
@@ -388,8 +368,8 @@ Before ending any session:
 |------|-------|
 | Specification | `SPEC.md` |
 | Shared project knowledge | `PROJECT_KNOWLEDGE.md` |
-| Claude's instructions | `CLAUDE.md` |
-| Codex's instructions (this file) | `CODEX.md` |
+| Fergie's instructions | `CLAUDE.md` |
+| Senty's instructions (this file) | `CODEX.md` |
 | Core plugin | `keycard-core/src/plugin.{h,cpp}` |
 | State machine & PC/SC | `keycard-core/src/keycard_manager.{h,cpp}` |
 | Secure memory | `keycard-core/src/secure_buffer.{h,cpp}` |
