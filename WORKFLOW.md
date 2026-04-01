@@ -188,6 +188,34 @@ After every merge to master:
 
 ---
 
+## LGX Release Workflow
+
+Every LGX build request must go through an issue:
+
+### 1. Create Release Issue
+```bash
+gh issue create --title "Release: Build LGX packages for <version/description>"
+```
+Include: what's in the release, what changed since last build, known issues.
+
+### 2. Build
+```bash
+mkdir -p dist && nix run .#package-lgx -- dist/
+```
+
+### 3. Verify
+- No libpcsclite bundled: `tar -tzf dist/keycard-core.lgx | grep pcsclite`
+- UI has all QML files: `tar -tzf dist/keycard-ui.lgx`
+- Sizes are reasonable
+
+### 4. Post Results on Issue
+Comment with artifact sizes, contents verification, and any fixes applied during build.
+
+### 5. Senty Review
+Ping Senty for sign-off before release is final.
+
+---
+
 ## Notification Protocol
 
 - **GitHub is the system of record.** Every substantive review result, finding, fix handoff, and final LGTM must be posted on the relevant issue/PR.
