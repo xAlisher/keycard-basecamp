@@ -4,9 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
-#include <QTimer>
 #include <QDateTime>
-#include <QMap>
 #include <QSet>
 #include <module_lib/interface.h>
 
@@ -40,35 +38,18 @@ public:
     Q_INVOKABLE QString getLastError();
     Q_INVOKABLE QString testPCSC();  // Debug: test PC/SC directly
 
-    // Authorization request API (Option C: Module-Managed Auth State)
-    // Allows consuming modules to request auth, user completes in keycard-ui
+    // Authorization request API
     Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);
     Q_INVOKABLE QString checkAuthStatus(const QString& authId);
     Q_INVOKABLE QString getPendingAuths();
-
-    // SECURITY: Only keycard-ui should call this - verifies PIN and derives key internally
     Q_INVOKABLE QString authorizeRequest(const QString& authId, const QString& pin);
-    Q_INVOKABLE QString completeAuthRequest(const QString& authId);  // Complete request when session active (derives key internally)
     Q_INVOKABLE QString rejectRequest(const QString& authId);
-
-    // Session Management (Issue #44)
-    Q_INVOKABLE QString lockSession();
-    Q_INVOKABLE QString getSessionInfo();
-    Q_INVOKABLE QString getAuthorizedModules();
-    Q_INVOKABLE QString revokeModule(const QString& moduleName);
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
-    void sessionLocked(const QString& reason);  // "timeout" or "manual"
     void activityLogged(const QString& timestamp, const QString& message, const QString& level);
 
 private:
-    enum class SessionState {
-        NoSession,        // No active session
-        Active,          // SESSION_ACTIVE - key derived and active
-        Locked           // SESSION_LOCKED - timeout or manual lock, requires re-PIN
-    };
-
     struct AuthRequest {
         QString id;
         QString domain;
@@ -79,32 +60,19 @@ private:
         qint64 timestamp;
     };
 
-    struct AuthorizationRecord {
-        QString moduleName;
-        QString domain;
-        QDateTime lastAccess;
-        int accessCount = 0;
-    };
-
     QString mapBridgeStateToSpec(KeycardBridge::State state);
-    void startSessionTimer();
-    void clearSessionData();
     void logActivity(const QString& message, const QString& level = "info");
     void addActivityToResponse(QJsonObject& response);
 
-private slots:
-    void handleSessionTimeout();
+    enum class SessionState {
+        NoSession,
+        Active
+    };
 
 private:
     KeycardBridge* m_bridge = nullptr;
     SessionState m_sessionState = SessionState::NoSession;
-    QList<AuthRequest> m_authRequests;  // Pending authorization requests
-
-    // Session management (Issue #44)
-    QTimer* m_sessionTimer = nullptr;
-    int m_sessionTimeoutMs = 300000;  // 5 minutes default
-    QDateTime m_sessionStartTime;
-    QMap<QString, AuthorizationRecord> m_authorizedModules;  // key: moduleName
+    QList<AuthRequest> m_authRequests;
 
     // Activity log queue (for QML)
     struct ActivityEntry {
@@ -113,5 +81,5 @@ private:
         QString level;
     };
     QList<ActivityEntry> m_recentActivity;
-    QSet<QString> m_loggedRequestIds;  // Track which requests have been logged to avoid duplicates
+    QSet<QString> m_loggedRequestIds;
 };
