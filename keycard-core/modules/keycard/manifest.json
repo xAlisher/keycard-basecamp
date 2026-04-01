@@ -9,6 +9,9 @@
   },
   "manifestVersion": "0.1.0",
   "name": "keycard",
+  "permissions": ["pcsc", "secure-memory"],
+  "capabilities": ["smartcard-auth", "key-derivation"],
+  "requiredLogosVersion": "0.1.0",
   "type": "core",
   "version": "1.0.0"
 }
