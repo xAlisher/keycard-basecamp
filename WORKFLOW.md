@@ -172,17 +172,57 @@ gh pr merge XX --squash --delete-branch
 
 ## Notification Protocol
 
-tmux-bridge is a lightweight pointer only. All content lives on GitHub.
+- **GitHub is the system of record.** Every substantive review result, finding, fix handoff, and final LGTM must be posted on the relevant issue/PR.
+- **tmux-bridge is interrupt + routing only.** Use it to notify the other agent that attention is needed; do not treat tmux as the durable record.
+- **Do not poll GitHub comment counts or sleep-wait for responses.** After sending a tmux ping, continue useful work. The receiving agent will reply via tmux-bridge when ready.
 
-**Format:** `/btw check [issue|pr] #XX`
+### Handoff Status Tags
 
-| Direction | When |
-|-----------|------|
-| Fergie → Senty | Implementation ready for review |
-| Senty → Fergie | Review complete (LGTM or findings posted) |
-| Fergie → Senty | Fixes applied, ready for re-review |
+| Tag | Meaning |
+|-----|---------|
+| `READY` | All issue success criteria for the current scope are complete and ready for review |
+| `PARTIAL` | Code or validation is incomplete; review requested only on the completed subset. State what is still pending |
+| `FIX` | Prior review findings have been addressed and the issue is ready for re-review |
+| `RECHECK` | No code change expected; reviewer should verify updated evidence, runtime result, or issue-thread clarification |
+| `BLOCKED` | Cannot proceed without input, permission, missing dependency, or failed prerequisite |
 
-GitHub is the record. tmux-bridge is the nudge. No polling, no cron.
+### Handoff Message Format
+
+Use tmux pings in this shape: `/btw [TAG] check issue #NN — one-line scope summary`
+
+Examples:
+```
+/btw READY check issue #57 — PluginInterface migration complete
+/btw PARTIAL check issue #61 — build verified, runtime host test pending
+/btw FIX check issue #59 — removed speculative manifest fields
+/btw RECHECK check issue #61 — manual Basecamp smoke test evidence posted
+/btw BLOCKED issue #60 — install path conflict between docs and build flow
+```
+
+### Required Handoff Checklist
+
+- Every `READY`, `PARTIAL`, or `FIX` handoff must include the issue success criteria as a short checklist in the GitHub comment, with each item marked done or not done.
+- If any criterion is still open, the handoff must be `PARTIAL`, not `READY`.
+- If the issue has a repo-default verification matrix, the handoff comment must explicitly state each verified surface.
+
+### Default Verification Matrix
+
+Unless the issue says otherwise, verify:
+1. `nix develop` dev build
+2. `nix build .#lib`
+3. install-to-prefix (`cmake --install --prefix <path>`)
+
+Host runtime validation in Basecamp is required **only** when the issue explicitly calls for real host-app behavior.
+
+### Batching Rules
+
+- If multiple issues are independently reviewable at once, batch them into one tmux ping instead of sending multiple separate nudges.
+- The reviewer may still post separate GitHub comments per issue if the findings differ by scope or severity.
+
+### Reviewer Response Protocol
+
+- Reviewer posts findings or LGTM on GitHub first, then sends a tmux ping back referencing the issue(s).
+- Implementer treats the tmux ping as the callback signal and should not poll GitHub while waiting.
 
 ---
 
@@ -206,11 +246,11 @@ GitHub is the record. tmux-bridge is the nudge. No polling, no cron.
 ## Success Checklist
 
 **Before handoff:**
-- [ ] Code builds
-- [ ] Tests pass
+- [ ] Code builds (dev build + nix build .#lib)
+- [ ] Install-to-prefix verified
 - [ ] Branch pushed
-- [ ] Handoff comment posted on GitHub
-- [ ] Senty notified via tmux-bridge
+- [ ] Handoff comment posted on GitHub with success criteria checklist
+- [ ] Agent notified via tmux-bridge with correct status tag
 
 **Before merge:**
 - [ ] Senty LGTM received
