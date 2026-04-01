@@ -130,17 +130,26 @@
           # system libpcsclite for proper pcscd connectivity.
         };
 
-          # UI plugin for nix-bundle-lgx: lib/Main.qml + lib/metadata.json
+          # UI plugin for nix-bundle-lgx: all QML files + metadata + icons
           ui = pkgs.stdenv.mkDerivation {
             pname = "keycard-ui";
             version = "1.0.0";
-            src = ./keycard-ui/plugins/keycard-ui;
+            src = ./keycard-ui;
             dontBuild = true;
             dontConfigure = true;
             installPhase = ''
-              mkdir -p $out/lib
-              cp ${./keycard-ui/qml/Main.qml} $out/lib/Main.qml
-              cp metadata.json $out/lib/
+              mkdir -p $out/lib/icons
+              cp qml/Main.qml $out/lib/
+              cp qml/PinEntryScreen.qml $out/lib/
+              cp qml/DebugPanel.qml $out/lib/
+              cp qml/ActivityLog.qml $out/lib/
+              cp qml/DesignTokens.qml $out/lib/
+              cp qml/qmldir $out/lib/
+              cp keycard.png $out/lib/
+              cp plugins/keycard-ui/metadata.json $out/lib/
+              cp icons/keycard.png $out/lib/icons/
+              cp icons/lock.svg $out/lib/icons/
+              cp icons/bolt.svg $out/lib/icons/
             '';
           };
 
