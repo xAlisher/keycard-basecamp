@@ -225,6 +225,11 @@ Unless the issue says otherwise, verify:
 
 Host runtime validation in Basecamp is required **only** when the issue explicitly calls for real host-app behavior.
 
+### Every GitHub Update Gets a Ping
+
+- If you post a new comment or addendum on an issue, you **must** ping the other agent via tmux-bridge — even if the issue was already LGTM'd.
+- An un-pinged update is invisible to the other agent. They will not check GitHub unprompted.
+
 ### Batching Rules
 
 - If multiple issues are independently reviewable at once, batch them into one tmux ping instead of sending multiple separate nudges.
