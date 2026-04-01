@@ -7,6 +7,23 @@ Multi-agent development workflow for keycard-basecamp using two AI agents:
 
 ---
 
+## Session Setup (one-time per work session)
+
+Label panes so agents can find each other by name:
+
+```bash
+# Run in Fergie's pane
+tmux-bridge name "$(tmux-bridge id)" fergie
+
+# Run in Senty's pane
+tmux-bridge name "$(tmux-bridge id)" senty
+
+# Verify both are visible
+tmux-bridge list
+```
+
+---
+
 ## Standard Issue Workflow
 
 ### 1. Issue Creation & Planning
@@ -58,9 +75,9 @@ git push origin issue-XX-feature-name
 
 ---
 
-### 3. Handoff to Senty (Event-Driven Cron Start)
+### 3. Handoff to Senty
 
-**Fergie posts handoff comment:**
+**Fergie posts handoff comment (permanent record):**
 ```bash
 gh issue comment XX --body "Fergie: Ready for review! 🎯
 
@@ -75,81 +92,97 @@ gh issue comment XX --body "Fergie: Ready for review! 🎯
 ## Files Changed
 - path/to/file.cpp
 
-Branch: issue-XX-feature-name
-Ready for review! 🚀"
+Branch: issue-XX-feature-name"
 ```
 
-**Fergie starts polling for Senty's review:**
-```
-CronCreate(
-    cron="*/2 * * * *",
-    prompt="Check for Senty comments on issue #XX",
-    recurring=true
-)
-# Save job ID for later deletion
+**Fergie notifies Senty via tmux-bridge:**
+```bash
+tmux-bridge read senty 20
+tmux-bridge message senty '/btw check issue #XX'
+tmux-bridge read senty 20
+tmux-bridge keys senty Enter
 ```
 
 ---
 
 ### 4. Review (Senty)
 
+**Senty reads the issue:**
+```bash
+gh issue view XX
+```
+
 **Senty reviews code:**
 - Validates against requirements
 - Checks security, correctness, quality
 
-**Senty posts review:**
-```
-Senty:
+**Senty posts review comment (permanent record):**
+```bash
+gh issue comment XX --body "Senty:
 
 Findings:
 1. [SEVERITY] - Issue description
 2. [SEVERITY] - Another issue
 
-Result: [LGTM / not LGTM yet]
+Result: [LGTM / not LGTM yet]"
+```
+
+**Senty notifies Fergie via tmux-bridge:**
+```bash
+tmux-bridge read fergie 20
+tmux-bridge message fergie '/btw check issue #XX'
+tmux-bridge read fergie 20
+tmux-bridge keys fergie Enter
 ```
 
 ---
 
 ### 5. Fixes (If Needed)
 
-**Fergie gets auto-notified via cron** → Makes fixes → Posts update
+**Fergie reads Senty's findings:**
+```bash
+gh issue view XX
+```
 
-**Repeat until LGTM**
+**Fergie makes fixes → posts update comment → notifies Senty:**
+```bash
+gh issue comment XX --body "Fergie: Fixed P1 (bounds check in keycard_auth.cpp:142). Ready for re-review."
+
+tmux-bridge read senty 20
+tmux-bridge message senty '/btw check issue #XX'
+tmux-bridge read senty 20
+tmux-bridge keys senty Enter
+```
+
+**Repeat until LGTM.**
 
 ---
 
 ### 6. Merge (After LGTM)
 
-**Fergie auto-merges:**
+**Fergie merges:**
 ```bash
 gh pr create --title "Issue #XX: Feature" --base master
 gh pr merge XX --squash --delete-branch
-```
-
-**Stop cron:**
-```bash
-CronDelete(job_id)
 ```
 
 **Document lessons in LESSONS.md**
 
 ---
 
-## Cron Polling Protocol
+## Notification Protocol
 
-### When to Start
-- ✅ After "Ready for review" handoff
-- ✅ During active review cycles
+tmux-bridge is a lightweight pointer only. All content lives on GitHub.
 
-### When to Stop
-- ✅ After PR merged to master
-- ✅ After issue closed
+**Format:** `/btw check [issue|pr] #XX`
 
-### Job Details
-- **Schedule:** `*/2 * * * *` (every 2 minutes)
-- **Filters:** Comments starting with "Senty:" (for Fergie) or "Fergie:" (for Senty)
-- **Session-only:** Dies when terminal exits
-- **Auto-expires:** 3 days
+| Direction | When |
+|-----------|------|
+| Fergie → Senty | Implementation ready for review |
+| Senty → Fergie | Review complete (LGTM or findings posted) |
+| Fergie → Senty | Fixes applied, ready for re-review |
+
+GitHub is the record. tmux-bridge is the nudge. No polling, no cron.
 
 ---
 
@@ -176,12 +209,11 @@ CronDelete(job_id)
 - [ ] Code builds
 - [ ] Tests pass
 - [ ] Branch pushed
-- [ ] Handoff comment posted
-- [ ] Cron started
+- [ ] Handoff comment posted on GitHub
+- [ ] Senty notified via tmux-bridge
 
 **Before merge:**
 - [ ] Senty LGTM received
 - [ ] PR created
 - [ ] PR merged
-- [ ] Cron stopped
 - [ ] Lessons documented
