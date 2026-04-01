@@ -5,10 +5,7 @@
   "author": "alisher",
   "type": "ui_qml",
   "pluginType": "qml",
-  "main": {
-    "linux-amd64": "Main.qml",
-    "darwin-arm64": "Main.qml"
-  },
+  "main": "Main.qml",
   "dependencies": ["keycard"],
   "category": "security",
   "capabilities": [],
