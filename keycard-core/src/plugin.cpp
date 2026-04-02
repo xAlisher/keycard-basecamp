@@ -1,5 +1,6 @@
 #include "plugin.h"
 #include "KeycardBridge.h"
+#include "FilePairingStorage.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -107,12 +108,24 @@ QString KeycardPlugin::discoverCard()
         result["uid"] = uid;
         logActivity(QString("Keycard detected, UID: %1").arg(uid), "success");
 
-        // Check pairing status
-        logActivity("Pairing...", "info");
-        QJsonObject pairingCheck = m_bridge->checkPairing();
-        if (pairingCheck["paired"].toBool()) {
-            int slot = pairingCheck["pairingIndex"].toInt();
-            logActivity(QString("Existing pairing found, slot %1").arg(slot), "success");
+        // Check pairing file status (no PIN needed — just probe)
+        auto* storage = dynamic_cast<FilePairingStorage*>(m_bridge->pairingStorage().get());
+        if (storage) {
+            auto probeResult = storage->probeFile(uid);
+            switch (probeResult) {
+                case PairingLoadResult::PairingLocked:
+                    logActivity("Pairing found (encrypted)", "success");
+                    break;
+                case PairingLoadResult::PlaintextLegacy:
+                    logActivity("Pairing found (will encrypt on next auth)", "warning");
+                    break;
+                case PairingLoadResult::FileNotFound:
+                    logActivity("Not paired — pair card first", "warning");
+                    break;
+                default:
+                    logActivity("Pairing file issue", "error");
+                    break;
+            }
         }
 
         logActivity("Ready", "success");
@@ -120,10 +133,11 @@ QString KeycardPlugin::discoverCard()
         result["found"] = false;
         logActivity("Keycard not found", "error");
 
-        // Card removed/not present - clear any active session state
-        // Ensures SESSION_ACTIVE doesn't persist after card removal
-        if (m_sessionState == SessionState::Active || m_sessionState == SessionState::NoSession) {
-            m_sessionState = SessionState::NoSession;
+        // Card removed — clear session and pairing cache
+        m_sessionState = SessionState::NoSession;
+        auto* storage = dynamic_cast<FilePairingStorage*>(m_bridge->pairingStorage().get());
+        if (storage) {
+            storage->clearCache();
         }
     }
 
@@ -140,20 +154,49 @@ QString KeycardPlugin::checkPairing()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    logActivity("Pairing...", "info");
+    QJsonObject result;
+    auto* storage = dynamic_cast<FilePairingStorage*>(m_bridge->pairingStorage().get());
+    if (storage) {
+        QString uid = m_bridge->keyUID();
 
-    QJsonObject checkResult = m_bridge->checkPairing();
-
-    if (checkResult["paired"].toBool()) {
-        int slot = checkResult["pairingIndex"].toInt();
-        logActivity(QString("Existing pairing found, slot %1").arg(slot), "success");
+        // If cached (already decrypted), report full status
+        if (storage->hasCachedPairing(uid)) {
+            auto pairing = storage->load(uid);
+            result["paired"] = true;
+            result["pairingIndex"] = pairing.index;
+            result["status"] = "decrypted";
+        } else {
+            // Probe file without decrypting
+            auto probeResult = storage->probeFile(uid);
+            switch (probeResult) {
+                case PairingLoadResult::PairingLocked:
+                    result["paired"] = true;
+                    result["status"] = "locked";
+                    break;
+                case PairingLoadResult::PlaintextLegacy:
+                    result["paired"] = true;
+                    result["status"] = "legacy";
+                    break;
+                case PairingLoadResult::FileNotFound:
+                    result["paired"] = false;
+                    result["status"] = "not_paired";
+                    break;
+                default:
+                    result["paired"] = false;
+                    result["status"] = "corrupted";
+                    break;
+            }
+        }
+    } else {
+        // Fallback to bridge checkPairing
+        result = m_bridge->checkPairing();
     }
 
-    addActivityToResponse(checkResult);
-    return QJsonDocument(checkResult).toJson(QJsonDocument::Compact);
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::pairCard(const QString& pairingPassword)
+QString KeycardPlugin::pairCard(const QString& pairingPassword, const QString& pin)
 {
     qDebug() << "KeycardPlugin::pairCard() called";
 
@@ -163,13 +206,33 @@ QString KeycardPlugin::pairCard(const QString& pairingPassword)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    if (pin.isEmpty()) {
+        QJsonObject result;
+        result["paired"] = false;
+        result["error"] = "PIN required for encrypted pairing storage";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
     logActivity("Creating new pairing...", "info");
 
+    // Bridge pairs with card (saves to memory cache via IPairingStorage::save)
     QJsonObject pairResult = m_bridge->pairCard(pairingPassword);
 
-    if (!pairResult["paired"].toBool()) {
+    if (pairResult["paired"].toBool()) {
+        // Encryption-first: persist encrypted immediately
+        auto* storage = dynamic_cast<FilePairingStorage*>(m_bridge->pairingStorage().get());
+        if (storage) {
+            QString uid = m_bridge->keyUID();
+            Keycard::PairingInfo pairing = storage->load(uid);  // From memory cache
+            if (pairing.isValid() && storage->saveEncrypted(uid, pairing, pin)) {
+                logActivity("Pairing encrypted and saved", "success");
+            } else {
+                logActivity("WARNING: Pairing created but encryption failed!", "error");
+                pairResult["warning"] = "Pairing succeeded but failed to encrypt - re-pair recommended";
+            }
+        }
+    } else {
         QString error = pairResult["error"].toString();
-        // Check for no free slots error
         if (error.contains("no free", Qt::CaseInsensitive) ||
             error.contains("no slot", Qt::CaseInsensitive) ||
             error.contains("slots", Qt::CaseInsensitive)) {
@@ -213,15 +276,72 @@ QString KeycardPlugin::authorize(const QString& pin)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Authorize with card
+    // Step 1: Decrypt pairing file into cache (needed before bridge can auth)
+    auto* storage = dynamic_cast<FilePairingStorage*>(m_bridge->pairingStorage().get());
+    if (storage && !storage->hasCachedPairing(m_bridge->keyUID())) {
+        QString uid = m_bridge->keyUID();
+        Keycard::PairingInfo pairing;
+        auto loadResult = storage->loadEncrypted(uid, pin, pairing);
+
+        if (loadResult == PairingLoadResult::WrongPin) {
+            QJsonObject result;
+            result["authorized"] = false;
+            result["error"] = "Wrong PIN (pairing file decryption failed)";
+            logActivity("Wrong PIN", "error");
+            logActivity("Try again", "warning");
+            addActivityToResponse(result);
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        } else if (loadResult == PairingLoadResult::FileNotFound) {
+            QJsonObject result;
+            result["authorized"] = false;
+            result["error"] = "Card not paired - pair first";
+            logActivity("Card not paired", "error");
+            addActivityToResponse(result);
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        } else if (loadResult == PairingLoadResult::Corrupted) {
+            QJsonObject result;
+            result["authorized"] = false;
+            result["error"] = "Pairing file corrupted";
+            logActivity("Pairing file corrupted", "error");
+            addActivityToResponse(result);
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+        // Success or PlaintextLegacy — pairing is now in cache
+        // Migration deferred until AFTER card PIN verification succeeds
+    }
+
+    // Track whether we need to migrate (must check before auth clears context)
+    bool needsMigration = false;
+    if (storage) {
+        auto probeResult = storage->probeFile(m_bridge->keyUID());
+        needsMigration = (probeResult == PairingLoadResult::PlaintextLegacy);
+    }
+
+    // Step 2: Auth with card (pairing is now in cache, bridge load() will find it)
     QJsonObject authResult = m_bridge->authorize(pin);
 
     // If successful, start session
     if (authResult.value("authorized").toBool()) {
         m_sessionState = SessionState::Active;
         logActivity("Session active", "success");
+
+        // Migrate plaintext ONLY after confirmed correct PIN on card
+        if (needsMigration && storage) {
+            QString uid = m_bridge->keyUID();
+            Keycard::PairingInfo pairing = storage->load(uid);
+            logActivity("Migrating pairing to encrypted storage...", "info");
+            if (storage->saveEncrypted(uid, pairing, pin)) {
+                logActivity("Pairing encrypted successfully", "success");
+            } else {
+                logActivity("Failed to encrypt pairing (will retry later)", "warning");
+            }
+        }
     } else {
         m_sessionState = SessionState::NoSession;
+        // Clear cache on wrong card PIN
+        if (storage) {
+            storage->clearCache();
+        }
         int remaining = authResult.value("remainingAttempts").toInt(-1);
         if (remaining == 0) {
             logActivity("Wrong PIN, Keycard blocked", "error");
@@ -348,8 +468,12 @@ QString KeycardPlugin::closeSession()
 {
     qDebug() << "KeycardPlugin::closeSession() called";
 
-    // Reset session state (keep bridge running for future requests)
+    // Reset session state and clear pairing cache
     m_sessionState = SessionState::NoSession;
+    auto* storage = dynamic_cast<FilePairingStorage*>(m_bridge->pairingStorage().get());
+    if (storage) {
+        storage->clearCache();
+    }
 
     QJsonObject result;
     result["closed"] = true;
