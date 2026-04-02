@@ -27,11 +27,16 @@ Item {
     signal keyReceived(string hexKey)
     signal error(string message)
     signal statusChanged(string status)
+    signal cardRemoved()
 
     // ── State ──────────────────────────────────────────────────────
     property string authId: ""
     property string status: "disconnected"  // "disconnected", "pending", "connected", "error"
     property string errorMessage: ""
+
+    // ── Card presence watching ──────────────────────────────────────
+    property bool watchCardPresence: false
+    property bool cardPresent: false
 
     // ── Customizable appearance ────────────────────────────────────
     property color buttonColor: "#FF5722"
@@ -57,6 +62,26 @@ Item {
         repeat: true
         running: root.status === "pending"
         onTriggered: root._checkStatus()
+    }
+
+    // ── Card presence watcher ──────────────────────────────────────
+    Timer {
+        id: cardWatcher
+        interval: 2000
+        repeat: true
+        running: root.watchCardPresence
+        onTriggered: {
+            if (typeof logos === "undefined" || !logos.callModule) return
+            var result = logos.callModule("keycard", "getCardPresence", [])
+            try {
+                var r = JSON.parse(result)
+                var wasPresent = root.cardPresent
+                root.cardPresent = r.present || false
+                if (wasPresent && !root.cardPresent) {
+                    root.cardRemoved()
+                }
+            } catch (e) {}
+        }
     }
 
     // ── Public API ─────────────────────────────────────────────────
