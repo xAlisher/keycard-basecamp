@@ -82,5 +82,4 @@ private:
     };
     QList<ActivityEntry> m_recentActivity;
     QSet<QString> m_loggedRequestIds;
-    bool m_pcscBusy = false;  // Serializes PC/SC access
 };

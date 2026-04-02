@@ -4,7 +4,6 @@
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/types.h>
 #include <QDebug>
-#include <QMutexLocker>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <PCSC/winscard.h>  // For direct PC/SC reader detection
@@ -130,10 +129,6 @@ QString KeycardBridge::statusText() const
 
 void KeycardBridge::pollStatus()
 {
-    // Skip if another PC/SC operation is running (#89)
-    if (!m_pcscMutex.tryLock()) return;
-    // Will unlock at end of method via explicit unlock
-
     static int pollCount = 0;
     if (++pollCount % 20 == 0) {  // Log every 20th call to avoid spam
         qDebug() << "pollStatus() called" << pollCount << "times, state:" << static_cast<int>(m_state);
@@ -218,7 +213,6 @@ void KeycardBridge::pollStatus()
             }
         }
     }
-    m_pcscMutex.unlock();
 }
 
 QJsonObject KeycardBridge::checkPairing()
@@ -402,8 +396,6 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
         KEYCARD_LOG(QString("ERROR: Card not ready - m_commandSet: %1 m_cardReady: %2").arg(m_commandSet != nullptr).arg(m_cardReady));
         return result;
     }
-
-    QMutexLocker pcscLock(&m_pcscMutex);
 
     try {
         KEYCARD_LOG("STEP 1: Loading pairing from storage...");
@@ -676,7 +668,6 @@ void KeycardBridge::updateStatusFromCommandSet()
 
 bool KeycardBridge::isReaderPresent()
 {
-    if (!m_pcscMutex.tryLock()) return m_state != State::WaitingForReader;
     // Query PC/SC directly to check if any readers are present
     // This works even when no card is inserted
 
@@ -705,13 +696,11 @@ bool KeycardBridge::isReaderPresent()
     }
     SCardReleaseContext(hContext);
 
-    m_pcscMutex.unlock();
     return hasReaders;
 }
 
 bool KeycardBridge::isCardPresent()
 {
-    if (!m_pcscMutex.tryLock()) return m_cardReady;
     // Query PC/SC to check if a card is inserted in any reader
 
     SCARDCONTEXT hContext;
@@ -796,7 +785,6 @@ bool KeycardBridge::isCardPresent()
     SCardFreeMemory(hContext, readers);
     SCardReleaseContext(hContext);
 
-    m_pcscMutex.unlock();
     return cardFound;
 }
 
