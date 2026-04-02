@@ -427,12 +427,19 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
         KEYCARD_LOG(QString("STEP 3: AFTER openSecureChannel() call - result: %1").arg(scOpened));
 
         if (!scOpened) {
-            QString err = m_commandSet->lastError();
-            result["authorized"] = false;
-            result["error"] = "Failed to open secure channel: " + err;
-            m_lastError = "Secure channel failed: " + err;
-            KEYCARD_LOG(QString("ERROR: Secure channel failed: %1").arg(err));
-            return result;
+            // Retry: re-select and try again (card may have stale channel state)
+            KEYCARD_LOG("STEP 3b: Secure channel failed, retrying after fresh select...");
+            m_commandSet->select();
+            scOpened = m_commandSet->openSecureChannel(pairing);
+            if (!scOpened) {
+                QString err = m_commandSet->lastError();
+                result["authorized"] = false;
+                result["error"] = "Failed to open secure channel: " + err;
+                m_lastError = "Secure channel failed: " + err;
+                KEYCARD_LOG(QString("ERROR: Secure channel failed after retry: %1").arg(err));
+                return result;
+            }
+            KEYCARD_LOG("STEP 3b: Retry succeeded");
         }
 
         KEYCARD_LOG("STEP 4: Verifying PIN...");

@@ -110,7 +110,7 @@ FocusScope {
             var wasReaderPresent = readerPresent
 
             readerPresent = (state !== "READER_NOT_FOUND" && state !== "NO_PCSC")
-            cardPresent = (state === "CARD_PRESENT" || state === "READY" || state === "SESSION_ACTIVE")
+            cardPresent = (state === "CARD_PRESENT" || state === "READY" || state === "SESSION_ACTIVE" || state === "AUTHORIZED")
 
             var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
 
