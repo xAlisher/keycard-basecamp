@@ -201,17 +201,90 @@ The `getState()` method returns the current card/reader state. Useful for status
 
 These methods are used by keycard-ui to manage the approval flow. Other modules should NOT call these directly.
 
-| Method | Purpose |
-|--------|---------|
-| `getPendingAuths()` | List pending auth requests |
-| `authorizeRequest(authId, pin)` | Approve request with PIN |
-| `rejectRequest(authId)` | Decline request |
-| `getState()` | Poll card/reader state |
-| `discoverReader()` | Initialize PC/SC reader |
-| `discoverCard()` | Detect card and check pairing |
-| `checkPairing()` | Check pairing status |
-| `authorize(pin)` | Direct PIN verify (used internally) |
-| `deriveKey(domain)` | Direct key derivation (used internally) |
-| `closeSession()` | Close active session |
-| `pairCard(password, pin)` | Create new card pairing |
-| `unpairCard()` | Remove card pairing |
+### getPendingAuths()
+
+Returns all pending authorization requests.
+
+```json
+{ "pending": [{ "authId": "...", "domain": "...", "caller": "...", "timestamp": 1234567890 }], "count": 0 }
+```
+
+### authorizeRequest(authId, pin)
+
+Approve a pending request with the card PIN. Derives key on-card and auto-closes session.
+
+**Success:** `{ "authId": "...", "status": "complete", "key": "hex...", "message": "..." }`
+**PIN failed:** `{ "authId": "...", "status": "failed", "error": "...", "remainingAttempts": 2 }`
+**Not found:** `{ "error": "Auth request not found or already completed" }`
+
+### rejectRequest(authId)
+
+Decline a pending request.
+
+**Success:** `{ "authId": "...", "status": "rejected", "message": "..." }`
+**Not found:** `{ "error": "Auth request not found or already completed" }`
+
+### getState()
+
+Poll current card/reader state. Returns `{ "state": "<STATE>" }` — see State Values table above.
+
+### discoverReader()
+
+Initialize PC/SC reader monitoring.
+
+**Found:** `{ "found": true, "name": "Smart card reader" }`
+**Not found:** `{ "found": false }`
+
+### discoverCard()
+
+Detect card and check pairing status.
+
+**Found:** `{ "found": true, "uid": "card-uid-hex" }`
+**Not found:** `{ "found": false }`
+**No bridge:** `{ "found": false, "error": "Bridge not initialized - call discoverReader first" }`
+
+### checkPairing()
+
+Check pairing file status without decrypting.
+
+**Cached:** `{ "paired": true, "pairingIndex": 1, "status": "decrypted" }`
+**Locked:** `{ "paired": true, "status": "locked" }`
+**Legacy:** `{ "paired": true, "status": "legacy" }`
+**Not paired:** `{ "paired": false, "status": "not_paired" }`
+**Corrupted:** `{ "paired": false, "status": "corrupted" }`
+
+### authorize(pin)
+
+Direct PIN verification against the card. Decrypts pairing file, opens secure channel, verifies PIN.
+
+**Success:** `{ "authorized": true }`
+**Wrong PIN:** `{ "authorized": false, "error": "...", "remainingAttempts": 2 }`
+**Not paired:** `{ "authorized": false, "error": "Card not paired - pair first" }`
+**Corrupted:** `{ "authorized": false, "error": "Pairing file corrupted" }`
+
+### deriveKey(domain)
+
+Derive key at EIP-1581 BIP32 path for the given domain. Requires active session.
+
+**Success:** `{ "key": "hex-64-chars", "path": "m/43'/60'/1581'/..." }`
+**No session:** `{ "error": "No active session - authorize to derive keys" }`
+
+### closeSession()
+
+Close active session and clear pairing cache.
+
+**Always:** `{ "closed": true }`
+
+### pairCard(password, pin)
+
+Create new card pairing. PIN required for encryption-first persistence.
+
+**Success:** `{ "paired": true, "pairingIndex": 1 }`
+**Failed:** `{ "paired": false, "error": "..." }`
+
+### unpairCard()
+
+Remove card pairing from storage and card.
+
+**Success:** `{ "unpaired": true }`
+**Failed:** `{ "unpaired": false, "error": "..." }`
