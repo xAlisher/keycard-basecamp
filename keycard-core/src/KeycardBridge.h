@@ -97,9 +97,6 @@ public:
     // Access to command set (for advanced operations)
     std::shared_ptr<Keycard::CommandSet> commandSet() const { return m_commandSet; }
 
-    // Access to pairing storage (for encrypted operations)
-    std::shared_ptr<Keycard::IPairingStorage> pairingStorage() const { return m_pairingStorage; }
-
 signals:
     void stateChanged(KeycardBridge::State newState);
 

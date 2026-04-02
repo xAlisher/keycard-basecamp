@@ -306,14 +306,7 @@ Rectangle {
                                         pairResultDisplay.color = "#ff4444"
                                         return
                                     }
-                                    var pairingPin = pairingPinField.text
-                                    if (pairingPin.length === 0) {
-                                        result = '{"error":"PIN required for encrypted pairing storage"}'
-                                        pairResultDisplay.text = result
-                                        pairResultDisplay.color = "#ff4444"
-                                        return
-                                    }
-                                    result = logos.callModule("keycard", "pairCard", [password, pairingPin])
+                                    result = logos.callModule("keycard", "pairCard", [password])
                                     pairResultDisplay.text = result
                                     try {
                                         var obj = JSON.parse(result)
@@ -363,26 +356,6 @@ Rectangle {
                             id: pairingPasswordField
                             placeholderText: "KeycardDefaultPairing"
                             text: "KeycardDefaultPairing"
-                            Layout.fillWidth: true
-                            color: "#ffffff"
-                            background: Rectangle {
-                                color: "#0a0a0a"
-                                border.color: "#555555"
-                                border.width: 1
-                                radius: 3
-                            }
-                        }
-
-                        Text {
-                            text: "PIN (for encrypted storage):"
-                            color: "#aaaaaa"
-                            font.pixelSize: 13
-                        }
-
-                        TextField {
-                            id: pairingPinField
-                            placeholderText: "Card PIN"
-                            echoMode: TextInput.Password
                             Layout.fillWidth: true
                             color: "#ffffff"
                             background: Rectangle {
