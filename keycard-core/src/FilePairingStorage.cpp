@@ -64,7 +64,12 @@ bool FilePairingStorage::remove(const QString& instanceUID)
     // Clear cache
     m_cache.remove(instanceUID);
 
-    QJsonObject data = readFile();
+    bool hadParseError = false;
+    QJsonObject data = readFile(&hadParseError);
+    if (hadParseError) {
+        qWarning() << "FilePairingStorage::remove: Refusing to modify corrupted pairing file";
+        return false;
+    }
     if (!data.contains(instanceUID)) {
         qDebug() << "FilePairingStorage::remove: No pairing to remove for" << instanceUID;
         return true;
@@ -261,8 +266,13 @@ bool FilePairingStorage::saveEncrypted(const QString& instanceUID, const Keycard
     envelope["nonce"] = QString::fromUtf8(nonce.toHex());
     envelope["encrypted"] = QString::fromUtf8(ciphertext.toHex());
 
-    // Write to file (preserving other card entries)
-    QJsonObject data = readFile();
+    // Write to file (preserving other card entries, fail-closed on corruption)
+    bool hadParseError = false;
+    QJsonObject data = readFile(&hadParseError);
+    if (hadParseError) {
+        qWarning() << "FilePairingStorage::saveEncrypted: Refusing to overwrite corrupted pairing file";
+        return false;
+    }
     data[instanceUID] = envelope;
 
     if (!writeFile(data)) {
