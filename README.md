@@ -1,136 +1,103 @@
 # keycard-basecamp
 
-Standalone Keycard smartcard authentication module for Logos Basecamp.
+Hardware deterministic key generator for Logos Basecamp.
 
-## Overview
+Think of it like a password manager — but there's no vault, no master password, no cloud. One smartcard derives infinite unique keys, one per domain, always reproducible, never stored anywhere. It's sovereign — you hold the card, you hold the keys. And it's crypto-ready — BIP32 derivation, the same standard used by hardware wallets.
 
-This module provides smartcard authentication primitives for the Logos Basecamp ecosystem. Any Basecamp app can consume Keycard functionality via `logos.callModule("keycard", ...)`.
+**Status:** ✅ v1.0.0 released — [Download LGX packages](https://github.com/xAlisher/keycard-basecamp/releases/tag/v1.0.0)
 
-**Status:** ✅ Core operations working, hardware tested
+## How It Works
+
+Any Basecamp module can request a key:
+
+```
+Module calls requestAuth("notes_private", "notes")
+  → User sees request in keycard-ui
+  → User enters PIN on physical smartcard
+  → Card derives unique key for that domain (on-chip BIP32)
+  → Key returned to requesting module
+  → Session closes automatically
+```
+
+One card, infinite keys. Each derived deterministically from the domain — same domain always produces the same key.
 
 ## Architecture
 
-Built on **keycard-qt** (native C++/Qt library) for direct PC/SC smart card communication:
+- **keycard-core** — C++ plugin with native [keycard-qt](https://github.com/status-im/keycard-qt) integration, on-card BIP32 key derivation, encrypted pairing storage
+- **keycard-ui** — Single-screen QML UI: "No pending requests" or request card + PIN + approve/decline
+- **auth_showcase** — Demo module showing how to integrate with keycard
 
-- **keycard-core**: C++ module with native keycard-qt integration, state machine, and on-card BIP32 key derivation
-- **keycard-ui**: QML debug UI for testing state machine transitions
+## Security
 
-**Migration:** Migrated from libkeycard.so (CGO/14MB) to keycard-qt (native/~4-5MB) - 70% size reduction
-
-## Features
-
-**Core Operations:**
-- ✅ Reader and card auto-detection
-- ✅ Card pairing with pairing password (persistent storage)
-- ✅ PIN verification with retry tracking
-- ✅ On-card BIP32 key derivation (EIP-1581 standard)
-- ✅ Domain-based key isolation (deterministic path mapping)
-- ✅ Session management (authorize, derive, close)
-
-**Security Properties:**
-- ✅ PIN verification on-card (never leaves device)
-- ✅ BIP32 key derivation on-card (EIP-1581 compliant)
-- ✅ Domain separation via deterministic paths (no custom crypto)
-- ✅ Secure memory wiping (sodium_memzero)
-- ✅ Card UID verification (prevents card-swap attacks)
-- ✅ Standards-compliant derivation (interoperable with Keycard ecosystem)
-
-## Documentation
-
-See [SPEC.md](SPEC.md) for complete implementation specification.
-
-### Metadata Files (Preparatory)
-
-**Note:** `metadata.json` files in `keycard-core/` and `keycard-ui/` are **staged migration artifacts** for future `logos-module-builder` adoption (Phase 3 of logos-tutorial adoption plan).
-
-**Current status:**
-- `metadata.json` = Builder-aligned format (preparatory, not yet consumed by build)
-- `CMakeLists.txt` = Operational source of truth (current build system)
-- Old metadata files = Kept until full migration
-
-**Purpose:** When `logos-module-builder` stabilizes (currently experimental), these files enable quick migration to simplified build system.
-
-See [SPIKE_LOGOS_MODULE_BUILDER.md](SPIKE_LOGOS_MODULE_BUILDER.md) for context.
+- PIN verified on-card (never leaves device)
+- BIP32 key derivation on-card (EIP-1581 compliant)
+- Domain separation via deterministic paths (no custom crypto)
+- Pairing keys encrypted on disk (Argon2id + XSalsa20-Poly1305)
+- Secure memory wiping (sodium_memzero)
+- Card UID verification (prevents card-swap attacks)
+- No persistent sessions — one approval, one key, session closes
 
 ## Development
 
-### Clone
+### Prerequisites
 
-```bash
-# Simple clone (keycard-qt will be fetched automatically during build)
-git clone https://github.com/xAlisher/keycard-basecamp.git
-
-# Or with submodules for offline builds (optional)
-git clone --recursive https://github.com/xAlisher/keycard-basecamp.git
-```
+- [Nix](https://nixos.org/download.html) (for reproducible builds)
+- PC/SC smart card reader + [Keycard](https://keycard.tech/)
 
 ### Build
 
-**With Nix:**
 ```bash
-nix build
-```
-
-**With CMake (manual):**
-```bash
+nix develop
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ```
 
-**Note:** keycard-qt dependency is fetched automatically via CMake FetchContent if not present as a submodule.
+### Install & Run
+
+```bash
+cmake --install build --prefix ~/.local/share/Logos/LogosApp
+```
 
 ### Package LGX
 
-Create distributable LGX packages:
-
 ```bash
-nix run .#package-lgx
+mkdir -p dist && nix run .#package-lgx -- dist/
 ```
 
 Produces:
-- `keycard-core.lgx` - Core module with dependencies (libpcsclite removed for system compatibility)
-- `keycard-ui.lgx` - QML UI plugin
+- `keycard-core.lgx` — Core module (no bundled libpcsclite)
+- `keycard-ui.lgx` — All QML files, icons, metadata
 
-**Individual packages:**
-```bash
-nix build .#lib  # Build core module only
-nix build .#ui   # Build UI plugin only
-```
-
-### Testing
-
-**Testing tools pinned** (Phase 1 - reproducible versions):
+### Testing Tools
 
 ```bash
 nix run .#test-with-logoscore   # Headless backend testing
 nix run .#test-ui-standalone    # Isolated UI testing
-nix run .#inspect-module        # Module introspection
+nix run .#inspect-module        # Module introspection (lm CLI)
 ```
 
-**Current status:** Starter wrappers are available, but **full operational workflows require Phase 4** (module layout migration). The tools expect Basecamp directory structure (`Modules/keycard/`, `Plugins/keycard-ui/`) which will be created during migration to `logos-module-builder`.
+## Integration
 
-**Working now:** Tools are pinned to specific versions in `flake.nix` for reproducibility.
+Any Basecamp module can use keycard for key derivation:
 
-**Coming in Phase 4:** Full wrapper functionality after module packaging migration creates proper directory layout.
+```javascript
+// 1. Request authorization
+var result = logos.callModule("keycard", "requestAuth", ["my_domain", "my_module"])
+var authId = JSON.parse(result).authId
 
-**Manual testing (current workaround):**
-```bash
-# Install creates proper Basecamp structure
-cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev
-
-# Then wrappers can find modules in expected layout
-nix run .#inspect-module
+// 2. Poll for completion (user approves in keycard-ui)
+var status = logos.callModule("keycard", "checkAuthStatus", [authId])
+var obj = JSON.parse(status)
+if (obj.status === "complete") {
+    var key = obj.key  // Hardware-derived key for "my_domain"
+}
 ```
 
-### Install to Basecamp Dev
+## Documentation
 
-```bash
-cmake --install build --prefix ~/.local/share/Logos/LogosBasecampDev
-```
-
-## Implementation
-
-Initially based on KeycardBridge from [logos-notes](https://github.com/xAlisher/logos-notes), now fully migrated to native [keycard-qt](https://github.com/status-im/keycard-qt) library for better performance and smaller binary size.
+- [SPEC.md](SPEC.md) — Complete specification
+- [PROJECT_KNOWLEDGE.md](PROJECT_KNOWLEDGE.md) — Lessons learned
+- [WORKFLOW.md](WORKFLOW.md) — Fergie/Senty collaboration workflow
 
 ## License
 
