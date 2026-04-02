@@ -4,6 +4,7 @@
 #include <QString>
 #include <QJsonObject>
 #include <memory>
+#include <atomic>
 
 // Forward declarations (keycard-qt)
 namespace Keycard {
@@ -94,6 +95,10 @@ public:
     bool keyInitialized() const { return m_keyInitialized; }
     QString keyUID() const { return m_keyUID; }
 
+    // Operation lock — prevents concurrent PC/SC access during multi-step flows
+    bool isOperationInProgress() const { return m_operationInProgress; }
+    void setOperationInProgress(bool v) { m_operationInProgress = v; }
+
     // Access to command set (for advanced operations)
     std::shared_ptr<Keycard::CommandSet> commandSet() const { return m_commandSet; }
 
@@ -128,4 +133,7 @@ private:
 
     // Throttle getStatus() calls (takes ~600ms each)
     qint64 m_lastStatusCheck = 0;
+
+    // Operation lock — prevents concurrent PC/SC during authorize flow
+    std::atomic<bool> m_operationInProgress{false};
 };

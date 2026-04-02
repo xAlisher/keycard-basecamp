@@ -1,5 +1,6 @@
 #include "plugin.h"
 #include "KeycardBridge.h"
+#include <keycard-qt/command_set.h>
 #include <PCSC/winscard.h>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -314,8 +315,9 @@ QString KeycardPlugin::getState()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Poll status to detect card/reader removal
-    m_bridge->pollStatus();
+    // Poll status to detect card/reader removal (skip during authorize)
+    if (!m_bridge->isOperationInProgress())
+        m_bridge->pollStatus();
 
     QJsonObject result;
 
@@ -387,6 +389,13 @@ QString KeycardPlugin::testPCSC()
 
 QString KeycardPlugin::checkReaderPresent()
 {
+    // Skip during multi-step operations to avoid PC/SC contention
+    if (m_bridge && m_bridge->isOperationInProgress()) {
+        QJsonObject result;
+        result["found"] = true;  // Optimistic — card was present when operation started
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
     // Direct PC/SC check — no bridge, no cache
     SCARDCONTEXT hContext;
     LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
@@ -412,6 +421,13 @@ QString KeycardPlugin::checkReaderPresent()
 
 QString KeycardPlugin::checkCardPresent()
 {
+    // Skip during multi-step operations to avoid PC/SC contention
+    if (m_bridge && m_bridge->isOperationInProgress()) {
+        QJsonObject result;
+        result["found"] = true;  // Optimistic — card was present when operation started
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
     // Direct PC/SC check — no bridge, no cache
     SCARDCONTEXT hContext;
     LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
@@ -452,6 +468,86 @@ QString KeycardPlugin::checkCardPresent()
 
     QJsonObject result;
     result["found"] = cardFound;
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::unblockPIN(const QString& puk, const QString& newPIN)
+{
+    qDebug() << "KeycardPlugin::unblockPIN() called";
+
+    if (!m_bridge) {
+        QJsonObject result;
+        result["success"] = false;
+        result["error"] = "Bridge not initialized";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    if (!m_bridge->commandSet()) {
+        QJsonObject result;
+        result["success"] = false;
+        result["error"] = "No command set - card not connected";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    try {
+        auto cs = m_bridge->commandSet();
+        if (!cs) {
+            QJsonObject result;
+            result["success"] = false;
+            result["error"] = "Command set not available";
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+
+        // Select applet and open secure channel for unblock
+        cs->select();
+
+        // Load pairing for secure channel
+        auto pairingResult = m_bridge->checkPairing();
+        if (!pairingResult.value("paired").toBool()) {
+            QJsonObject result;
+            result["success"] = false;
+            result["error"] = "Card not paired - cannot open secure channel";
+            addActivityToResponse(result);
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+
+        bool success = cs->unblockPIN(puk, newPIN);
+
+        QJsonObject result;
+        result["success"] = success;
+        if (success) {
+            logActivity("PIN unblocked successfully", "success");
+        } else {
+            result["error"] = "Unblock failed - wrong PUK?";
+            logActivity("PIN unblock failed", "error");
+        }
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+
+    } catch (const std::exception& e) {
+        QJsonObject result;
+        result["success"] = false;
+        result["error"] = QString(e.what());
+        logActivity(QString("PIN unblock error: %1").arg(e.what()), "error");
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+}
+
+QString KeycardPlugin::getCardStatus()
+{
+    if (!m_bridge) {
+        QJsonObject result;
+        result["error"] = "Bridge not initialized";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject result;
+    result["state"] = static_cast<int>(m_bridge->state());
+    result["pinAttempts"] = m_bridge->remainingPINAttempts();
+    result["pukAttempts"] = m_bridge->remainingPUKAttempts();
+    result["blocked"] = (m_bridge->state() == KeycardBridge::State::BlockedPIN);
+    result["keyInitialized"] = m_bridge->keyInitialized();
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
@@ -586,12 +682,25 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Lock out concurrent PC/SC access for the entire authorize+derive sequence
+    if (m_bridge) m_bridge->setOperationInProgress(true);
+
     // SECURITY: Verify PIN first (hardware verification)
+    logActivity(QString("Bridge state before authorize: %1, cardReady: %2")
+        .arg(static_cast<int>(m_bridge->state()))
+        .arg(m_bridge->isCardPresent()), "info");
+
     QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
 
     if (!authResult.value("authorized").toBool()) {
+        if (m_bridge) m_bridge->setOperationInProgress(false);
+
         targetRequest->status = "failed";
         targetRequest->error = authResult.value("error").toString("PIN verification failed");
+
+        // Log full auth result for debugging
+        logActivity(QString("Auth failed: %1").arg(
+            QJsonDocument(authResult).toJson(QJsonDocument::Compact).constData()), "error");
 
         QJsonObject result;
         result["authId"] = authId;
@@ -599,6 +708,7 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
         result["error"] = targetRequest->error;
         result["remainingAttempts"] = authResult.value("remainingAttempts").toInt();
 
+        addActivityToResponse(result);
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
@@ -607,6 +717,8 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     QJsonObject keyResult = QJsonDocument::fromJson(deriveKey(domain).toUtf8()).object();
 
     if (keyResult.contains("error")) {
+        if (m_bridge) m_bridge->setOperationInProgress(false);
+
         targetRequest->status = "failed";
         targetRequest->error = keyResult.value("error").toString();
 
@@ -615,6 +727,7 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
         result["status"] = "failed";
         result["error"] = targetRequest->error;
 
+        addActivityToResponse(result);
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
@@ -627,6 +740,9 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     QString derivedPath = keyResult.value("path").toString();
     logActivity(QString("Request from %1 approved for domain %2").arg(moduleName, domain), "success");
     logActivity(QString("Key derived for module %1 following approved path %2").arg(moduleName, derivedPath), "success");
+
+    // Release operation lock before session cleanup
+    if (m_bridge) m_bridge->setOperationInProgress(false);
 
     // Auto-close session after approval (Epic #55: no persistent session)
     m_sessionState = SessionState::NoSession;

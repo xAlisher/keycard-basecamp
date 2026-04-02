@@ -39,6 +39,8 @@ public:
     Q_INVOKABLE QString testPCSC();  // Debug: test PC/SC directly
     Q_INVOKABLE QString checkReaderPresent();  // Fresh PC/SC check
     Q_INVOKABLE QString checkCardPresent();   // Fresh PC/SC check
+    Q_INVOKABLE QString unblockPIN(const QString& puk, const QString& newPIN);
+    Q_INVOKABLE QString getCardStatus();  // Get PIN/PUK attempts remaining
 
     // Authorization request API
     Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);
