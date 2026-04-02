@@ -38,6 +38,7 @@ public:
     Q_INVOKABLE QString getLastError();
     Q_INVOKABLE QString testPCSC();  // Debug: test PC/SC directly
     Q_INVOKABLE QString checkReaderPresent();  // Fresh PC/SC check
+    Q_INVOKABLE QString checkCardPresent();   // Fresh PC/SC check
 
     // Authorization request API
     Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);

@@ -410,6 +410,51 @@ QString KeycardPlugin::checkReaderPresent()
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
+QString KeycardPlugin::checkCardPresent()
+{
+    // Direct PC/SC check — no bridge, no cache
+    SCARDCONTEXT hContext;
+    LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+    if (rv != SCARD_S_SUCCESS) {
+        QJsonObject result;
+        result["found"] = false;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    LPSTR readers = NULL;
+    DWORD dwReaders = SCARD_AUTOALLOCATE;
+    rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
+    if (rv != SCARD_S_SUCCESS || !readers) {
+        SCardReleaseContext(hContext);
+        QJsonObject result;
+        result["found"] = false;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    bool cardFound = false;
+    char* reader = readers;
+    while (*reader != '\0') {
+        SCARD_READERSTATE readerState;
+        memset(&readerState, 0, sizeof(readerState));
+        readerState.szReader = reader;
+        readerState.dwCurrentState = SCARD_STATE_UNAWARE;
+
+        rv = SCardGetStatusChange(hContext, 0, &readerState, 1);
+        if (rv == SCARD_S_SUCCESS && (readerState.dwEventState & SCARD_STATE_PRESENT)) {
+            cardFound = true;
+            break;
+        }
+        reader += strlen(reader) + 1;
+    }
+
+    SCardFreeMemory(hContext, readers);
+    SCardReleaseContext(hContext);
+
+    QJsonObject result;
+    result["found"] = cardFound;
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
 QString KeycardPlugin::mapBridgeStateToSpec(KeycardBridge::State state)
 {
     // Map KeycardBridge states to SPEC.md 7-state model
