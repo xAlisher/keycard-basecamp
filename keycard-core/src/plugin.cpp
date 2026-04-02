@@ -1,5 +1,6 @@
 #include "plugin.h"
 #include "KeycardBridge.h"
+#include <PCSC/winscard.h>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -381,6 +382,31 @@ QString KeycardPlugin::testPCSC()
         result["bridge_state"] = static_cast<int>(m_bridge->state());
     }
 
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::checkReaderPresent()
+{
+    // Direct PC/SC check — no bridge, no cache
+    SCARDCONTEXT hContext;
+    LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+    if (rv != SCARD_S_SUCCESS) {
+        QJsonObject result;
+        result["found"] = false;
+        result["error"] = "PC/SC not available";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    LPSTR readers = NULL;
+    DWORD dwReaders = SCARD_AUTOALLOCATE;
+    rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
+    bool found = (rv == SCARD_S_SUCCESS && dwReaders > 1);
+
+    if (readers) SCardFreeMemory(hContext, readers);
+    SCardReleaseContext(hContext);
+
+    QJsonObject result;
+    result["found"] = found;
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
