@@ -284,6 +284,14 @@ Host runtime validation in Basecamp is required **only** when the issue explicit
 - If you post a new comment or addendum on an issue, you **must** ping the other agent via tmux-bridge — even if the issue was already LGTM'd.
 - An un-pinged update is invisible to the other agent. They will not check GitHub unprompted.
 
+### Cooperative Prompt Approval
+
+When Fergie expects a permission prompt (e.g., `gh pr create`, `gh pr merge`):
+1. Fergie pings Senty before running the command: "about to run X, may need prompt approval"
+2. Senty polls Fergie's pane with `tmux-bridge read`
+3. If a visible numbered prompt appears and is clearly within the agreed workflow scope, Senty approves by sending the choice number + Enter
+4. This is cooperative approval, not background monitoring — Senty only sees snapshots on explicit reads
+
 ### Batching Rules
 
 - If multiple issues are independently reviewable at once, batch them into one tmux ping instead of sending multiple separate nudges.
