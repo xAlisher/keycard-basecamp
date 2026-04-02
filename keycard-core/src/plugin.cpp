@@ -562,15 +562,37 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
 
     if (!authResult.value("authorized").toBool()) {
-        targetRequest->status = "failed";
-        targetRequest->error = authResult.value("error").toString("PIN verification failed");
+        int remaining = authResult.value("remainingAttempts").toInt(-1);
+
+        // Also check bridge's cached PIN counter (more reliable than per-response)
+        if (remaining <= 0 && m_bridge) {
+            int bridgeRemaining = m_bridge->remainingPINAttempts();
+            if (bridgeRemaining >= 0) remaining = bridgeRemaining;
+        }
+
+        // Keep request pending for retry (unless card is blocked)
+        if (remaining == 0) {
+            targetRequest->status = "failed";
+            targetRequest->error = "Keycard blocked";
+            logActivity("Wrong PIN, Keycard blocked", "error");
+        } else {
+            // Stay pending — user can retry with correct PIN
+            targetRequest->error = authResult.value("error").toString("PIN verification failed");
+            if (remaining > 0) {
+                logActivity(QString("Wrong PIN, %1 attempt(s) left").arg(remaining), "error");
+            } else {
+                logActivity("Wrong PIN", "error");
+            }
+            logActivity("Try again", "warning");
+        }
 
         QJsonObject result;
         result["authId"] = authId;
-        result["status"] = "failed";
+        result["status"] = targetRequest->status;  // "pending" or "failed"
         result["error"] = targetRequest->error;
-        result["remainingAttempts"] = authResult.value("remainingAttempts").toInt();
+        result["remainingAttempts"] = remaining;
 
+        addActivityToResponse(result);
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
@@ -587,6 +609,7 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
         result["status"] = "failed";
         result["error"] = targetRequest->error;
 
+        addActivityToResponse(result);
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
