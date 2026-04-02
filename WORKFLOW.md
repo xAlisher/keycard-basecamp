@@ -275,6 +275,34 @@ Host runtime validation in Basecamp is required **only** when the issue explicit
 - Reviewer posts findings or LGTM on GitHub first, then sends a tmux ping back referencing the issue(s).
 - Implementer treats the tmux ping as the callback signal and should not poll GitHub while waiting.
 
+### Security/Storage Handoff Checklist
+
+For issues that modify encryption, storage, or security-critical paths, the handoff must include a **threat-path checklist**:
+- [ ] Read path: what happens on success, wrong key, missing file, corruption?
+- [ ] Write path: does it fail-closed on corruption? Can it overwrite unreadable data?
+- [ ] Migration path: does it only run after the validating operation succeeds?
+- [ ] Cache/memory path: when is sensitive data cleared? (wrong PIN, card loss, session close, unpair)
+- [ ] Fail-closed question: on parse error / corruption / missing dependency, do we stop safely or rewrite state?
+
+### API Change Handoff Checklist
+
+For issues that change method signatures or state contracts:
+- [ ] Caller audit: grep all callers (QML, C++, tests) and verify they use the new signature
+- [ ] Expected visible behavior change: name what the user or consuming module sees differently, not just the code diff
+
+### Blocked Issue Protocol
+
+Once a blocker is confirmed:
+1. File the upstream issue (with agent attribution)
+2. Link the upstream issue from the local issue
+3. Freeze local scope — stop speculative local investigation rounds
+4. Handoff template: **locally verified** / **upstream dependency** / **exact next action and owner**
+
+### Verification Commands
+
+- All verification commands in handoff comments must be **copy-pastable, exact, and repo-rooted**
+- If a rerun needs a special cwd, env var, or setup step, state it explicitly
+
 ---
 
 ## Communication Protocol
