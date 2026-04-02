@@ -357,15 +357,15 @@ FocusScope {
                         spacing: 12
 
                         Rectangle {
-                            width: 85
+                            width: root.verifyingPin ? 100 : 85
                             height: 32
-                            color: approveArea.containsMouse ? "#e64a19" : DesignTokens.primary
+                            color: root.verifyingPin ? DesignTokens.secondary : (approveArea.containsMouse ? "#e64a19" : DesignTokens.primary)
                             radius: 16
-                            opacity: root.pinValue.length === root.maxPinLength ? 1.0 : 0.5
+                            opacity: (root.pinValue.length === root.maxPinLength || root.verifyingPin) ? 1.0 : 0.5
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "Approve"
+                                text: root.verifyingPin ? "Approving..." : "Approve"
                                 color: DesignTokens.foreground
                                 font.pixelSize: 14
                                 font.weight: Font.Medium
