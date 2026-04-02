@@ -22,7 +22,6 @@ FocusScope {
     property int maxPinLength: 6
     property bool verifyingPin: false
     property int attemptsRemaining: 3
-    property bool cardBlocked: false
 
     function checkHardware() {
         var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
@@ -93,7 +92,6 @@ FocusScope {
                 root.pairingSlot = r.pairingIndex || -1
                 root.pairingStatus = "paired"
                 activityLog.addEntry(ts, "Keycard already paired. Slot " + root.pairingSlot, "success")
-                checkCardStatus()
             } else {
                 activityLog.addEntry(ts, "Keycard not paired. Pairing...", "info")
                 var pairResult = logos.callModule("keycard", "pairCard", ["KeycardDefaultPairing"])
@@ -104,8 +102,7 @@ FocusScope {
                         root.pairingSlot = pr.pairingIndex || -1
                         root.pairingStatus = "paired"
                         activityLog.addEntry(ts, "Keycard paired successfully. Slot " + root.pairingSlot, "success")
-                        checkCardStatus()
-                    } else {
+                            } else {
                         root.paired = false
                         var error = pr.error || ""
                         if (error.toLowerCase().indexOf("slot") >= 0 || error.toLowerCase().indexOf("free") >= 0) {
@@ -122,44 +119,6 @@ FocusScope {
                 }
             }
         } catch (e) {}
-    }
-
-    function checkCardStatus() {
-        var result = logos.callModule("keycard", "getCardStatus", [])
-        try {
-            var r = JSON.parse(result)
-            var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
-            root.cardBlocked = r.blocked || false
-            if (r.pinAttempts >= 0)
-                root.attemptsRemaining = r.pinAttempts
-            if (root.cardBlocked) {
-                activityLog.addEntry(ts, "WARNING: Card PIN is BLOCKED (0 attempts left)", "error")
-                activityLog.addEntry(ts, "Use PUK to unblock (Ctrl+U)", "warning")
-            } else if (r.pinAttempts >= 0 && r.pinAttempts < 3) {
-                activityLog.addEntry(ts, "PIN attempts remaining: " + r.pinAttempts, "warning")
-            }
-        } catch (e) {}
-    }
-
-    function unblockCard() {
-        var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
-        activityLog.addEntry(ts, "Attempting to unblock PIN with default PUK...", "info")
-        var result = logos.callModule("keycard", "unblockPIN", ["000000000000", "000000"])
-        try {
-            var r = JSON.parse(result)
-            if (r._activity) {
-                for (var i = 0; i < r._activity.length; i++)
-                    activityLog.addEntry(r._activity[i].timestamp, r._activity[i].message, r._activity[i].level)
-            }
-            if (r.success) {
-                root.cardBlocked = false
-                root.attemptsRemaining = 3
-                ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
-                activityLog.addEntry(ts, "PIN reset to 000000", "success")
-            }
-        } catch (e) {
-            activityLog.addEntry(ts, "Unblock failed: " + e, "error")
-        }
     }
 
     function checkPendingRequests() {
@@ -224,7 +183,7 @@ FocusScope {
         id: hiddenInput
         visible: false
         focus: true
-        enabled: (root.currentRequest !== null && root.paired && !root.cardBlocked) || root.cardBlocked
+        enabled: root.currentRequest !== null && root.paired
 
         onTextChanged: {
             var text = hiddenInput.text
@@ -239,11 +198,8 @@ FocusScope {
         }
 
         Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_U && (event.modifiers & Qt.ControlModifier)) {
-                root.unblockCard()
-                event.accepted = true
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                if (root.pinValue.length === root.maxPinLength && root.paired && !root.verifyingPin && !root.cardBlocked)
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (root.pinValue.length === root.maxPinLength && root.paired && !root.verifyingPin)
                     root.approveRequest()
                 event.accepted = true
             } else if (event.key === Qt.Key_Backspace) {
@@ -289,7 +245,7 @@ FocusScope {
                 Text {
                     anchors.centerIn: parent
                     visible: root.currentRequest === null
-                    text: root.cardBlocked ? "Card PIN BLOCKED — press Ctrl+U to unblock" : (root.pendingChecked ? "No pending requests" : "Looking for pending requests...")
+                    text: root.pendingChecked ? "No pending requests" : "Looking for pending requests..."
                     color: DesignTokens.foregroundSecondary
                     font.pixelSize: 24
                     font.weight: Font.Medium
@@ -409,13 +365,41 @@ FocusScope {
                             color: approveArea.containsMouse ? "#e64a19" : DesignTokens.primary
                             opacity: (root.pinValue.length === root.maxPinLength && root.paired) ? 1.0 : 0.5
 
+                            // Static label
                             Text {
                                 anchors.centerIn: parent
+                                visible: !root.verifyingPin
                                 text: "Approve"
                                 color: DesignTokens.foreground
                                 font.pixelSize: 14
                                 font.weight: Font.Medium
                                 font.family: DesignTokens.fontPrimary
+                            }
+
+                            // Animated dots
+                            Row {
+                                anchors.centerIn: parent
+                                visible: root.verifyingPin
+                                spacing: 6
+
+                                Repeater {
+                                    model: 3
+                                    Rectangle {
+                                        width: 6
+                                        height: 6
+                                        radius: 3
+                                        color: DesignTokens.foreground
+
+                                        SequentialAnimation on opacity {
+                                            running: root.verifyingPin
+                                            loops: Animation.Infinite
+                                            PauseAnimation { duration: index * 200 }
+                                            NumberAnimation { from: 0.2; to: 1; duration: 300 }
+                                            NumberAnimation { from: 1; to: 0.2; duration: 300 }
+                                            PauseAnimation { duration: (2 - index) * 200 }
+                                        }
+                                    }
+                                }
                             }
 
                             MouseArea {
