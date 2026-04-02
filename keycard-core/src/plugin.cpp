@@ -558,6 +558,10 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     logActivity(QString("Key derived for module %1 following approved path %2").arg(moduleName, derivedPath), "success");
     logActivity(QString("Go back to %1 module to continue").arg(moduleName), "warning");
 
+    // Auto-close session after approval (Epic #55: no persistent session)
+    m_sessionState = SessionState::NoSession;
+    logActivity("Session closed", "success");
+
     QJsonObject result;
     result["authId"] = authId;
     result["status"] = "complete";
