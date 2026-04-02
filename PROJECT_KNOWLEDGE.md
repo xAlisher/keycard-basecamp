@@ -2359,3 +2359,17 @@ This should happen automatically as part of the merge workflow — not require a
 
 ### Lesson: keep demo script and code in sync
 Issue #70 was created during Epic #55 but only implemented when the demo script revealed the session wasn't actually closing. If a feature is described in user-facing copy, verify the code matches before release.
+
+## Issue #43 Lessons — Encrypted Pairing Storage
+
+### Lesson: migration must happen AFTER the operation it validates
+Encrypting a legacy plaintext file with a user-provided PIN must wait until the card confirms the PIN is correct. Migrating before verification means a wrong PIN can encrypt the file under the wrong secret, bricking access. Senty caught this in Round 1.
+
+### Lesson: every write path must be fail-closed on corruption
+If `readFile()` returns empty on parse error, all consumers (probe, load, save, remove) must distinguish "file missing" from "file corrupted". Otherwise a corrupted file gets silently overwritten. Senty caught this across two rounds — first for probe/load, then for save/remove.
+
+### Lesson: API signature changes must update ALL callers
+When `pairCard(password)` became `pairCard(password, pin)`, the DebugPanel QML still called the old one-arg version. Always grep for all callers before committing an API change.
+
+### Lesson: security reviews need multiple rounds — plan for it
+Issue #43 took 3 review rounds with Senty. Each round caught real issues the previous fix introduced or missed. For security-critical code, expect iterative review and don't rush to merge after the first fix.
