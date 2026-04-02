@@ -38,6 +38,9 @@ public:
     Q_INVOKABLE QString getLastError();
     Q_INVOKABLE QString testPCSC();  // Debug: test PC/SC directly
 
+    // Card presence (for consuming modules to poll)
+    Q_INVOKABLE QString getCardPresence();
+
     // Authorization request API
     Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);
     Q_INVOKABLE QString checkAuthStatus(const QString& authId);
