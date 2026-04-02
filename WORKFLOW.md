@@ -305,6 +305,34 @@ Once a blocker is confirmed:
 
 ---
 
+## Clarification Triggers
+
+When the user's input touches any of the following topics, **stop and request clarification** before proceeding:
+
+### A) Security or contract-sensitive work
+If the task involves encryption, key handling, storage security, or API contracts:
+- **Ask for the threat model** — even 2-3 bullets (e.g., "attacker has filesystem access but not the card")
+- Do not infer security requirements — request them explicitly
+
+### B) Ambiguous success conditions
+If the task description doesn't specify what "done" looks like:
+- **Ask for operational success criteria** — e.g., "encrypted on disk" vs "fixed"
+- Clarify: code-only, runtime proof, upstream issue, package produced?
+
+### C) Potentially blocked or upstream-dependent work
+If the task may depend on external repos, unreleased features, or untested environments:
+- **Ask for a stop condition** — e.g., "try two paths, if neither works, file upstream and stop"
+- Do not over-investigate locally without a boundary
+
+### D) Autonomous execution scope
+If the user says "go ahead" or "follow protocol without asking":
+- **Confirm which actions are pre-approved** — GitHub comments, pings, issue triage, merges?
+- When in doubt, ask once up front rather than interrupting mid-flow
+
+**Both Fergie and Senty must follow these triggers.** When triggered, notify the user and request the missing context before continuing.
+
+---
+
 ## Communication Protocol
 
 - **Fergie comments:** Start with `Fergie:`
