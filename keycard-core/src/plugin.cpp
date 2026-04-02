@@ -874,6 +874,12 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
         // calling module only sees pending/complete/declined
         int remaining = authResult.value("remainingAttempts").toInt(-1);
 
+        // Also check bridge's cached PIN counter (more reliable than per-response)
+        if (remaining <= 0 && m_bridge) {
+            int bridgeRemaining = m_bridge->remainingPINAttempts();
+            if (bridgeRemaining >= 0) remaining = bridgeRemaining;
+        }
+
         QJsonObject result;
         result["authId"] = authId;
         result["status"] = "retry";
