@@ -169,7 +169,16 @@ When all sub-issues are committed to the epic branch:
 2. Notify the user that the branch is ready for manual testing
 3. **Wait for user confirmation** — do not merge to master without it
 
-### 8. Merge to Master (After User Test)
+### 7b. Post-Testing Fix Round
+
+After user testing reveals bugs:
+1. Fix each bug and commit to the branch
+2. **Post a summary on the epic issue** listing all problems found + fixes applied + commit SHAs
+3. **Ping Senty for review** of the fixes before proceeding to merge
+4. Wait for Senty LGTM on the fix round
+5. If user needs to re-test, repeat from step 7
+
+### 8. Merge to Master (After User Test + Fix Review)
 
 Only after user confirms the branch works:
 ```bash
