@@ -195,6 +195,16 @@ After every merge to master:
 2. Commit and push the lessons to master
 3. Cover: what went wrong, what Senty caught, workflow improvements, system-level findings
 
+### 10. Auto Retro (After Every Epic Merge)
+
+**This step is mandatory — do not skip.**
+
+After every epic merge to master:
+1. Discuss with Senty via tmux-bridge: what worked, what didn't, improvements
+2. Share feedback for the user (orchestration, communication, scope clarity)
+3. Update WORKFLOW.md with any new rules
+4. Commit retro outcomes
+
 ---
 
 ## LGX Release Workflow
