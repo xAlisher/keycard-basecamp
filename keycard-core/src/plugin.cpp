@@ -717,10 +717,10 @@ QString KeycardPlugin::getCardPresence()
 {
     QJsonObject result;
 
+    // Initialize bridge if needed (so consumers can use this as first call)
     if (!m_bridge) {
-        result["present"] = false;
-        result["readerConnected"] = false;
-        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        m_bridge = new KeycardBridge(this);
+        m_bridge->start();
     }
 
     m_bridge->pollStatus();

@@ -122,6 +122,41 @@ On approval, your poller receives `status: "complete"` with the signature or key
 
 ---
 
+## Detecting Card Removal
+
+After your module receives a key, you may want to lock features if the card is removed.
+
+### Using KeycardAuth component (recommended)
+
+```qml
+KeycardAuth {
+    domain: "my_domain"
+    caller: "my_module"
+    watchCardPresence: true  // Enable card removal detection
+
+    onKeyReceived: function(hexKey) { unlock(hexKey) }
+    onCardRemoved: { lockSession() }
+}
+```
+
+### Manual polling
+
+```qml
+Timer {
+    interval: 2000
+    running: isUnlocked
+    repeat: true
+    onTriggered: {
+        var r = JSON.parse(logos.callModule("keycard", "getCardPresence", []))
+        if (!r.present) lockSession()
+    }
+}
+```
+
+See [KEYCARD_API.md](KEYCARD_API.md#getcardpresence) for full response shape.
+
+---
+
 ## Domain naming
 
 ```
