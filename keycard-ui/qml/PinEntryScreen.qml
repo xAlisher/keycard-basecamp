@@ -174,6 +174,11 @@ FocusScope {
                     root.pinValue = root.pinValue.slice(0, -1)
                 }
                 event.accepted = true
+            } else if (event.key === Qt.Key_Escape) {
+                if (root.currentRequest) {
+                    root.declineRequest()
+                }
+                event.accepted = true
             }
         }
     }
@@ -494,6 +499,14 @@ FocusScope {
 
         var result = logos.callModule("keycard", "rejectRequest", [currentRequest.authId])
         processActivity(result)
+
+        try {
+            var response = JSON.parse(result)
+            if (response.error) {
+                var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
+                activityLog.addEntry(timestamp, "Decline failed: " + response.error, "error")
+            }
+        } catch (e) {}
 
         currentRequest = null
         pinValue = ""
