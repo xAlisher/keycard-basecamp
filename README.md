@@ -101,4 +101,4 @@ if (obj.status === "complete") {
 
 ## License
 
-TBD
+MIT
