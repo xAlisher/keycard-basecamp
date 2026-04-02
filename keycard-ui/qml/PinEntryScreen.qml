@@ -463,29 +463,47 @@ FocusScope {
 
         verifyingPin = true
 
+        // Stop ALL polling to prevent PC/SC concurrency conflicts (#89)
+        stateMonitor.stop()
+        nextRequestTimer.stop()
+
         var timestamp = Qt.formatTime(new Date(), "[HH:mm:ss]")
         activityLog.addEntry(timestamp, "Authorizing request from " + currentRequest.caller + "...", "info")
 
-        var result = logos.callModule("keycard", "authorizeRequest", [currentRequest.authId, pinValue])
-        processActivity(result)
+        // Delay authorize call to let any in-flight polls complete
+        var authId = currentRequest.authId
+        var pin = pinValue
+        authorizeDelay.authId = authId
+        authorizeDelay.pin = pin
+        authorizeDelay.start()
+    }
 
-        verifyingPin = false
+    Timer {
+        id: authorizeDelay
+        interval: 1500  // Wait for in-flight PC/SC calls to complete
+        property string authId: ""
+        property string pin: ""
+        onTriggered: {
+            var result = logos.callModule("keycard", "authorizeRequest", [authId, pin])
+            processActivity(result)
 
-        try {
-            var response = JSON.parse(result)
-            if (response.status === "complete") {
-                // Success — clear current request, return to empty state
-                currentRequest = null
-                pinValue = ""
-            } else {
-                // PIN failed or error
-                attemptsRemaining = response.remainingAttempts || 0
-                pinValue = ""
-                hiddenInput.forceActiveFocus()
+            stateMonitor.start()
+            root.verifyingPin = false
+
+            try {
+                var response = JSON.parse(result)
+                if (response.status === "complete") {
+                    root.currentRequest = null
+                    root.pinValue = ""
+                } else {
+                    root.attemptsRemaining = response.remainingAttempts || 0
+                    root.pinValue = ""
+                    hiddenInput.forceActiveFocus()
+                }
+            } catch (e) {
+                console.error("Failed to authorize request:", e)
+                root.pinValue = ""
             }
-        } catch (e) {
-            console.error("Failed to authorize request:", e)
-            pinValue = ""
         }
     }
 

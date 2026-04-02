@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QString>
 #include <QJsonObject>
+#include <QMutex>
 #include <memory>
 
 // Forward declarations (keycard-qt)
@@ -125,6 +126,9 @@ private:
     int m_remainingPUK = -1;
     bool m_keyInitialized = false;
     QString m_keyUID;
+
+    // Serialize PC/SC access — prevents concurrent calls from crashing (#89)
+    QMutex m_pcscMutex;
 
     // Throttle getStatus() calls (takes ~600ms each)
     qint64 m_lastStatusCheck = 0;

@@ -83,10 +83,15 @@ QString KeycardPlugin::discoverCard()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Actively check for card presence (helps detect cards that were inserted before detection started)
-    m_bridge->isCardPresent();
+    // Skip if another PC/SC operation is in progress (#89)
+    if (m_pcscBusy) {
+        QJsonObject result;
+        result["found"] = true;  // Assume card still there during authorize
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
 
-    // Poll status after card check to update state
+    // Actively check for card presence
+    m_bridge->isCardPresent();
     m_bridge->pollStatus();
 
     QJsonObject result;
@@ -213,8 +218,10 @@ QString KeycardPlugin::authorize(const QString& pin)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Authorize with card
+    // Authorize with card (block concurrent PC/SC access)
+    m_pcscBusy = true;
     QJsonObject authResult = m_bridge->authorize(pin);
+    m_pcscBusy = false;
 
     // If successful, start session
     if (authResult.value("authorized").toBool()) {
@@ -313,7 +320,12 @@ QString KeycardPlugin::getState()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Poll status to detect card/reader removal
+    // Skip polling if another PC/SC operation is in progress (#89)
+    if (m_pcscBusy) {
+        QJsonObject result;
+        result["state"] = "CARD_PRESENT";  // Assume card is still there during authorize
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
     m_bridge->pollStatus();
 
     QJsonObject result;
