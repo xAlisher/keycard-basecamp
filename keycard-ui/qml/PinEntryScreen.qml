@@ -93,30 +93,9 @@ FocusScope {
                 root.pairingStatus = "paired"
                 activityLog.addEntry(ts, "Keycard already paired. Slot " + root.pairingSlot, "success")
             } else {
-                activityLog.addEntry(ts, "Keycard not paired. Pairing...", "info")
-                var pairResult = logos.callModule("keycard", "pairCard", ["KeycardDefaultPairing"])
-                try {
-                    var pr = JSON.parse(pairResult)
-                    if (pr.paired) {
-                        root.paired = true
-                        root.pairingSlot = pr.pairingIndex || -1
-                        root.pairingStatus = "paired"
-                        activityLog.addEntry(ts, "Keycard paired successfully. Slot " + root.pairingSlot, "success")
-                            } else {
-                        root.paired = false
-                        var error = pr.error || ""
-                        if (error.toLowerCase().indexOf("slot") >= 0 || error.toLowerCase().indexOf("free") >= 0) {
-                            root.pairingStatus = "no_slots"
-                            activityLog.addEntry(ts, "Pairing failed — no free slots", "error")
-                        } else {
-                            root.pairingStatus = "failed"
-                            activityLog.addEntry(ts, "Pairing failed: " + error, "error")
-                        }
-                    }
-                } catch (e) {
-                    root.pairingStatus = "failed"
-                    activityLog.addEntry(ts, "Pairing failed", "error")
-                }
+                root.paired = false
+                root.pairingStatus = "not_paired"
+                activityLog.addEntry(ts, "Keycard not paired", "warning")
             }
         } catch (e) {}
     }
@@ -160,7 +139,13 @@ FocusScope {
                 currentRequest = null
                 pinValue = ""
                 pendingChecked = false
+            } else if (response.status === "failed") {
+                // Card blocked
+                currentRequest = null
+                pinValue = ""
+                pendingChecked = false
             } else {
+                // Retry — wrong PIN but attempts remain
                 attemptsRemaining = response.remainingAttempts || 0
                 pinValue = ""
                 hiddenInput.forceActiveFocus()
