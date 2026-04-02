@@ -482,6 +482,8 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
             } else {
                 result["remainingAttempts"] = -1;
                 result["error"] = "PIN verification failed, could not get remaining attempts";
+                result["debug_step"] = "getStatus_invalid_after_pin";
+                qWarning() << "KeycardBridge: getStatus() returned invalid after PIN failure";
                 // Without valid status, assume Ready state
                 setState(State::Ready);
             }
@@ -489,10 +491,11 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
 
     } catch (const std::exception& e) {
         result["authorized"] = false;
-        result["error"] = e.what();
-        result["remainingAttempts"] = -1;  // Unknown attempts remaining due to exception
+        result["error"] = QString("Exception: %1").arg(e.what());
+        result["remainingAttempts"] = -1;
+        result["debug_step"] = "exception";
         m_lastError = e.what();
-        KEYCARD_LOG(QString("KeycardBridge::authorize() exception: %1").arg(e.what()));
+        qWarning() << "KeycardBridge::authorize() EXCEPTION:" << e.what();
     }
 
     KEYCARD_LOG("KeycardBridge::authorize() END");

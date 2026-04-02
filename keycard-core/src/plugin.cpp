@@ -213,8 +213,10 @@ QString KeycardPlugin::authorize(const QString& pin)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Authorize with card
+    // Authorize with card (block polling during PC/SC operation)
+    m_authorizing = true;
     QJsonObject authResult = m_bridge->authorize(pin);
+    m_authorizing = false;
 
     // If successful, start session
     if (authResult.value("authorized").toBool()) {
@@ -222,18 +224,22 @@ QString KeycardPlugin::authorize(const QString& pin)
         logActivity("Session active", "success");
     } else {
         m_sessionState = SessionState::NoSession;
+        QString bridgeError = authResult.value("error").toString();
         int remaining = authResult.value("remainingAttempts").toInt(-1);
-        if (remaining == 0) {
+
+        // Surface the actual error from the bridge, not a generic "Wrong PIN"
+        if (bridgeError.contains("not paired", Qt::CaseInsensitive)) {
+            logActivity("Card not paired — pair card first", "error");
+        } else if (bridgeError.contains("secure channel", Qt::CaseInsensitive)) {
+            logActivity("Failed to open secure channel — re-pair may be needed", "error");
+        } else if (remaining == 0) {
             logActivity("Wrong PIN, Keycard blocked", "error");
-        } else if (remaining == 1) {
-            logActivity("Wrong PIN, 1 attempt left", "error");
-            logActivity("Try again", "warning");
-        } else if (remaining > 1) {
-            logActivity(QString("Wrong PIN, %1 attempts left").arg(remaining), "error");
+        } else if (remaining > 0) {
+            logActivity(QString("Wrong PIN, %1 attempt(s) left").arg(remaining), "error");
             logActivity("Try again", "warning");
         } else {
-            // remaining == -1 (unknown)
-            logActivity("Wrong PIN", "error");
+            // remaining == -1 but not a pairing/channel issue — likely wrong PIN
+            logActivity(bridgeError.isEmpty() ? "Wrong PIN" : bridgeError, "error");
             logActivity("Try again", "warning");
         }
     }
@@ -313,8 +319,10 @@ QString KeycardPlugin::getState()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Poll status to detect card/reader removal
-    m_bridge->pollStatus();
+    // Skip polling during authorize to prevent PC/SC concurrency conflicts (#89)
+    if (!m_authorizing) {
+        m_bridge->pollStatus();
+    }
 
     QJsonObject result;
 
@@ -516,7 +524,12 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     }
 
     // SECURITY: Verify PIN first (hardware verification)
-    QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
+    QString authorizeRaw = authorize(pin);
+    qWarning() << "authorizeRequest: authorize() returned:" << authorizeRaw.left(200);
+    QJsonObject authResult = QJsonDocument::fromJson(authorizeRaw.toUtf8()).object();
+    qWarning() << "authorizeRequest: parsed authorized=" << authResult.value("authorized").toBool()
+               << "remainingAttempts=" << authResult.value("remainingAttempts").toInt(-99)
+               << "error=" << authResult.value("error").toString();
 
     if (!authResult.value("authorized").toBool()) {
         targetRequest->status = "failed";

@@ -82,4 +82,5 @@ private:
     };
     QList<ActivityEntry> m_recentActivity;
     QSet<QString> m_loggedRequestIds;
+    bool m_authorizing = false;  // Prevents PC/SC polling conflicts during authorize
 };
