@@ -2373,3 +2373,11 @@ When `pairCard(password)` became `pairCard(password, pin)`, the DebugPanel QML s
 
 ### Lesson: security reviews need multiple rounds — plan for it
 Issue #43 took 3 review rounds with Senty. Each round caught real issues the previous fix introduced or missed. For security-critical code, expect iterative review and don't rush to merge after the first fix.
+
+## Epic #82 Lessons — Developer Integration Kit
+
+### Lesson: internal API methods need full documentation too
+Senty caught that listing internal methods as a name-purpose table without response shapes was incomplete. If the doc claims to be the "complete reference," every method needs exact shapes — even internal ones.
+
+### Lesson: new components must be in install lists
+Adding a QML file to the repo without adding it to CMakeLists.txt and flake.nix means it doesn't ship. Always update install manifests when adding new files.
