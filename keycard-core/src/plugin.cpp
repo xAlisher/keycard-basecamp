@@ -686,10 +686,6 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     if (m_bridge) m_bridge->setOperationInProgress(true);
 
     // SECURITY: Verify PIN first (hardware verification)
-    logActivity(QString("Bridge state before authorize: %1, cardReady: %2")
-        .arg(static_cast<int>(m_bridge->state()))
-        .arg(m_bridge->isCardPresent()), "info");
-
     QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
 
     if (!authResult.value("authorized").toBool()) {
