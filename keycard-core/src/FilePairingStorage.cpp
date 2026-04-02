@@ -90,7 +90,11 @@ PairingLoadResult FilePairingStorage::probeFile(const QString& instanceUID)
         return PairingLoadResult::FileNotFound;
     }
 
-    QJsonObject data = readFile();
+    bool hadParseError = false;
+    QJsonObject data = readFile(&hadParseError);
+    if (hadParseError) {
+        return PairingLoadResult::Corrupted;
+    }
     if (data.isEmpty()) {
         return PairingLoadResult::FileNotFound;
     }
@@ -132,7 +136,11 @@ PairingLoadResult FilePairingStorage::loadEncrypted(const QString& instanceUID, 
         return PairingLoadResult::FileNotFound;
     }
 
-    QJsonObject data = readFile();
+    bool hadParseError = false;
+    QJsonObject data = readFile(&hadParseError);
+    if (hadParseError) {
+        return PairingLoadResult::Corrupted;
+    }
     if (!data.contains(instanceUID)) {
         return PairingLoadResult::FileNotFound;
     }
@@ -318,8 +326,10 @@ QByteArray FilePairingStorage::deriveKey(const QString& pin, const QByteArray& s
     return key;
 }
 
-QJsonObject FilePairingStorage::readFile()
+QJsonObject FilePairingStorage::readFile(bool* parseError)
 {
+    if (parseError) *parseError = false;
+
     QFile file(m_filePath);
     if (!file.exists()) {
         return QJsonObject();
@@ -327,6 +337,7 @@ QJsonObject FilePairingStorage::readFile()
 
     if (!file.open(QIODevice::ReadOnly)) {
         qWarning() << "FilePairingStorage::readFile: Failed to open" << m_filePath;
+        if (parseError) *parseError = true;
         return QJsonObject();
     }
 
@@ -338,6 +349,7 @@ QJsonObject FilePairingStorage::readFile()
 
     if (error.error != QJsonParseError::NoError) {
         qWarning() << "FilePairingStorage::readFile: JSON parse error:" << error.errorString();
+        if (parseError) *parseError = true;
         return QJsonObject();
     }
 

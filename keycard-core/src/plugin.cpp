@@ -307,16 +307,14 @@ QString KeycardPlugin::authorize(const QString& pin)
             return QJsonDocument(result).toJson(QJsonDocument::Compact);
         }
         // Success or PlaintextLegacy — pairing is now in cache
+        // Migration deferred until AFTER card PIN verification succeeds
+    }
 
-        // Migrate plaintext to encrypted on successful decrypt
-        if (loadResult == PairingLoadResult::PlaintextLegacy) {
-            logActivity("Migrating pairing to encrypted storage...", "info");
-            if (storage->saveEncrypted(uid, pairing, pin)) {
-                logActivity("Pairing encrypted successfully", "success");
-            } else {
-                logActivity("Failed to encrypt pairing (will retry later)", "warning");
-            }
-        }
+    // Track whether we need to migrate (must check before auth clears context)
+    bool needsMigration = false;
+    if (storage) {
+        auto probeResult = storage->probeFile(m_bridge->keyUID());
+        needsMigration = (probeResult == PairingLoadResult::PlaintextLegacy);
     }
 
     // Step 2: Auth with card (pairing is now in cache, bridge load() will find it)
@@ -326,6 +324,18 @@ QString KeycardPlugin::authorize(const QString& pin)
     if (authResult.value("authorized").toBool()) {
         m_sessionState = SessionState::Active;
         logActivity("Session active", "success");
+
+        // Migrate plaintext ONLY after confirmed correct PIN on card
+        if (needsMigration && storage) {
+            QString uid = m_bridge->keyUID();
+            Keycard::PairingInfo pairing = storage->load(uid);
+            logActivity("Migrating pairing to encrypted storage...", "info");
+            if (storage->saveEncrypted(uid, pairing, pin)) {
+                logActivity("Pairing encrypted successfully", "success");
+            } else {
+                logActivity("Failed to encrypt pairing (will retry later)", "warning");
+            }
+        }
     } else {
         m_sessionState = SessionState::NoSession;
         // Clear cache on wrong card PIN
