@@ -2354,3 +2354,8 @@ Posted a pcsclite addendum on #55 without pinging Senty — he missed it in his 
 
 ### Lesson: always document lessons after merge
 This should happen automatically as part of the merge workflow — not require a prompt from the user. Adding this as a self-reminder.
+
+## Issue #70 Lessons — Auto-close Session
+
+### Lesson: keep demo script and code in sync
+Issue #70 was created during Epic #55 but only implemented when the demo script revealed the session wasn't actually closing. If a feature is described in user-facing copy, verify the code matches before release.
