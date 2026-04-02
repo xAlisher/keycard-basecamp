@@ -691,18 +691,21 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     if (!authResult.value("authorized").toBool()) {
         if (m_bridge) m_bridge->setOperationInProgress(false);
 
-        targetRequest->status = "failed";
-        targetRequest->error = authResult.value("error").toString("PIN verification failed");
+        int remaining = authResult.value("remainingAttempts").toInt(-1);
+        QString error = authResult.value("error").toString("PIN verification failed");
 
-        // Log full auth result for debugging
-        logActivity(QString("Auth failed: %1").arg(
-            QJsonDocument(authResult).toJson(QJsonDocument::Compact).constData()), "error");
+        // Only mark as failed if card is blocked (0 attempts). Otherwise keep retryable.
+        if (remaining == 0) {
+            targetRequest->status = "failed";
+            targetRequest->error = "Card blocked — no PIN attempts remaining";
+        }
+        // Keep status as "pending" so user can retry
 
         QJsonObject result;
         result["authId"] = authId;
-        result["status"] = "failed";
-        result["error"] = targetRequest->error;
-        result["remainingAttempts"] = authResult.value("remainingAttempts").toInt();
+        result["status"] = (remaining == 0) ? "failed" : "retry";
+        result["error"] = error;
+        result["remainingAttempts"] = remaining;
 
         addActivityToResponse(result);
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
