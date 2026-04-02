@@ -47,6 +47,9 @@ public:
     Q_INVOKABLE QString loadKey(const QString& jsonArgs); // Debug: load key, expects {"seedHex":"...","keyType":0|1}
     Q_INVOKABLE QString removeKey();      // Debug: remove loaded key
 
+    // Card presence (for consuming modules to poll)
+    Q_INVOKABLE QString getCardPresence();
+
     // Authorization request API
     Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);
     Q_INVOKABLE QString checkAuthStatus(const QString& authId);

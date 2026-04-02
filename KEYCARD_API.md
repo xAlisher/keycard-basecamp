@@ -186,6 +186,48 @@ The `getState()` method returns the current card/reader state. Useful for status
 
 ---
 
+### getCardPresence
+
+Simple card/reader presence check for consuming modules. Use this to detect card removal.
+
+```javascript
+var result = logos.callModule("keycard", "getCardPresence", [])
+```
+
+**Response:**
+```json
+{
+  "present": true,
+  "readerConnected": true,
+  "uid": "fb8c9acce1e286ff88fa36be6fb7f5e5"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `present` | boolean | Card is physically in the reader |
+| `readerConnected` | boolean | USB reader is connected |
+| `uid` | string | Card UID (only when present) |
+
+**Polling pattern for card removal detection:**
+```qml
+Timer {
+    interval: 2000
+    running: true
+    repeat: true
+    onTriggered: {
+        var result = logos.callModule("keycard", "getCardPresence", [])
+        var r = JSON.parse(result)
+        if (!r.present) {
+            // Card removed — lock your module
+            lockSession()
+        }
+    }
+}
+```
+
+---
+
 ## Internal API (keycard-ui only)
 
 These methods are used by keycard-ui to manage the approval flow. Other modules should NOT call these directly.

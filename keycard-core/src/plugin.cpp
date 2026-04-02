@@ -713,6 +713,40 @@ QString KeycardPlugin::mapBridgeStateToSpec(KeycardBridge::State state)
     return "READER_NOT_FOUND";
 }
 
+QString KeycardPlugin::getCardPresence()
+{
+    QJsonObject result;
+
+    if (!m_bridge) {
+        result["present"] = false;
+        result["readerConnected"] = false;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    m_bridge->pollStatus();
+    KeycardBridge::State bridgeState = m_bridge->state();
+
+    bool cardPresent = (bridgeState == KeycardBridge::State::Ready ||
+                        bridgeState == KeycardBridge::State::Authorized ||
+                        bridgeState == KeycardBridge::State::ConnectingCard ||
+                        bridgeState == KeycardBridge::State::EmptyKeycard ||
+                        bridgeState == KeycardBridge::State::NotKeycard ||
+                        bridgeState == KeycardBridge::State::BlockedPIN ||
+                        bridgeState == KeycardBridge::State::BlockedPUK);
+
+    bool readerConnected = (bridgeState != KeycardBridge::State::Unknown &&
+                            bridgeState != KeycardBridge::State::NoPCSC &&
+                            bridgeState != KeycardBridge::State::WaitingForReader);
+
+    result["present"] = cardPresent;
+    result["readerConnected"] = readerConnected;
+    if (cardPresent && !m_bridge->keyUID().isEmpty()) {
+        result["uid"] = m_bridge->keyUID();
+    }
+
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
 // Authorization request API implementation (Option C: Module-Managed Auth State)
 
 QString KeycardPlugin::requestAuth(const QString& domain, const QString& caller)
