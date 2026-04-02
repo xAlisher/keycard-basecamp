@@ -14,6 +14,7 @@ install(FILES
     qml/PinEntryScreen.qml
     qml/ActivityLog.qml
     qml/DesignTokens.qml
+    qml/KeycardAuth.qml
     qml/qmldir
     keycard.png
     DESTINATION "${KEYCARD_UI_DIR}"

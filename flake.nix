@@ -144,6 +144,7 @@
               cp qml/DebugPanel.qml $out/lib/
               cp qml/ActivityLog.qml $out/lib/
               cp qml/DesignTokens.qml $out/lib/
+              cp qml/KeycardAuth.qml $out/lib/
               cp qml/qmldir $out/lib/
               cp keycard.png $out/lib/
               cp plugins/keycard-ui/metadata.json $out/lib/
