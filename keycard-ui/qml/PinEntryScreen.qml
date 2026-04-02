@@ -18,6 +18,7 @@ FocusScope {
     // Current pending request (null = no requests, object = show request)
     property var currentRequest: null
     property var pendingQueue: []
+    property bool pendingChecked: false
 
     // Auto-advance timer for multiple requests
     Timer {
@@ -54,6 +55,7 @@ FocusScope {
             }
 
             if (response.pending && Array.isArray(response.pending)) {
+                pendingChecked = true
                 pendingQueue = response.pending
                 // If no current request and there are pending ones, show first
                 if (!currentRequest && pendingQueue.length > 0) {
@@ -80,6 +82,7 @@ FocusScope {
                     }
                 }
             } else if (response.count !== undefined && response.count === 0) {
+                pendingChecked = true
                 currentRequest = null
                 pendingQueue = []
                 pinValue = ""
@@ -201,7 +204,7 @@ FocusScope {
 
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: "No pending requests"
+                        text: pendingChecked ? "No pending requests" : "Looking for pending requests..."
                         color: DesignTokens.foregroundSecondary
                         font.pixelSize: 24
                         font.weight: Font.Medium
@@ -354,15 +357,15 @@ FocusScope {
                         spacing: 12
 
                         Rectangle {
-                            width: 85
+                            width: root.verifyingPin ? 100 : 85
                             height: 32
-                            color: approveArea.containsMouse ? "#e64a19" : DesignTokens.primary
+                            color: root.verifyingPin ? DesignTokens.secondary : (approveArea.containsMouse ? "#e64a19" : DesignTokens.primary)
                             radius: 16
-                            opacity: root.pinValue.length === root.maxPinLength ? 1.0 : 0.5
+                            opacity: (root.pinValue.length === root.maxPinLength || root.verifyingPin) ? 1.0 : 0.5
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "Approve"
+                                text: root.verifyingPin ? "Approving..." : "Approve"
                                 color: DesignTokens.foreground
                                 font.pixelSize: 14
                                 font.weight: Font.Medium
