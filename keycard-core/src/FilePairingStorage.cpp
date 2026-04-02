@@ -23,7 +23,12 @@ bool FilePairingStorage::save(const QString& instanceUID, const Keycard::Pairing
         return false;
     }
 
-    QJsonObject data = readFile();
+    bool hadParseError = false;
+    QJsonObject data = readFile(&hadParseError);
+    if (hadParseError) {
+        qWarning() << "FilePairingStorage::save: Refusing to overwrite corrupted pairing file";
+        return false;
+    }
     data[instanceUID] = pairingToJson(pairing);
 
     if (!writeFile(data)) {
@@ -62,7 +67,12 @@ bool FilePairingStorage::remove(const QString& instanceUID)
         return false;
     }
 
-    QJsonObject data = readFile();
+    bool hadParseError = false;
+    QJsonObject data = readFile(&hadParseError);
+    if (hadParseError) {
+        qWarning() << "FilePairingStorage::remove: Refusing to modify corrupted pairing file";
+        return false;
+    }
     if (!data.contains(instanceUID)) {
         qDebug() << "FilePairingStorage::remove: No pairing to remove for" << instanceUID;
         return true;  // Already removed
@@ -89,8 +99,10 @@ QStringList FilePairingStorage::listPaired()
 
 // Private helpers
 
-QJsonObject FilePairingStorage::readFile()
+QJsonObject FilePairingStorage::readFile(bool* parseError)
 {
+    if (parseError) *parseError = false;
+
     QFile file(m_filePath);
     if (!file.exists()) {
         return QJsonObject();
@@ -98,6 +110,7 @@ QJsonObject FilePairingStorage::readFile()
 
     if (!file.open(QIODevice::ReadOnly)) {
         qWarning() << "FilePairingStorage::readFile: Failed to open" << m_filePath;
+        if (parseError) *parseError = true;
         return QJsonObject();
     }
 
@@ -109,7 +122,7 @@ QJsonObject FilePairingStorage::readFile()
 
     if (error.error != QJsonParseError::NoError) {
         qWarning() << "FilePairingStorage::readFile: JSON parse error:" << error.errorString();
-        // Corrupted file - return empty, will be overwritten
+        if (parseError) *parseError = true;
         return QJsonObject();
     }
 

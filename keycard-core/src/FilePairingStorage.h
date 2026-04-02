@@ -30,7 +30,7 @@ private:
     QMutex m_mutex;
 
     // File I/O helpers
-    QJsonObject readFile();
+    QJsonObject readFile(bool* parseError = nullptr);
     bool writeFile(const QJsonObject& data);
     bool ensureFileExists();
 
