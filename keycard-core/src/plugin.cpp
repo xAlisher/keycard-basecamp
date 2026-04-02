@@ -71,12 +71,21 @@ QString KeycardPlugin::discoverReader()
         m_bridge = new KeycardBridge(this);
     }
 
+    // Always start (initializes if needed)
     bool success = m_bridge->start();
+
+    // Fresh poll even if bridge was already running (fixes #9: cached reader state)
+    if (m_bridge->isRunning()) {
+        m_bridge->pollStatus();
+        KeycardBridge::State state = m_bridge->state();
+        success = (state != KeycardBridge::State::WaitingForReader &&
+                   state != KeycardBridge::State::NoPCSC &&
+                   state != KeycardBridge::State::Unknown);
+    }
 
     QJsonObject result;
     result["found"] = success;
     if (success) {
-        // Get reader name from state
         result["name"] = "Smart card reader";
         logActivity("Smart card reader detected", "success");
     } else {
