@@ -129,6 +129,8 @@ QString KeycardBridge::statusText() const
 
 void KeycardBridge::pollStatus()
 {
+    if (m_operationInProgress) return;
+
     static int pollCount = 0;
     if (++pollCount % 20 == 0) {  // Log every 20th call to avoid spam
         qDebug() << "pollStatus() called" << pollCount << "times, state:" << static_cast<int>(m_state);
@@ -701,6 +703,8 @@ bool KeycardBridge::isReaderPresent()
 
 bool KeycardBridge::isCardPresent()
 {
+    if (m_operationInProgress) return m_cardReady;  // Return cached value
+
     // Query PC/SC to check if a card is inserted in any reader
 
     SCARDCONTEXT hContext;
