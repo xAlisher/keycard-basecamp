@@ -135,18 +135,26 @@ FocusScope {
                     activityLog.addEntry(entry.timestamp, entry.message, entry.level)
                 }
             }
+            var ts2 = Qt.formatTime(new Date(), "[HH:mm:ss]")
             if (response.status === "complete") {
                 currentRequest = null
                 pinValue = ""
                 pendingChecked = false
-            } else if (response.status === "failed") {
-                // Card blocked
-                currentRequest = null
-                pinValue = ""
-                pendingChecked = false
             } else {
-                // Retry — wrong PIN but attempts remain
-                attemptsRemaining = response.remainingAttempts || 0
+                // Retry — show remaining attempts from card
+                var remaining = response.remainingAttempts
+                if (remaining >= 0) {
+                    if (remaining === 0) {
+                        activityLog.addEntry(ts2, "Keycard blocked — no PIN attempts remaining", "error")
+                    } else {
+                        activityLog.addEntry(ts2, "Wrong PIN — " + remaining + " attempt" + (remaining !== 1 ? "s" : "") + " remaining", "error")
+                        activityLog.addEntry(ts2, "Try again", "warning")
+                    }
+                } else {
+                    var err = response.error || "Authorization failed"
+                    activityLog.addEntry(ts2, err, "error")
+                    activityLog.addEntry(ts2, "Try again", "warning")
+                }
                 pinValue = ""
                 hiddenInput.forceActiveFocus()
             }

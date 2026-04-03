@@ -621,9 +621,9 @@ QString KeycardPlugin::checkAuthStatus(const QString& authId)
 
             if (req.status == "complete") {
                 result["key"] = req.key;
-            } else if (req.status == "failed") {
-                result["error"] = req.error;
             }
+            // Only expose pending/complete/declined to calling modules
+            // Wrong PIN / internal errors stay as "pending"
 
             return QJsonDocument(result).toJson(QJsonDocument::Compact);
         }
@@ -691,20 +691,13 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     if (!authResult.value("authorized").toBool()) {
         if (m_bridge) m_bridge->setOperationInProgress(false);
 
+        // Request stays "pending" — wrong PIN is keycard-internal,
+        // calling module only sees pending/complete/declined
         int remaining = authResult.value("remainingAttempts").toInt(-1);
-        QString error = authResult.value("error").toString("PIN verification failed");
-
-        // Only mark as failed if card is blocked (0 attempts). Otherwise keep retryable.
-        if (remaining == 0) {
-            targetRequest->status = "failed";
-            targetRequest->error = "Card blocked — no PIN attempts remaining";
-        }
-        // Keep status as "pending" so user can retry
 
         QJsonObject result;
         result["authId"] = authId;
-        result["status"] = (remaining == 0) ? "failed" : "retry";
-        result["error"] = error;
+        result["status"] = "retry";
         result["remainingAttempts"] = remaining;
 
         addActivityToResponse(result);
@@ -718,13 +711,12 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     if (keyResult.contains("error")) {
         if (m_bridge) m_bridge->setOperationInProgress(false);
 
-        targetRequest->status = "failed";
-        targetRequest->error = keyResult.value("error").toString();
+        // Key derivation failed — request stays pending, user can retry
+        logActivity("Key derivation failed: " + keyResult.value("error").toString(), "error");
 
         QJsonObject result;
         result["authId"] = authId;
-        result["status"] = "failed";
-        result["error"] = targetRequest->error;
+        result["status"] = "retry";
 
         addActivityToResponse(result);
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
