@@ -468,23 +468,14 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
         } else {
             result["authorized"] = false;
 
-            // Get updated status after failed PIN
-            auto status = m_commandSet->getStatus();
-            if (status.valid) {
-                m_remainingPIN = status.pinRetryCount;
-                result["remainingAttempts"] = m_remainingPIN;
-                KEYCARD_LOG(QString("KeycardBridge: PIN verification failed, remaining: %1").arg(m_remainingPIN));
+            // verifyPIN() extracts remaining count directly from card APDU response (0x63CX)
+            m_remainingPIN = m_commandSet->remainingPINAttempts();
+            result["remainingAttempts"] = m_remainingPIN;
+            KEYCARD_LOG(QString("KeycardBridge: PIN verification failed, remaining: %1").arg(m_remainingPIN));
 
-                if (m_remainingPIN == 0) {
-                    setState(State::BlockedPIN);
-                } else {
-                    // PIN was wrong but not blocked - go back to Ready state
-                    setState(State::Ready);
-                }
+            if (m_remainingPIN == 0) {
+                setState(State::BlockedPIN);
             } else {
-                result["remainingAttempts"] = -1;
-                result["error"] = "PIN verification failed, could not get remaining attempts";
-                // Without valid status, assume Ready state
                 setState(State::Ready);
             }
         }
@@ -492,7 +483,7 @@ QJsonObject KeycardBridge::authorize(const QString &pin)
     } catch (const std::exception& e) {
         result["authorized"] = false;
         result["error"] = e.what();
-        result["remainingAttempts"] = -1;  // Unknown attempts remaining due to exception
+        result["remainingAttempts"] = -1;
         m_lastError = e.what();
         KEYCARD_LOG(QString("KeycardBridge::authorize() exception: %1").arg(e.what()));
     }
