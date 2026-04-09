@@ -26,7 +26,9 @@ It is **not** a wallet. It has no product screens of its own besides a small app
 
 Imagine if every iOS app built its own Face ID prompt, with its own look, its own error states, its own "try again" copy. That would be chaos. iOS has **one** Face ID sheet, and every app triggers it the same way.
 
-That is what Keycard does in Basecamp. There is **one approval panel** (`keycard-ui`). When any module — notes, wallet, LEZ, anything — needs hardware-backed auth, the user sees the same panel. Same visual language, same PIN field, same "X attempts remaining" copy, same blocked-card recovery flow. **The user learns Keycard once, and it works the same everywhere.**
+That is what Keycard does in Basecamp. There is **one approval panel** (`keycard-ui`). When any module — notes, wallet, LEZ, anything — needs hardware-backed auth, the user sees the same panel. Same visual language, same PIN field, same "X attempts remaining" copy. **The user learns Keycard once, and it works the same everywhere.**
+
+(Target state note: the shipped approval panel covers PIN entry, wrong-PIN retry, and approve / decline. Pairing and blocked-card recovery flows currently live in the debug UI rather than the production approval panel, and are planned to graduate into the unified approval surface as the product hardens. This doc describes where we're going; implementation is still catching up in those specific corners.)
 
 If every Basecamp module shipped its own Keycard integration, users would see a different PIN prompt in every app. Same hardware, inconsistent experience. We do not want that.
 
@@ -109,17 +111,17 @@ This is the load-bearing design decision: **no consumer ever needs its own Keyca
 3. The consuming app calls `requestAuth` on the Keycard module with its own domain tag.
 4. User sees the pending request appear in `keycard-ui` — the Keycard module's approval panel — showing which module is asking and for what domain.
 5. User enters their PIN on the approval panel and approves (or declines).
-6. On approval: the card verifies the PIN on-chip, derives the domain-specific key via BIP32, returns it to the requesting module, and the session closes automatically.
-7. The consuming app uses the key for its operation and wipes it.
+6. On approval: the card verifies the PIN on-chip, derives the domain-specific key via BIP32, and returns it to the requesting module. The session is marked closed so a subsequent operation requires a new `requestAuth`.
+7. The consuming app uses the key for its operation and wipes its own copy. (The Keycard module itself currently still holds the derived key in its auth-request table until module unload — see [#94](https://github.com/xAlisher/keycard-basecamp/issues/94). Tightening this to a one-read-and-drop semantics is a known follow-up.)
 
 **What the user sees:** the consuming app's normal UI, plus a brief excursion to `keycard-ui` to approve the request. The PIN is entered in `keycard-ui` and never reaches the consuming app.
 
 **Failure modes the user may encounter:**
 - **No reader / no card** → consuming app shows "connect your Keycard".
-- **Wrong PIN** → `keycard-ui` shows remaining attempts; card is not blocked until the third failure.
-- **Card blocked** (3 wrong PINs) → `keycard-ui` shows lockout state; PUK recovery is required.
-- **Card removed mid-session** → session closes, keys are wiped, user is asked to reinsert and re-authorize.
-- **Declined** → consuming app shows "authorization declined".
+- **Wrong PIN** → `keycard-ui` shows remaining attempts in the activity log; card is not blocked until the third failure. The request stays in `pending` on the consumer API side so the consumer keeps waiting rather than being handed a terminal failure.
+- **Card blocked** (3 wrong PINs) → the card enters PIN-lockout. Recovery via PUK is the standard Keycard path and currently sits in the debug UI rather than the production approval panel (see the target-state note under "one approval surface").
+- **Card removed mid-session** → the session is marked closed and a fresh `requestAuth` is required on the next operation. The consuming app should also wipe any key copy it took. Module-side key cleanup is tracked in [#94](https://github.com/xAlisher/keycard-basecamp/issues/94).
+- **Declined** → consumer API sees `status: "rejected"`; consuming app shows "authorization declined".
 
 **Where the UI lives:** in each consuming app, plus the shared `keycard-ui` approval panel. `keycard-basecamp` itself does not ship any product UI beyond that panel.
 
@@ -133,9 +135,9 @@ This is the load-bearing design decision: **no consumer ever needs its own Keyca
 1. Declare `"keycard"` in the module's `manifest.json` dependencies.
 2. Pick a domain string unique to the module's purpose (convention: `"modulename_purpose"`, e.g. `"notes_encryption"`).
 3. Call `logos.callModule("keycard", "requestAuth", [domain, callerName])` → receive an `authId`.
-4. Poll `checkAuthStatus(authId)` until the response transitions to `complete`, `failed`, `rejected`, or errors out.
-5. On `complete`, receive a hex-encoded 32-byte key. Use it, then wipe it.
-6. Next operation → repeat. Sessions auto-close after each approval.
+4. Poll `checkAuthStatus(authId)`. The consumer API exposes three terminal-ish states: `pending` (keep polling), `complete` (key is in the response), and `rejected` (user declined). Wrong-PIN and internal derivation errors are intentionally kept as `pending` so the user can retry in the approval panel — consumers should not treat them as terminal. Also handle the `{error: "Auth request not found"}` shape for expired or invalid `authId`s so the poller does not loop forever.
+5. On `complete`, receive a hex-encoded 32-byte key. Use it, then wipe it on the consumer side.
+6. Next operation → repeat. Sessions are marked closed after each approval from the consumer's perspective; module-side key retention is tracked in [#94](https://github.com/xAlisher/keycard-basecamp/issues/94).
 
 **Minimal example:**
 ```javascript
@@ -152,7 +154,7 @@ For a drop-in QML component and full polling example, see [INTEGRATION_GUIDE.md]
 - BIP32 derivation on-card (no host-side crypto)
 - Deterministic keys (same domain + same card = same key, always)
 - Domain isolation (different domains produce different keys)
-- Session lifecycle (auto-close after each approval, key wiped)
+- Session lifecycle (session marked closed after each approval; see [#94](https://github.com/xAlisher/keycard-basecamp/issues/94) for the in-progress key-cleanup work)
 - Card UID verification (prevents mid-session card-swap)
 - Single audited security surface (bugs fixed in one place)
 
@@ -181,7 +183,7 @@ For a drop-in QML component and full polling example, see [INTEGRATION_GUIDE.md]
 
 ### Layer 1 — The LEZ wallet (Basecamp consumer)
 
-The user-facing entry point to LEZ is the **LEZ wallet** (`liblogos_execution_zone_wallet_module` + `logos_execution_zone_wallet_ui`), which is already a Basecamp core module + UI plugin pair. It initializes private/public LEZ accounts, inspects balances, and performs transfers. This is where the user actually interacts with LEZ, and this is where Keycard support is naturally exposed.
+The user-facing entry point to LEZ is the **LEZ wallet** — a Basecamp core module + UI plugin pair that initializes private/public LEZ accounts, inspects balances, and performs transfers. (The exact public identifiers for that module pair are internal to the LEZ wallet repo and are not reproduced here; any integration work would target whichever identifiers that repo ships.) This is where the user actually interacts with LEZ, and this is where Keycard support is naturally exposed.
 
 **Architectural ask:** the LEZ wallet should consume `keycard-basecamp` via `callModule` with its own domain tag(s) — e.g. `"lez_account_signing"` for transaction signing, `"lez_account_identity"` for account derivation, or whatever scoping the wallet needs. It should **not** ship its own Keycard integration.
 
@@ -222,7 +224,7 @@ LEZ also refers to the on-chain execution environment: RISC Zero zkVM guest prog
 To keep the module focused and the security surface small, `keycard-basecamp` deliberately does **not**:
 
 - Ship any product UI beyond the `keycard-ui` approval panel. Wallet, notes, LEZ, node tooling all own their own UIs.
-- Persist keys. Keys live only in memory during a single approved session and are wiped on session close.
+- Persist keys to disk. Derived keys are not written to storage. (The in-memory cleanup of completed auth requests on session close is an in-progress security hardening — see [#94](https://github.com/xAlisher/keycard-basecamp/issues/94) — and is called out wherever this doc discusses session close.)
 - Persist PINs or cache them across requests. Every approval requires a fresh PIN entry.
 - Implement business logic (signing protocols, encryption schemes, identity semantics). Consumers do that with the keys they receive.
 - Require firmware changes per consumer. Domain separation is host-side.

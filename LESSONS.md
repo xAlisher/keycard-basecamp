@@ -1265,3 +1265,49 @@ All issues resolved, noted residual drift in DebugPanel.qml (non-blocking).
 - ✅ Auth showcase demonstrates integration pattern for other modules
 - ✅ Security boundary maintained (keys never leave backend)
 
+
+---
+
+## Issue #93 — JOURNEYS.md
+
+### Docs-only PRs still need a code-audit pass before claiming security properties
+**Date:** 2026-04-09
+**Context:** Drafted `JOURNEYS.md` in response to a Discord thread (fryorcraken, guylouis) asking for product-level framing of Keycard for the Logos-wide journeys doc. Merged the doc to master without a Senty review round, on the reasoning that docs-only PRs are low-risk.
+
+**What went wrong:**
+Senty reviewed post-merge and found three substantive issues, all of which were product-facing overclaims that the current code does not actually deliver:
+
+1. **Key-erasure claim was stronger than reality.** The doc (and `README.md`, `KEYCARD_API.md`, etc.) states keys live only in memory during a single approved session and are wiped on session close. In the current code, `authorizeRequest()` stores the derived key on the `AuthRequest` struct (`targetRequest->key = ...`), completed requests are never purged from `m_authRequests`, and `closeSession()` only resets `m_sessionState` without zeroing or removing any stored key material. So the session "closes" but the key remains readable via any subsequent `checkAuthStatus(authId)` call. Filed as #94.
+
+2. **`failed` terminal status does not exist in the consumer API.** The developer journey and `KEYCARD_API.md` both documented polling `checkAuthStatus` for `complete | failed | rejected`. The code in `checkAuthStatus()` only ever returns `pending | complete | rejected`, with an explicit comment: "Only expose pending/complete/declined to calling modules. Wrong PIN / internal errors stay as 'pending'." A consumer following the doc would wait forever for a `failed` status that never arrives. `INTEGRATION_GUIDE.md` had the same bug in its QML polling example. The `authorizeRequest()` (internal, keycard-ui-only) section of `KEYCARD_API.md` also wrongly documented a `failed` response when the code actually returns `retry`.
+
+3. **Product narrative was ahead of the shipped UI.** The "one approval surface" section described a unified panel including attempts-remaining, pairing, and blocked-card recovery. In reality, the production `PinEntryScreen.qml` covers PIN entry and wrong-PIN retry but pairing and explicit blocked-card recovery currently live in `DebugPanel.qml`. The doc was describing target-state UX as if it shipped.
+
+Additional flag: the doc named specific LEZ wallet module/plugin identifiers (`liblogos_execution_zone_wallet_module`, `logos_execution_zone_wallet_ui`) that came from locally installed files but could not be verified from public `logos-co` search. Presenting speculative-looking identifiers as established public artifacts is a credibility risk in an architectural doc.
+
+**Why it happened:**
+- Treated "docs only" as a license to skip the code-audit step. Docs that describe behavior are making factual claims about the code, and wrong claims in a product-framing doc are worse than wrong claims in internal notes because external stakeholders will cite them.
+- Wrote absolute security statements ("keys are wiped", "session closes") from memory of the intended design rather than reading `plugin.cpp` to confirm the current implementation matches.
+- Did not cross-reference `KEYCARD_API.md` — which had already drifted into the same bug — against the code either. Two docs agreeing with each other is not the same as either of them agreeing with the code.
+- Merged before Senty review because the user said `merge` and I interpreted that as authorization to bypass review for this round. Should have suggested a fast review round first given that the doc was making security/API contract claims.
+
+**How to prevent it next time:**
+
+1. **For any doc that describes security properties, API contracts, or user-visible error behavior: read the relevant source file first and cite line numbers in the PR description.** Not "I remember how this works" — actually open the file. For this module that means `keycard-core/src/plugin.cpp` at minimum, plus whichever QML file owns the user-facing flow being described.
+2. **Docs that make absolute claims ("keys are wiped", "session closes", "consumers should handle complete/failed/rejected") must be fact-checked against the code that would be responsible for that behavior.** If the code doesn't enforce the claim, the doc should describe either current reality or explicitly target state, not the aspirational version framed as shipped.
+3. **Cross-reference between docs is not a substitute for code verification.** If `KEYCARD_API.md` and `JOURNEYS.md` agree about a `failed` status, that only means they are consistent with each other — both can be wrong in the same way, which is exactly what happened here.
+4. **A "docs-only" PR that describes the product's security surface is not low-risk; it is a public statement of the security contract.** Fast Senty review round before merge, every time, for anything product-facing. Internal notes and lessons can skip review. Contract docs cannot.
+5. **Flag architectural docs that name specific identifiers pulled from local state** (installed binaries, local clones, private repos) and either verify them from a public source or soften the framing so the doc does not present speculative identifiers as established facts.
+
+**Evidence:**
+- Initial merge: commit `018a4c4`, JOURNEYS.md added at `bd55500`, terminology fix at `f43629b`
+- Senty review: https://github.com/xAlisher/keycard-basecamp/issues/93#issuecomment (round 1)
+- Code follow-up filed: [#94](https://github.com/xAlisher/keycard-basecamp/issues/94)
+- Docs fixes for findings #2 and #3: this round (branch `issue-93-followup-senty-round-1`), covering `JOURNEYS.md`, `KEYCARD_API.md`, `INTEGRATION_GUIDE.md`
+
+**Files touched:**
+- `JOURNEYS.md` — softened key-erasure claims, removed `failed` from developer journey, added target-state notes for approval-panel scope, softened LEZ wallet identifier framing, pointed at #94 throughout
+- `KEYCARD_API.md` — removed bogus `failed` consumer response shape, rewrote the "handle all cases" callout to reflect actual states (`pending | complete | rejected | {error}`), fixed `authorizeRequest` internal section (`retry` not `failed`)
+- `INTEGRATION_GUIDE.md` — fixed QML polling example and the "common pitfalls" row
+
+**Value of the lesson:** the keycard module is the security contract many other Basecamp modules will rely on. If its own product-facing docs overclaim, consumer modules will design to the wrong contract, and when the gap is discovered it will be discovered by a user who lost something. Docs discipline for this module specifically needs to be closer to spec discipline than to README discipline.

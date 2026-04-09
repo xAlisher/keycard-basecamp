@@ -75,17 +75,6 @@ var result = logos.callModule("keycard", "checkAuthStatus", [authId])
 ```
 The `key` is a hex-encoded 32-byte key derived via BIP32 on the smartcard. Same domain always produces the same key from the same card.
 
-**Response — Failed (PIN wrong or derivation error):**
-```json
-{
-  "authId": "...",
-  "status": "failed",
-  "domain": "notes_encryption",
-  "caller": "notes",
-  "error": "Failed to open secure channel: ..."
-}
-```
-
 **Response — Rejected (user declined):**
 ```json
 {
@@ -103,7 +92,7 @@ The `key` is a hex-encoded 32-byte key derived via BIP32 on the smartcard. Same 
 }
 ```
 
-**Important:** Handle ALL five cases. If you only check `complete`/`failed`/`rejected`, your poller will loop forever on expired requests.
+**Important:** the consumer API intentionally exposes only three statuses — `pending`, `complete`, `rejected` — plus the `{error: ...}` shape for not-found. **Wrong PINs and internal derivation errors do not surface as a terminal `failed` state.** They are intentionally held at `pending` so the user can retry in the approval panel; once the user either succeeds (→ `complete`), gives up and declines (→ `rejected`), or exhausts attempts, the request resolves. Your poller must therefore handle: `pending` (keep polling), `complete` (use the key), `rejected` (stop and show declined), and the `{error: "Auth request not found"}` shape (stop and show expired). Do not wait for a `failed` status — it does not arrive.
 
 ---
 
@@ -135,11 +124,11 @@ Timer {
         if (response.status === "complete" && response.key) {
             statusPoller.stop()
             onKeyReceived(response.key)
-        } else if (response.status === "failed" || response.status === "rejected" || response.error) {
+        } else if (response.status === "rejected" || response.error) {
             statusPoller.stop()
-            onError(response.error || "Authorization " + response.status)
+            onError(response.error || "Authorization rejected")
         }
-        // "pending" → keep polling
+        // "pending" → keep polling (wrong PINs are retried in the approval panel and stay pending)
     }
 }
 ```
@@ -214,7 +203,7 @@ Returns all pending authorization requests.
 Approve a pending request with the card PIN. Derives key on-card and auto-closes session.
 
 **Success:** `{ "authId": "...", "status": "complete", "key": "hex...", "message": "..." }`
-**PIN failed:** `{ "authId": "...", "status": "failed", "error": "...", "remainingAttempts": 2 }`
+**PIN wrong / derivation error:** `{ "authId": "...", "status": "retry", "error": "...", "remainingAttempts": 2 }` — the auth request remains `pending` on the consumer side so the user can retry without the calling module seeing a terminal state.
 **Not found:** `{ "error": "Auth request not found or already completed" }`
 
 ### rejectRequest(authId)
