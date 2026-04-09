@@ -226,8 +226,9 @@ For **signing-oriented consumers** — the LEZ wallet first and foremost, but al
 Adding this capability is **planned, not shipped.** It is tracked as a dedicated epic with its own reference document:
 
 - **Reference:** [`KEYCARD_SIGNING_MODES.md`](KEYCARD_SIGNING_MODES.md) — full research, applet APDU specifics, keycard-qt delta, design implications, and open questions
-- **Epic issue:** TBD (link to be added once the epic is filed)
-- **Sub-issues:** TBD (vendored keycard-qt patch, mode-aware pairing, `requestSign` API, approval-panel UX, docs updates)
+- **Epic issue:** [#95](https://github.com/xAlisher/keycard-basecamp/issues/95)
+- **Sub-issues:** [#96](https://github.com/xAlisher/keycard-basecamp/issues/96) (vendored keycard-qt patch), [#97](https://github.com/xAlisher/keycard-basecamp/issues/97) (mode-aware pairing), [#98](https://github.com/xAlisher/keycard-basecamp/issues/98) (`requestSign` API), [#99](https://github.com/xAlisher/keycard-basecamp/issues/99) (approval-panel UX), [#100](https://github.com/xAlisher/keycard-basecamp/issues/100) (docs updates), [#101](https://github.com/xAlisher/keycard-basecamp/issues/101) (forward-compat self-report, blocked externally)
+- **Out of scope:** [#102](https://github.com/xAlisher/keycard-basecamp/issues/102) (multi-card support follow-up)
 
 **Key points this future work surfaces that affect the journeys:**
 

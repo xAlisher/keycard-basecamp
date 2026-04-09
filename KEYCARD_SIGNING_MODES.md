@@ -276,9 +276,18 @@ Things we don't currently know and should track:
 
 ## 9. Related issues
 
+**Precursors:**
 - **#93** — `JOURNEYS.md`: where this conversation started. The original draft framed Keycard as auth/key-derivation only, which is what surfaced the signing gap.
-- **#94** — Key-persistence cleanup in `m_authRequests`. Orthogonal but related: `requestSign` should inherit whatever tightened key-handling comes out of #94, since signatures (and possibly intermediate signing state) should get the same one-read-and-drop treatment as derived keys.
-- **(TBD)** — Epic: Keycard signing modes and Schnorr/BIP340 support for LEZ — to be filed, will list this doc as its technical reference.
-- **(TBD)** — Sub-issues for: vendored keycard-qt patch, `keycard-basecamp` mode-aware pairing, `requestSign` API, approval-panel UX, docs updates, forward-compat self-report detection, multi-card support follow-up.
+- **#94** — Key-persistence cleanup in `m_authRequests`. Orthogonal but related: `requestSign` (#98) should inherit whatever tightened key-handling comes out of #94, since signatures and any intermediate signing state should get the same one-read-and-drop treatment as derived keys.
 
-Issue numbers and cross-links get filled in after the epic and sub-issues are created.
+**Epic and sub-issues:**
+- **#95** — Epic: Keycard signing modes and Schnorr/BIP340 support for LEZ. Tracker issue. Uses this document as the source of truth.
+- **#96** — Vendored `keycard-qt` patch: Schnorr sign path, LEZ load-key path, mode-detection probe. Blocks #98.
+- **#97** — `keycard-basecamp`: mode-aware pairing (auto-detect mode via probe, store in pairing record, `getCardMode()` Q_INVOKABLE, consistency check on re-insert). Blocks #98 and #99.
+- **#98** — `keycard-basecamp`: `requestSign` API (on-card signing, ECDSA + Schnorr, mode-aware routing, clean mode-mismatch errors). Depends on #96 and #97.
+- **#99** — `keycard-ui`: mode-aware approval panel (card mode label, mode-mismatch copy, fallback mode picker). Depends on #97 and #98.
+- **#100** — Docs: `JOURNEYS.md` / `KEYCARD_API.md` / `SPEC.md` updates for signing modes. Depends on #97–#99 landing.
+- **#101** — Forward-compat: detect card mode via applet self-report flag. Blocked externally on the Keycard team shipping a dedicated flag. Does not gate epic #95 completion.
+
+**Follow-up (out of epic scope):**
+- **#102** — Multi-card support: let `keycard-basecamp` pair with multiple Keycards simultaneously and auto-route consumer requests by required mode. Bigger refactor. Filed for future work, not required for #95 to complete.
