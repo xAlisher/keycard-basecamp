@@ -217,6 +217,36 @@ LEZ also refers to the on-chain execution environment: RISC Zero zkVM guest prog
 
 ---
 
+## Card modes and on-card signing — TBD
+
+The description above frames Keycard as an **auth / key-derivation service**: consumers get a derived key and do their own crypto. That is what ships today and what all three journeys above describe. It is the right shape for consumers doing bulk symmetric encryption (notes, storage vaults).
+
+For **signing-oriented consumers** — the LEZ wallet first and foremost, but also any future wallet, identity proof, or node attestation use case — it is the wrong shape. Handing the private key to the consumer defeats the "single audited security surface" principle and moves the signing key across process boundaries for no good reason. The right shape is for the Keycard module to sign on-card and return only the signature, private key never extracted. This is the standard hardware-wallet pattern (Ledger, Trezor, etc.).
+
+Adding this capability is **planned, not shipped.** It is tracked as a dedicated epic with its own reference document:
+
+- **Reference:** [`KEYCARD_SIGNING_MODES.md`](KEYCARD_SIGNING_MODES.md) — full research, applet APDU specifics, keycard-qt delta, design implications, and open questions
+- **Epic issue:** TBD (link to be added once the epic is filed)
+- **Sub-issues:** TBD (vendored keycard-qt patch, mode-aware pairing, `requestSign` API, approval-panel UX, docs updates)
+
+**Key points this future work surfaces that affect the journeys:**
+
+1. **Two signing modes.** Keycard's applet supports two signature schemes on the same curve (secp256k1): ECDSA (Ethereum-style) and BIP340 Schnorr (what LEZ public-state accounts use). `keycard-basecamp` will expose a new `requestSign(domain, payloadHash, caller, scheme)` API paralleling `requestAuth`, with `scheme ∈ {"ecdsa", "schnorr"}`.
+
+2. **Per-card mode constraint.** A Keycard is loaded once with either standard BIP32 constants *or* LEZ-specific (LEE) BIP32 constants. A **standard** card serves notes encryption, EIP-1581 domains, Ethereum-style signing, and every non-LEZ consumer. A **LEZ** card serves LEZ Schnorr signing. The same card cannot do both, and switching modes requires reloading the seed. **A user who wants both needs two physical Keycards.** This is a property of the Keycard applet, not a design choice in `keycard-basecamp`.
+
+3. **Mode detection is automatic.** Thanks to a probe (`EXPORT LEE` with `P1=0xF0`) that mikkoph from the Keycard team identified, `keycard-basecamp` can detect a card's mode at pairing time without asking the user. Mode is stored in the pairing record and surfaced to consumers via a new `getCardMode()` method. When the Keycard team ships a dedicated self-report flag, we will prefer that over the probe.
+
+4. **Mode-aware API.** `requestAuth` (standard-mode keys) and `requestSign(scheme: "schnorr")` (LEZ-mode signing) will return a clean error when called against a card in the wrong mode, telling the consumer which mode the paired card is actually in and which mode was required. The approval panel will also show the card's mode as a persistent label.
+
+5. **Qualifier on "one module, many consumers".** The architectural principle that `keycard-basecamp` is a single shared integration point remains true — **per mode**. Inside standard mode, all non-LEZ consumers share the same integration, PC/SC surface, PIN-lockout state machine, and approval panel. Inside LEZ mode, the same is true for LEZ signing. The qualifier is that the standard-mode surface and the LEZ-mode surface are not interchangeable across a single physical card.
+
+6. **Out of scope for the current epic.** Multi-card support — pairing with a standard card *and* a LEZ card simultaneously so consumers are auto-routed — is filed as a separate follow-up and is not required for the epic to complete. Until it lands, users with both needs swap cards and re-pair when they want to switch contexts.
+
+Until the epic ships, the journeys above describe what is **available today**. When the epic ships, Journey 2 (Developer) gains a signing-mode variant, Journey 3 (Node operator) can use signing for attestations instead of receiving raw keys, and the LEZ integration note above gets an update to reference the LEZ-mode card and `requestSign(scheme: "schnorr")` concretely.
+
+---
+
 ## Non-goals
 
 To keep the module focused and the security surface small, `keycard-basecamp` deliberately does **not**:
