@@ -92,7 +92,7 @@ The `key` is a hex-encoded 32-byte key derived via BIP32 on the smartcard. Same 
 }
 ```
 
-**Important:** the consumer API intentionally exposes only three statuses — `pending`, `complete`, `rejected` — plus the `{error: ...}` shape for not-found. **Wrong PINs and internal derivation errors do not surface as a terminal `failed` state.** They are intentionally held at `pending` so the user can retry in the approval panel; once the user either succeeds (→ `complete`), gives up and declines (→ `rejected`), or exhausts attempts, the request resolves. Your poller must therefore handle: `pending` (keep polling), `complete` (use the key), `rejected` (stop and show declined), and the `{error: "Auth request not found"}` shape (stop and show expired). Do not wait for a `failed` status — it does not arrive.
+**Important:** the consumer API intentionally exposes only three statuses — `pending`, `complete`, `rejected` — plus the `{error: ...}` shape for not-found. **Wrong PINs and internal derivation errors do not surface as a terminal `failed` state.** They are intentionally held at `pending` so the user can retry in the approval panel; the request resolves only when the user either succeeds (→ `complete`) or explicitly declines in the approval panel (→ `rejected`). **Exhausting PIN attempts does not currently resolve the request on the consumer side** — the request stays `pending` even after the card enters PIN-lockout; the consuming module has to decide for itself when to give up (e.g. via its own timeout) or wait for the user to decline. Your poller must therefore handle: `pending` (keep polling, subject to your own timeout), `complete` (use the key), `rejected` (stop and show declined), and the `{error: "Auth request not found"}` shape (stop and show expired). Do not wait for a `failed` status — it does not arrive.
 
 ---
 
@@ -203,8 +203,11 @@ Returns all pending authorization requests.
 Approve a pending request with the card PIN. Derives key on-card and auto-closes session.
 
 **Success:** `{ "authId": "...", "status": "complete", "key": "hex...", "message": "..." }`
-**PIN wrong / derivation error:** `{ "authId": "...", "status": "retry", "error": "...", "remainingAttempts": 2 }` — the auth request remains `pending` on the consumer side so the user can retry without the calling module seeing a terminal state.
+**Wrong PIN:** `{ "authId": "...", "status": "retry", "remainingAttempts": N }` — no `error` field. The underlying `AuthRequest` stays `pending` on the consumer side.
+**Derivation error (after PIN verified):** `{ "authId": "...", "status": "retry" }` — no `error` field, no `remainingAttempts`. The underlying `AuthRequest` also stays `pending` on the consumer side.
 **Not found:** `{ "error": "Auth request not found or already completed" }`
+
+Note: neither retry response currently terminates the auth request. Even on the third wrong PIN (where `remainingAttempts: 0` and the card is about to enter PIN-lockout), `authorizeRequest()` still returns `status: "retry"` and the request remains `pending`. Consumer-side resolution on exhausted attempts is a known gap; see also the discussion in [#93](https://github.com/xAlisher/keycard-basecamp/issues/93).
 
 ### rejectRequest(authId)
 
