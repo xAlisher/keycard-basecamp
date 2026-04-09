@@ -1,6 +1,6 @@
 # Keycard Journeys
 
-Product-level framing of what `keycard-basecamp` enables for Logos users, developers, and node operators. For the technical contract see [KEYCARD_API.md](KEYCARD_API.md); for the state machine and security properties see [SPEC.md](SPEC.md); for step-by-step integration see [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md).
+Product-level framing of what `keycard-basecamp` enables for Basecamp users, developers, and node operators. For the technical contract see [KEYCARD_API.md](KEYCARD_API.md); for the state machine and security properties see [SPEC.md](SPEC.md); for step-by-step integration see [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md).
 
 ---
 
@@ -8,7 +8,7 @@ Product-level framing of what `keycard-basecamp` enables for Logos users, develo
 
 `keycard-basecamp` is a **Basecamp module that exposes Keycard smartcard primitives** (card discovery, PIN verification, on-card BIP32 key derivation, session lifecycle) via `logos.callModule("keycard", ...)`.
 
-It is **not** a wallet, not an identity product, not an end-user application. It is an auth and key-derivation service that any Logos app can consume. The only UI it ships is `keycard-ui` — a single-screen approval panel where the user enters their PIN and approves incoming requests from other modules.
+It is **not** a wallet, not an identity product, not an end-user application. It is an auth and key-derivation service that any Basecamp module can consume. The only UI it ships is `keycard-ui` — a single-screen approval panel where the user enters their PIN and approves incoming requests from other modules.
 
 ---
 
@@ -99,9 +99,9 @@ This is the load-bearing design decision: **no consumer ever needs its own Keyca
 
 ---
 
-## Journey 1 — User: "Authorize an action in a Logos app with my Keycard"
+## Journey 1 — User: "Authorize an action in a Basecamp module with my Keycard"
 
-**Who:** A Logos user who owns a Keycard and wants to use a Logos app (wallet, notes, LEZ client, etc.) that supports hardware-backed keys.
+**Who:** A Basecamp user who owns a Keycard and wants to use a Basecamp module (wallet, notes, LEZ client, etc.) that supports hardware-backed keys.
 
 **Flow:**
 1. User plugs in a USB smartcard reader and inserts their Keycard.
@@ -125,7 +125,7 @@ This is the load-bearing design decision: **no consumer ever needs its own Keyca
 
 ---
 
-## Journey 2 — Developer: "Add hardware key derivation to my Logos module"
+## Journey 2 — Developer: "Add hardware key derivation to my Basecamp module"
 
 **Who:** A module developer building any Basecamp module that needs domain-scoped, hardware-backed keys — encryption, signing, identity, session tokens, etc.
 
@@ -235,6 +235,6 @@ To keep the module focused and the security surface small, `keycard-basecamp` de
 
 If you are the person maintaining the Logos-wide journeys document and you need a short section for Keycard:
 
-> **Keycard** is a Basecamp module that gives any Logos app hardware-backed, domain-scoped key derivation via a single shared approval UI. Users authorize requests by entering their PIN on their Keycard; developers call `requestAuth` with a domain tag and receive a deterministic key; node operators can bind node identities to a physical card. One module, many consumers — the LEZ wallet, notes, and node tooling all consume the same integration rather than reimplementing it. The on-chain LEZ programs themselves (RLN, multisig, atomic swaps) do not integrate with Keycard directly — they consume the signatures and commitments that Keycard-backed wallets produce off-chain, which is the standard hardware-wallet-to-on-chain pattern.
+> **Keycard** is a Basecamp module that gives any other Basecamp module hardware-backed, domain-scoped key derivation via a single shared approval UI. Users authorize requests by entering their PIN on their Keycard; developers call `requestAuth` with a domain tag and receive a deterministic key; node operators can bind node identities to a physical card. One module, many consumers — the LEZ wallet, notes, and node tooling all consume the same integration rather than reimplementing it. The on-chain LEZ programs themselves (RLN, multisig, atomic swaps) do not integrate with Keycard directly — they consume the signatures and commitments that Keycard-backed wallets produce off-chain, which is the standard hardware-wallet-to-on-chain pattern.
 
 For details, link to this file.
