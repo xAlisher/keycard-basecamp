@@ -34,6 +34,7 @@
 | Auto-close Session | #70 | Session auto-close, demo/code sync | 2026-04 |
 | Encrypted Pairing | #43 | Encrypted pairing storage, migration-after-verify, fail-closed corruption | 2026-04 |
 | Dev Integration Kit | Epic #82 | Full API docs, install manifest sync | 2026-04 |
+| Key Persistence Fix | #94 / be284f0 | One-read-and-drop keys, SecureBuffer for AuthRequest, pcscd RUNPATH fix | 2026-04-10 |
 
 ---
 
@@ -56,7 +57,7 @@
 
 ## Open Questions
 
-1. **pcsclite protocol compatibility (#67):** `nix flake update` can produce pcsclite 2.3.0 (protocol 4:5) vs system pcscd 2.0.3 (protocol 4:4). Fix: RPATH patch. Automate in install/package scripts.
+1. ~~**pcsclite protocol compatibility (#67):**~~ **Resolved in #94.** CMake install and package-lgx.sh now auto-patch RUNPATH to `$ORIGIN`, ensuring system libpcsclite is used at runtime. Nix pcsclite (protocol 4:5) no longer leaks into installed plugins.
 2. **Logos Storage built-in encryption:** May be built-in eventually. Worth watching.
 
 ---

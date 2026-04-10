@@ -21,7 +21,8 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
   - **Fix:** Always install to both `LogosApp/` and `LogosBasecamp/` until we confirm which is canonical for the latest Basecamp release. Update CLAUDE.md with the correct path once confirmed.
 
 ### Project lessons (added to docs/skills/lessons.md)
-- (pending — will add tmux-bridge read-before-message lesson after merge)
+- Nix RUNPATH overrides CMake INSTALL_RPATH — need post-install patchelf
+- One-read-and-drop for derived key material (SecureBuffer, not QString)
 
 ### Feedback for Alisher
 - (none yet — review in progress)

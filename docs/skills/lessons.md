@@ -516,6 +516,14 @@ Drafted `JOURNEYS.md` and merged without Senty review. Post-merge review found t
 
 ---
 
+## Issue #94 — Key Persistence Fix
+
+### Nix RUNPATH overrides CMake INSTALL_RPATH
+CMake's `INSTALL_RPATH "$ORIGIN"` is ignored when building inside `nix develop` — Nix's cc-wrapper injects `-rpath /nix/store/...` for every dependency at link time. For libraries that must match the system daemon version (like libpcsclite ↔ pcscd), this causes protocol mismatches at runtime. Fix: add a post-install `patchelf --set-rpath '$ORIGIN'` step in both CMakeLists.txt and package-lgx.sh. Diagnosis: `journalctl -u pcscd` shows "Communication protocol mismatch" with client/server version numbers.
+
+### One-read-and-drop for derived key material
+Security-sensitive keys should be returned exactly once via the polling API (`checkAuthStatus`), then immediately wiped from memory. Store keys in SecureBuffer (RAII + sodium_memzero), not QString. Convert to hex only at serialization time, wipe the hex intermediate, erase the request from the vector. This matches the "no persistent key storage" claim in docs.
+
 ## Planning Phase
 
 ### Communication protocol established
