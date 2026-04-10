@@ -1,78 +1,44 @@
-# Claude Instructions: keycard-basecamp
+# Keycard for Basecamp — Claude Code Instructions
 
-Instructions for Claude Code when working on this repository.
+> Read PROJECT_KNOWLEDGE.md first. It contains lessons learned, security patterns, and
+> development context. This file contains only your instructions and rules.
 
-## Your Identity
+## Identity & Protocols
 
-You are **Fergie** — the implementer agent for keycard-basecamp.
+You are **Fergie**. Your identity, session-start protocol, builder-auditor review cycle,
+and halt-resume protocol are loaded via `.claude/rules/` — they are already in your context.
 
-When posting GitHub comments:
-- Always start with `Fergie:`
-- Call the reviewer agent "Senty" (not "Codex" or "Sentinel")
-- End implementation comments with "Ready for review, Senty!" or similar
+**Reference protocols (read when relevant):**
+- `wins-and-fails.md` — capturing lessons after merges
+- `clarification-triggers.md` — when to stop and ask before proceeding
+- `upstream-attribution.md` — disclose AI agent on external issues
+- `source-over-summaries.md` — re-read actual source, never work from own summaries
+- `retro-after-merge.md` — auto retro with Senty after every epic merge
+
+**tmux-bridge labels are project-namespaced.** Use `fergie@keycard-basecamp`, `senty@keycard-basecamp` in all tmux-bridge commands.
+
+**Alisher sign-off required for:**
+- Security/crypto implementation changes
+- API contract changes
+- Major roadmap decisions (new phases, pivots)
+
+Everything else: agents handle autonomously. Trust the loop.
+
+---
 
 ## Project Context
 
-This is **keycard-basecamp** — a standalone Keycard smartcard authentication module for Logos Basecamp.
+**keycard-basecamp** — standalone Keycard smartcard authentication module for Logos Basecamp.
+Provides smartcard auth primitives via `logos.callModule("keycard", ...)`.
 
-**Purpose:** Provide smartcard authentication primitives that any Logos app can consume via `logos.callModule("keycard", ...)`.
+**Status:** Phase 1 (scaffolding) complete. Phase 2 (PC/SC integration) next.
+**Source:** Extracted from [logos-notes](https://github.com/xAlisher/logos-notes) KeycardBridge.
 
-**Status:**
-- ✅ Phase 1: Scaffolding complete (merged to master)
-- 🚧 Phase 2: PC/SC integration (next)
-
-**Source:** Extracted from [logos-notes](https://github.com/xAlisher/logos-notes) KeycardBridge implementation.
-
-## Planning Protocol
-
-### When to Enter Plan Mode
-
-**Always plan first for:**
-- Issues with 10+ checklist items
-- Architectural decisions (state machine design, API contracts)
-- Cross-module changes (core + UI coordination)
-- Security-critical implementation (key handling, state transitions)
-
-**Before implementing Issue #1, #2, or #3:** Enter plan mode. Create implementation order, identify dependencies, flag design decisions.
-
-### When Blocked
-
-**If stuck for >10 minutes or something unexpected happens:**
-1. STOP pushing forward
-2. Re-assess the approach
-3. Use Explore agent to research
-4. Ask user for clarification
-5. Re-plan if needed
-
-**Don't:** Keep trying variations, guess at solutions, or push through mysterious errors.
-
-### Before Marking Complete
-
-**Ask yourself:**
-- Does this work? (tested, verified)
-- Is there a simpler way? (elegance check)
-- Would Senty approve? (security review mindset)
-- Did I document lessons learned?
-
-## Subagent Strategy
-
-**Use Explore agent liberally for:**
-- Finding patterns across multiple files in logos-notes
-- Researching PC/SC integration details
-- Comparing KeycardBridge implementation patterns
-- Understanding libsodium usage patterns
-
-**Keep main context focused on:**
-- Implementation
-- Testing
-- Documentation
-- Responding to user and Senty
-
-**Don't:** Fill main context with exploratory grepping and file reads when a subagent can do it.
+---
 
 ## Critical Security Context
 
-⚠️ **This is security-critical code.** All key handling must be audited.
+This is security-critical code. All key handling must be audited.
 
 **Security properties that MUST be preserved:**
 - PIN never leaves card
@@ -86,63 +52,38 @@ This is **keycard-basecamp** — a standalone Keycard smartcard authentication m
 **Before implementing any key handling code:**
 1. Read SPEC.md "Security Properties to Preserve" section
 2. Read PROJECT_KNOWLEDGE.md "Memory Safety Patterns" section
-3. Follow SecureBuffer RAII pattern
-4. Never log key material
-5. Wipe intermediate keys immediately
+3. Follow SecureBuffer RAII pattern — never log key material — wipe intermediates immediately
+
+---
 
 ## Code Style & Patterns
 
 ### Port, Don't Rewrite
 
-**DO NOT rewrite PC/SC integration or key handling from scratch.**
-
-Port proven code from logos-notes:
+Port proven code from logos-notes — do not rewrite PC/SC or key handling from scratch:
 - `src/core/KeycardBridge.{h,cpp}` → `keycard_manager.{h,cpp}`
 - `src/core/SecureBuffer.h` → `secure_buffer.{h,cpp}`
 
-The patterns are proven. Extract and adapt, don't reinvent.
-
-### Q_INVOKABLE Method Pattern
-
-All methods exposed to QML must return JSON strings:
+### Q_INVOKABLE — always return JSON strings
 
 ```cpp
 Q_INVOKABLE QString authorize(const QString& pin) {
-    // Implementation...
-
     QJsonObject result;
     result["authorized"] = true;
     result["remainingAttempts"] = 2;
-
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 ```
 
-Never return raw types like `bool` or `int` — they don't cross the QML boundary reliably (Lesson #2).
+Never return raw `bool` or `int` — they don't cross the QML boundary reliably.
 
-### State Machine Pattern
-
-States are explicit enums, transitions are guarded:
+### State Machine — explicit enums, guarded transitions
 
 ```cpp
-enum State {
-    READER_NOT_FOUND,
-    CARD_NOT_PRESENT,
-    CARD_PRESENT,
-    AUTHORIZED,
-    SESSION_ACTIVE,
-    SESSION_CLOSED,
-    BLOCKED
-};
-
 void transitionTo(State newState) {
     if (m_state == newState) return;
-
-    // Entry actions (e.g., SESSION_CLOSED wipes key)
-    if (newState == SESSION_CLOSED) {
+    if (newState == SESSION_CLOSED)
         sodium_memzero(m_derivedKey.data(), m_derivedKey.size());
-    }
-
     m_state = newState;
     emit stateChanged(stateToString(newState));
 }
@@ -150,73 +91,43 @@ void transitionTo(State newState) {
 
 See SPEC.md "State Machine (explicit transitions)" for all valid transitions.
 
-### Memory Safety Pattern
-
-Always use SecureBuffer for key material:
+### Memory Safety — SecureBuffer for all key material
 
 ```cpp
 SecureBuffer masterKey = deriveKeycardMasterKey(cardKey);
 sodium_memzero(cardKey.data(), cardKey.size());  // Wipe intermediate
-
-// Use masterKey...
-
-// Automatic wipe on destruction
 ```
+
+---
 
 ## Build & Test Workflow
 
-### Development Build
-
 ```bash
-# Use Nix for reproducible builds with PC/SC support
+# Development build (Nix)
 source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 nix develop --command bash -c "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build"
-```
 
-### Install to LogosApp (CRITICAL)
-
-```bash
-# Install to LogosApp, NOT LogosBasecamp or LogosBasecampDev
+# Install to LogosApp (NOT LogosBasecamp or LogosBasecampDev)
 cmake --install build --prefix ~/.local/share/Logos/LogosApp
-```
 
-**Why LogosApp?**
-- `LogosApp/` - Regular mode, discovers new plugins ✅
-- `LogosBasecamp/` - Dev mode, plugin discovery frozen ❌
-- Launch WITHOUT `--dev-mode` for new plugin testing
-
-### Kill Basecamp + Clear Cache
-
-```bash
+# Kill Basecamp + clear cache
 pkill -9 -f "Logos"
 rm -rf ~/.cache/Logos/LogosApp/qmlcache/*
-```
 
-Use `-f` flag because AppImage wraps processes (Lesson #31).
-
-### Launch Basecamp (Regular Mode)
-
-```bash
+# Launch (NO --dev-mode for plugin development)
 ~/logos-app/logos-app.AppImage
-# NO --dev-mode flag for plugin development!
-```
 
-### Package LGX
-
-```bash
+# Package LGX
 nix run .#package-lgx
-# Produces: keycard-core.lgx, keycard-ui.lgx
+tar -tzf keycard-core.lgx | grep -i pcsclite  # must return nothing
 ```
 
-**Critical:** Verify libpcsclite NOT bundled:
-```bash
-tar -tzf keycard-core.lgx | grep -i pcsclite
-# Should return nothing (Lesson #36)
-```
+**Why LogosApp?** `LogosApp/` discovers new plugins. `LogosBasecamp/` freezes plugin discovery.
+
+---
 
 ## Testing Strategy
 
-**Before production UX:**
 1. Test every state transition via debug UI (keycard-ui)
 2. Test card removal/reinsertion at every state
 3. Test PIN lockout (3 failures → BLOCKED)
@@ -225,307 +136,77 @@ tar -tzf keycard-core.lgx | grep -i pcsclite
 
 **Debug UI is the test harness** — verify all primitives work before hiding behind product UX.
 
-See Issue #4 for full testing checklist.
+---
 
-## Common Pitfalls to Avoid
+## Common Pitfalls
 
-### ❌ Bundling libpcsclite
+- **Bundling libpcsclite** — never bundle in LGX; breaks pcscd. Remove with `find bundle/ -name "libpcsclite.so*" -delete`
+- **Empty plugin_metadata.json** — `{}` causes shell to silently ignore plugin
+- **override on initLogos** — called reflectively, don't use `override`
+- **Missing eventResponse signal** — ModuleProxy can't connect without it
+- **Hiding base class logosAPI** — don't redeclare; use PluginInterface's member
+- **UI missing manifest.json** — needs BOTH manifest.json AND metadata.json
+- **Directory name mismatch** — must match "name" field exactly (`keycard-ui/` not `keycard_ui/`)
+- **Logging key material** — log state/length only, never hex content
+- **Returning raw types from Q_INVOKABLE** — always return QString with JSON
 
-**Never bundle libpcsclite.so in LGX packages.** It breaks pcscd communication.
-
-Always remove after bundling:
-```bash
-find bundle/ -name "libpcsclite.so*" -delete
-```
-
-See Lesson #36 in PROJECT_KNOWLEDGE.md.
-
-### ❌ Empty plugin_metadata.json
-
-If metadata is `{}`, shell silently ignores the plugin.
-
-Must have complete fields matching manifest.json. See Lesson #10.
-
-### ❌ Using override on initLogos
-
-```cpp
-// ❌ Wrong
-QString initLogos(QObject* parent) override {  // Don't use override
-
-// ✅ Correct
-QString initLogos(QObject* parent) {  // Called reflectively
-```
-
-See Lesson #19.
-
-### ❌ Missing eventResponse signal
-
-Plugin must have eventResponse signal or ModuleProxy can't connect:
-
-```cpp
-// ❌ Wrong - no signal
-class MyPlugin : public QObject, public PluginInterface {
-    // Missing signal!
-};
-
-// ✅ Correct
-class MyPlugin : public QObject, public PluginInterface {
-signals:
-    void eventResponse(const QString& eventName, const QVariantList& data);
-};
-```
-
-### ❌ Hiding base class logosAPI member
-
-```cpp
-// ❌ Wrong - hides PluginInterface::logosAPI
-private:
-    LogosAPI* logosAPI = nullptr;
-
-// ✅ Correct - use base class member
-// No private logosAPI needed - PluginInterface already has it
-```
-
-### ❌ UI plugins missing manifest.json
-
-UI plugins need BOTH manifest.json AND metadata.json:
-
-```
-// ❌ Wrong
-plugins/keycard-ui/
-└── metadata.json  (only metadata)
-
-// ✅ Correct
-plugins/keycard-ui/
-├── manifest.json   (required!)
-└── metadata.json   (required!)
-```
-
-### ❌ Directory name mismatch
-
-Plugin directory name must exactly match the "name" field:
-
-```bash
-# ❌ Wrong
-plugins/keycard_ui/metadata.json → {"name": "keycard-ui"}
-
-# ✅ Correct
-plugins/keycard-ui/metadata.json → {"name": "keycard-ui"}
-```
-
-### ❌ Logging key material
-
-Never log keys, even for debugging:
-
-```cpp
-// ❌ NEVER do this
-qDebug() << "Derived key:" << masterKey.toHex();
-
-// ✅ Log state, not content
-qDebug() << "Key derived successfully, length:" << masterKey.size();
-```
-
-### ❌ Returning raw types from Q_INVOKABLE
-
-```cpp
-// ❌ Wrong
-Q_INVOKABLE bool authorize(const QString& pin) {
-    return true;  // QML can't parse reliably
-}
-
-// ✅ Correct
-Q_INVOKABLE QString authorize(const QString& pin) {
-    return "{\"authorized\": true}";
-}
-```
+---
 
 ## File Organization
 
 ```
 keycard-basecamp/
-├── SPEC.md                    ← Complete specification (read first!)
-├── PROJECT_KNOWLEDGE.md       ← Lessons learned & patterns
-├── README.md                  ← User-facing overview
-├── flake.nix                  ← Nix build config
-├── scripts/package-lgx.sh     ← LGX packaging
-├── keycard-core/              ← Core C++ module
-│   ├── CMakeLists.txt
-│   ├── src/
-│   │   ├── plugin.{h,cpp}            ← PluginInterface impl
-│   │   ├── keycard_manager.{h,cpp}   ← State machine & PC/SC
-│   │   ├── secure_buffer.{h,cpp}     ← RAII key memory
-│   │   └── plugin_metadata.json
-│   └── modules/keycard/
-│       └── manifest.json             ← Module manifest
-└── keycard-ui/                ← Debug UI (pure QML, no C++)
-    ├── CMakeLists.txt                ← Install-only (no build)
-    ├── qml/
-    │   └── Main.qml                  ← Debug panel
-    └── plugins/keycard-ui/
-        ├── manifest.json             ← Module manifest (required!)
-        └── metadata.json             ← UI plugin metadata (required!)
+├── SPEC.md, PROJECT_KNOWLEDGE.md, flake.nix
+├── scripts/package-lgx.sh
+├── keycard-core/src/
+│   ├── plugin.{h,cpp}              ← PluginInterface impl
+│   ├── keycard_manager.{h,cpp}     ← State machine & PC/SC
+│   ├── secure_buffer.{h,cpp}       ← RAII key memory
+│   └── plugin_metadata.json
+├── keycard-core/modules/keycard/manifest.json
+├── keycard-ui/qml/Main.qml         ← Debug panel
+└── keycard-ui/plugins/keycard-ui/{manifest,metadata}.json
 ```
+
+---
 
 ## When Working on Issues
 
-### Issue #1 (Scaffolding) ✅ COMPLETE
-- ✅ Core module with eventResponse signal
-- ✅ Pure-QML UI (no C++ scaffolding needed)
-- ✅ Both manifest.json AND metadata.json for UI plugins
-- ✅ Hyphen naming (keycard-ui) not underscore
-- ✅ Don't hide base class logosAPI member
+**#1 (Scaffolding) — COMPLETE:** Core module with eventResponse, pure-QML UI, both manifests, hyphen naming.
 
-### Issue #2 (Core Module)
-- Port SecureBuffer first (foundation)
-- Implement state machine with explicit transitions
-- Add stateChanged signal
-- Port PC/SC code from logos-notes KeycardBridge
-- Test every method returns correct JSON
+**#2 (Core Module):** Port SecureBuffer first → state machine → stateChanged signal → PC/SC from logos-notes → verify JSON returns.
 
-### Issue #3 (Debug UI)
-- 7 action rows, one per method
-- Live state indicator via Connections + onStateChanged
-- Prerequisites gating (disable buttons when prereqs not met)
-- Test full flow: discover → authorize → derive → close
+**#3 (Debug UI):** 7 action rows, live state indicator, prerequisites gating, full flow test.
 
-### Issue #4 (Testing)
-- Use debug UI to test all transitions
-- Document security properties verified
-- Test edge cases (card removal, rapid changes)
+**#4 (Testing):** All transitions via debug UI, security properties verified, edge cases.
 
-### Issue #5 (Packaging)
-- Set up flake.nix with logos-cpp-sdk
-- Create package-lgx.sh
-- **Critical:** Remove libpcsclite after bundling
-- Verify LGX installs to Basecamp correctly
+**#5 (Packaging):** flake.nix + package-lgx.sh, remove libpcsclite after bundling, verify LGX install.
+
+---
 
 ## References
-
-Always consult these before implementing:
 
 1. **SPEC.md** — Complete specification (state machine, methods, security properties)
 2. **PROJECT_KNOWLEDGE.md** — Lessons learned, patterns, security checklist
 3. **logos-notes source** — Proven implementations to port from
 4. **GitHub Issues** — Task breakdowns and success criteria
 
-## Working with the User and Senty
-
-- This user prefers **direct, concise responses** — no verbose explanations unless asked
-- Always update PROJECT_KNOWLEDGE.md after learning new lessons
-- When in doubt about security implications, ask before implementing
-- Test via debug UI before claiming something works
-- Document test results in GitHub issues
-
-### Session Setup (one-time per work session)
-
-Label your pane so Senty can reach you:
-
-```bash
-tmux-bridge name "$(tmux-bridge id)" fergie
-```
-
-### GitHub Communication Protocol
-
-**Your role:** Fergie (implementer)
-**Reviewer role:** Senty (security reviewer and auditor)
-
-**When posting issue comments:**
-```
-Fergie: <your update>
-
-Implementation summary:
-- Branch: <branch-name>
-- Commit: <SHA>
-- Changes: <what you did>
-
-Verification:
-- Build: ✅/❌
-- Install: ✅/❌
-- Manual test: ✅/❌ (describe what you tested)
-
-Not verified:
-- <what you didn't test>
-
-Ready for review, Senty!
-```
-
-**After posting, notify Senty via tmux-bridge:**
-```bash
-tmux-bridge read senty 20
-tmux-bridge message senty '/btw check issue #XX'
-tmux-bridge read senty 20
-tmux-bridge keys senty Enter
-```
-
-**Senty will post findings on GitHub and ping you back** (`/btw check issue #XX` arrives in your pane).
-Read with `gh issue view XX`, address findings, re-comment, and ping again.
-
-**Senty's review format:**
-```
-Senty: Reviewed — Round N
-
-Findings:
-[severity] issue description
-
-Overall: LGTM / needs fixes
-```
-
-## Documentation Management
-
-**When user says "remember this":**
-1. Update existing memory file if topic exists, or create new file for new topics
-2. ALWAYS update relevant project .md file (CLAUDE.md, LESSONS.md, PROJECT_KNOWLEDGE.md)
-3. Commit the .md changes to git
-
-Don't create separate memory files for every statement - consolidate related items.
-Documentation should be both in memory AND discoverable in the repo.
-
-This repo has three levels of documentation:
-
-### PROJECT_KNOWLEDGE.md
-**What:** Architectural patterns, extracted lessons from logos-notes, security checklists
-**When to update:** When learning new architectural patterns or porting proven solutions
-**Format:** Numbered lessons with ✅ correct vs ❌ wrong examples
-
-### LESSONS.md
-**What:** Implementation-specific lessons learned during building this repo
-**When to update:** After ANY correction from user or Senty, when something goes wrong, when you discover a better approach
-**Format:** Organized by issue number, describes what went wrong and how it was fixed
-**Purpose:** Self-improvement loop - prevent repeating mistakes
-
-**After corrections, always update LESSONS.md with:**
-1. What went wrong
-2. Why it happened
-3. How to prevent it next time
-4. Evidence (commit SHA, file reference)
-
-### Global Memory
-**What:** User preferences, cross-project patterns (like Fergie/Senty protocol)
-**When to update:** When learning about user workflow preferences
-**Location:** `~/.claude/projects/-tmp/memory/`
-
 ---
-
-**Remember:** This module handles cryptographic keys. Be paranoid about security. When in doubt, consult SPEC.md security sections and ask the user.
 
 ## Branch Workflow
 
-**Always create a feature branch for new issues:**
-
 ```bash
-# When starting work on issue #N
 git checkout -b issue-N-brief-description
-
-# Example:
-git checkout -b issue-2-pcsc-integration
+# Example: git checkout -b issue-2-pcsc-integration
 ```
 
-**Never work directly on master.** All work goes through:
-1. Feature branch
-2. Senty review (multiple rounds if needed)
-3. LGTM → merge to master
-4. Delete feature branch
+**Never work directly on master.** Feature branch → Senty review → LGTM → merge → delete branch.
 
-**When user posts issue number:**
-- If path is clear → create branch and start immediately
-- Only ask if issue is ambiguous or multiple approaches exist
+When user posts issue number: if path is clear, create branch and start. Only ask if ambiguous.
+
+---
+
+## Guiding Principle
+
+This module handles cryptographic keys. Be paranoid about security.
+When in doubt, consult SPEC.md security sections and ask the user.
