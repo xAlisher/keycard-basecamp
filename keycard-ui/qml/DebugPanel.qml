@@ -1019,10 +1019,14 @@ Rectangle {
                                     var parsed = JSON.parse(result)
 
                                     if (parsed.status === "complete") {
-                                        // Success - legitimate key from hardware
+                                        // Success — now retrieve key via the one-read-and-drop path
+                                        var keyResult = logos.callModule("keycard", "checkAuthStatus",
+                                            [authWindow.currentAuthId])
+                                        var keyParsed = JSON.parse(keyResult)
+                                        var derivedKey = (keyParsed.key) ? keyParsed.key : ""
                                         refreshPendingAuths()
                                         authWindow.currentAuthId = ""
-                                        authWindow.authorizationComplete(true, parsed.key)
+                                        authWindow.authorizationComplete(true, derivedKey)
                                         authWindow.close()
                                     } else if (parsed.status === "failed") {
                                         errorText.text = parsed.error || "Authorization failed"

@@ -632,7 +632,10 @@ QString KeycardPlugin::checkAuthStatus(const QString& authId)
                 // SECURITY: One-read-and-drop — return key exactly once,
                 // then wipe the SecureBuffer and remove the request.
                 result["status"] = "complete";
-                result["key"] = QString::fromUtf8(req.key.ref().toHex());
+                QByteArray keyHex = req.key.ref().toHex();
+                result["key"] = QString::fromUtf8(keyHex);
+                // Wipe the hex intermediate before it leaves scope
+                sodium_memzero(keyHex.data(), keyHex.size());
                 req.key.wipe();
                 m_loggedRequestIds.remove(authId);
                 m_authRequests.erase(m_authRequests.begin() + i);
@@ -724,7 +727,12 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
 
     // SECURITY: Derive key from hardware (only after PIN verified)
     QString domain = targetRequest->domain;
-    QJsonObject keyResult = QJsonDocument::fromJson(deriveKey(domain).toUtf8()).object();
+    QString deriveResponse = deriveKey(domain);
+    QByteArray deriveResponseUtf8 = deriveResponse.toUtf8();
+    QJsonObject keyResult = QJsonDocument::fromJson(deriveResponseUtf8).object();
+    // Wipe the raw JSON response bytes (contains key hex)
+    sodium_memzero(deriveResponseUtf8.data(), deriveResponseUtf8.size());
+    sodium_memzero(deriveResponse.data(), deriveResponse.size() * sizeof(QChar));
 
     if (keyResult.contains("error")) {
         if (m_bridge) m_bridge->setOperationInProgress(false);
@@ -740,17 +748,21 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Success - store key in SecureBuffer (not QString)
+    // SECURITY: Extract key from JSON, store in SecureBuffer, wipe all intermediates.
     targetRequest->status = "complete";
     QString hexKey = keyResult.value("key").toString();
-    QByteArray keyBytes = QByteArray::fromHex(hexKey.toUtf8());
+    QByteArray hexKeyUtf8 = hexKey.toUtf8();
+    QByteArray keyBytes = QByteArray::fromHex(hexKeyUtf8);
     targetRequest->key = SecureBuffer(std::move(keyBytes));
-    // Wipe the intermediate QString hex — QByteArray was moved, but QString remains
+    // Wipe all intermediate buffers that touched key material
+    sodium_memzero(hexKeyUtf8.data(), hexKeyUtf8.size());
     sodium_memzero(hexKey.data(), hexKey.size() * sizeof(QChar));
 
-    // Log authorization with domain and BIP32 path
+    // Extract non-secret fields before wiping the JSON object's key entry
     QString moduleName = targetRequest->caller;
     QString derivedPath = keyResult.value("path").toString();
+    // Remove key from the parsed JSON object so it doesn't linger
+    keyResult.remove("key");
     logActivity(QString("Request from %1 approved for domain %2").arg(moduleName, domain), "success");
     logActivity(QString("Key derived for module %1 following approved path %2").arg(moduleName, derivedPath), "success");
 
@@ -762,13 +774,12 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     logActivity("Session closed", "success");
     logActivity(QString("Go back to %1 module to continue").arg(moduleName), "warning");
 
-    // Return key to keycard-ui for immediate display — the consumer will
-    // read it once via checkAuthStatus, which wipes and removes the request.
+    // SECURITY: Do NOT return key here. The only path that hands out
+    // the derived key is checkAuthStatus() — one-read-and-drop.
     QJsonObject result;
     result["authId"] = authId;
     result["status"] = "complete";
-    result["message"] = "Authorization completed successfully";
-    result["key"] = QString::fromUtf8(targetRequest->key.ref().toHex());
+    result["message"] = "Authorization completed. Poll checkAuthStatus to retrieve key.";
 
     addActivityToResponse(result);
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
