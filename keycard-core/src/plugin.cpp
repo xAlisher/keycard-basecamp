@@ -8,6 +8,7 @@
 #include <QUuid>
 #include <QDateTime>
 #include <QDebug>
+#include <algorithm>
 #include <sodium.h>
 
 KeycardPlugin::KeycardPlugin(QObject* parent)
@@ -19,6 +20,10 @@ KeycardPlugin::KeycardPlugin(QObject* parent)
 
 KeycardPlugin::~KeycardPlugin()
 {
+    // Wipe all auth requests on unload
+    purgeCompletedRequests();
+    m_authRequests.clear();
+
     if (m_bridge) {
         m_bridge->stop();
         delete m_bridge;
@@ -332,6 +337,7 @@ QString KeycardPlugin::getState()
     if (cardGone && (m_sessionState == SessionState::Active || m_sessionState == SessionState::NoSession)) {
         qDebug() << "KeycardPlugin::getState() - card gone, clearing session state";
         m_sessionState = SessionState::NoSession;
+        purgeCompletedRequests();
     }
 
     // Session state takes precedence over bridge state (only if card still present)
@@ -353,6 +359,9 @@ QString KeycardPlugin::closeSession()
 
     // Reset session state (keep bridge running for future requests)
     m_sessionState = SessionState::NoSession;
+
+    // SECURITY: Wipe and remove all completed/consumed auth requests
+    purgeCompletedRequests();
 
     QJsonObject result;
     result["closed"] = true;
@@ -596,7 +605,7 @@ QString KeycardPlugin::requestAuth(const QString& domain, const QString& caller)
     request.status = "pending";
     request.timestamp = QDateTime::currentMSecsSinceEpoch();
 
-    m_authRequests.append(request);
+    m_authRequests.push_back(std::move(request));
 
     logActivity(QString("Module %1 is requesting access to domain %2").arg(caller, domain), "warning");
 
@@ -611,20 +620,29 @@ QString KeycardPlugin::requestAuth(const QString& domain, const QString& caller)
 
 QString KeycardPlugin::checkAuthStatus(const QString& authId)
 {
-    for (const auto& req : m_authRequests) {
+    for (size_t i = 0; i < m_authRequests.size(); ++i) {
+        auto& req = m_authRequests[i];
         if (req.id == authId) {
             QJsonObject result;
             result["authId"] = authId;
-            result["status"] = req.status;
             result["domain"] = req.domain;
             result["caller"] = req.caller;
 
             if (req.status == "complete") {
-                result["key"] = req.key;
+                // SECURITY: One-read-and-drop — return key exactly once,
+                // then wipe the SecureBuffer and remove the request.
+                result["status"] = "complete";
+                result["key"] = QString::fromUtf8(req.key.ref().toHex());
+                req.key.wipe();
+                m_loggedRequestIds.remove(authId);
+                m_authRequests.erase(m_authRequests.begin() + i);
+
+                return QJsonDocument(result).toJson(QJsonDocument::Compact);
             }
+
             // Only expose pending/complete/declined to calling modules
             // Wrong PIN / internal errors stay as "pending"
-
+            result["status"] = req.status;
             return QJsonDocument(result).toJson(QJsonDocument::Compact);
         }
     }
@@ -638,7 +656,7 @@ QString KeycardPlugin::getPendingAuths()
 {
     QJsonArray pending;
 
-    for (const auto& req : m_authRequests) {
+    for (auto& req : m_authRequests) {
         if (req.status == "pending") {
             QJsonObject obj;
             obj["authId"] = req.id;
@@ -722,9 +740,13 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Success - store legitimate hardware-derived key
+    // Success - store key in SecureBuffer (not QString)
     targetRequest->status = "complete";
-    targetRequest->key = keyResult.value("key").toString();
+    QString hexKey = keyResult.value("key").toString();
+    QByteArray keyBytes = QByteArray::fromHex(hexKey.toUtf8());
+    targetRequest->key = SecureBuffer(std::move(keyBytes));
+    // Wipe the intermediate QString hex — QByteArray was moved, but QString remains
+    sodium_memzero(hexKey.data(), hexKey.size() * sizeof(QChar));
 
     // Log authorization with domain and BIP32 path
     QString moduleName = targetRequest->caller;
@@ -740,11 +762,13 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     logActivity("Session closed", "success");
     logActivity(QString("Go back to %1 module to continue").arg(moduleName), "warning");
 
+    // Return key to keycard-ui for immediate display — the consumer will
+    // read it once via checkAuthStatus, which wipes and removes the request.
     QJsonObject result;
     result["authId"] = authId;
     result["status"] = "complete";
     result["message"] = "Authorization completed successfully";
-    result["key"] = targetRequest->key;  // Return key immediately for UI
+    result["key"] = QString::fromUtf8(targetRequest->key.ref().toHex());
 
     addActivityToResponse(result);
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
@@ -782,6 +806,24 @@ QString KeycardPlugin::rejectRequest(const QString& authId)
     result["message"] = "Authorization request declined by user";
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+void KeycardPlugin::purgeCompletedRequests()
+{
+    // SECURITY: Wipe key material and remove completed/consumed requests.
+    // SecureBuffer destructor handles sodium_memzero via RAII,
+    // but we wipe explicitly for defense-in-depth.
+    for (auto& req : m_authRequests) {
+        if (req.status == "complete" || req.status == "consumed") {
+            req.key.wipe();
+            m_loggedRequestIds.remove(req.id);
+        }
+    }
+    auto it = std::remove_if(m_authRequests.begin(), m_authRequests.end(),
+        [](const AuthRequest& req) {
+            return req.status == "complete" || req.status == "consumed";
+        });
+    m_authRequests.erase(it, m_authRequests.end());
 }
 
 void KeycardPlugin::logActivity(const QString& message, const QString& level)

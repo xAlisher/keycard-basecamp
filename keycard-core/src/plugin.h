@@ -1,11 +1,13 @@
 #pragma once
 
 #include "KeycardBridge.h"
+#include "secure_buffer.h"
 #include <QObject>
 #include <QString>
 #include <QVariantList>
 #include <QDateTime>
 #include <QSet>
+#include <vector>
 #include <module_lib/interface.h>
 
 class KeycardPlugin : public QObject, public PluginInterface
@@ -58,11 +60,20 @@ private:
         QString id;
         QString domain;
         QString caller;
-        QString status;  // "pending", "complete", "failed"
-        QString key;     // Result key (if complete)
+        QString status;  // "pending", "complete", "consumed", "failed"
+        SecureBuffer key; // Result key (if complete) — wiped after first read
         QString error;   // Error message (if failed)
         qint64 timestamp;
+
+        // Move-only (SecureBuffer is non-copyable)
+        AuthRequest() = default;
+        AuthRequest(AuthRequest&&) = default;
+        AuthRequest& operator=(AuthRequest&&) = default;
+        AuthRequest(const AuthRequest&) = delete;
+        AuthRequest& operator=(const AuthRequest&) = delete;
     };
+
+    void purgeCompletedRequests();
 
     QString mapBridgeStateToSpec(KeycardBridge::State state);
     void logActivity(const QString& message, const QString& level = "info");
@@ -76,7 +87,7 @@ private:
 private:
     KeycardBridge* m_bridge = nullptr;
     SessionState m_sessionState = SessionState::NoSession;
-    QList<AuthRequest> m_authRequests;
+    std::vector<AuthRequest> m_authRequests;
 
     // Activity log queue (for QML)
     struct ActivityEntry {
