@@ -68,6 +68,5 @@
 | Architecture, state machine, QML patterns, security checklist | `docs/skills/architecture.md` |
 | All lessons (numbered + phase/issue) | `docs/skills/lessons.md` |
 | Ecosystem, cross-project refs, dependencies, tutorial adoption | `docs/skills/ecosystem.md` |
-| Implementation-specific lessons | `LESSONS.md` |
 | Security audit history | `SECURITY_REVIEW.md` |
 | Complete specification | `SPEC.md` |
