@@ -89,11 +89,11 @@ Timer {
         if (r.status === "complete" && r.key) {
             pollTimer.stop()
             useKey(r.key)
-        } else if (r.status === "failed" || r.status === "rejected" || r.error) {
+        } else if (r.status === "rejected" || r.error) {
             pollTimer.stop()
-            showError(r.error || "Authorization " + r.status)
+            showError(r.error || "Authorization rejected")
         }
-        // "pending" → keep polling
+        // "pending" → keep polling (wrong PINs are retried in the approval panel and stay pending)
     }
 }
 ```
@@ -159,7 +159,7 @@ The domain maps deterministically to a BIP32 derivation path via EIP-1581. Same 
 | Pitfall | Fix |
 |---------|-----|
 | `callModule` returns a string | Always `JSON.parse()` before accessing fields |
-| Poller loops forever | Handle ALL response types: complete, failed, rejected, AND `error` field |
+| Poller loops forever | Handle ALL response types: complete, rejected, AND `{error: ...}` shape for expired authIds. Do not wait for `failed` — it is not emitted by the consumer API; wrong PINs stay `pending` so the user can retry |
 | Key "changes" between sessions | It doesn't — same domain = same key. But session auto-closes, so you need a new `requestAuth` each time |
 | "Auth request not found" | The authId expired or was already consumed. Start a new `requestAuth` |
 | Component doesn't render | Make sure `KeycardAuth.qml` is in the same directory as your Main.qml |
