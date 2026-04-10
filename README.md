@@ -96,8 +96,8 @@ if (obj.status === "complete") {
 ## Documentation
 
 - [SPEC.md](SPEC.md) — Complete specification
-- [PROJECT_KNOWLEDGE.md](PROJECT_KNOWLEDGE.md) — Lessons learned
-- [WORKFLOW.md](WORKFLOW.md) — Fergie/Senty collaboration workflow
+- [PROJECT_KNOWLEDGE.md](PROJECT_KNOWLEDGE.md) — Project dashboard and status
+- [docs/skills/](docs/skills/) — Architecture, lessons learned, ecosystem references
 
 ## License
 
