@@ -25,6 +25,13 @@ trap "rm -rf $TEMP_DIR" EXIT
 
 tar -xzf "$OUTPUT_DIR/keycard-core.lgx.tmp" -C "$TEMP_DIR"
 find "$TEMP_DIR" -name "libpcsclite.so*" -delete
+
+echo "==> Patching RUNPATH on keycard_plugin.so to use system pcsclite..."
+PLUGIN_SO=$(find "$TEMP_DIR" -name "keycard_plugin.so" -print -quit)
+if [ -n "$PLUGIN_SO" ] && command -v patchelf &>/dev/null; then
+    patchelf --set-rpath '$ORIGIN' "$PLUGIN_SO"
+fi
+
 (cd "$TEMP_DIR" && tar -czf "$OUTPUT_DIR/keycard-core.lgx" *)
 
 rm "$OUTPUT_DIR/keycard-core.lgx.tmp"
