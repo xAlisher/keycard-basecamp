@@ -607,7 +607,8 @@ QString KeycardPlugin::requestAuth(const QString& domain, const QString& caller)
 
     m_authRequests.push_back(std::move(request));
 
-    logActivity(QString("Module %1 is requesting access to domain %2").arg(caller, domain), "warning");
+    QString shortId = authId.left(8);
+    logActivity(QString("[%1] Module %2 requesting access to domain %3").arg(shortId, caller, domain), "warning");
 
     QJsonObject result;
     result["authId"] = authId;
@@ -670,7 +671,8 @@ QString KeycardPlugin::getPendingAuths()
 
             // Log new requests that haven't been logged yet
             if (!m_loggedRequestIds.contains(req.id)) {
-                logActivity(QString("New request from module %1 for domain %2").arg(req.caller, req.domain), "warning");
+                QString shortId = req.id.left(8);
+                logActivity(QString("[%1] New request from module %2 for domain %3").arg(shortId, req.caller, req.domain), "warning");
                 m_loggedRequestIds.insert(req.id);
             }
         }
@@ -763,8 +765,9 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     QString derivedPath = keyResult.value("path").toString();
     // Remove key from the parsed JSON object so it doesn't linger
     keyResult.remove("key");
-    logActivity(QString("Request from %1 approved for domain %2").arg(moduleName, domain), "success");
-    logActivity(QString("Key derived for module %1 following approved path %2").arg(moduleName, derivedPath), "success");
+    QString shortId = authId.left(8);
+    logActivity(QString("[%1] Request from %2 approved for domain %3").arg(shortId, moduleName, domain), "success");
+    logActivity(QString("[%1] Key derived for %2 via path %3").arg(shortId, moduleName, derivedPath), "success");
 
     // Release operation lock before session cleanup
     if (m_bridge) m_bridge->setOperationInProgress(false);
@@ -806,7 +809,8 @@ QString KeycardPlugin::rejectRequest(const QString& authId)
 
     // Mark as rejected
     targetRequest->status = "rejected";
-    logActivity(QString("Request from %1 declined for domain %2").arg(targetRequest->caller, targetRequest->domain), "warning");
+    QString shortId = authId.left(8);
+    logActivity(QString("[%1] Request from %2 declined for domain %3").arg(shortId, targetRequest->caller, targetRequest->domain), "warning");
 
     // Remove from logged set (cleanup)
     m_loggedRequestIds.remove(authId);

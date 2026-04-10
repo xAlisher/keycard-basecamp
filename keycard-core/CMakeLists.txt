@@ -100,4 +100,20 @@ install(FILES modules/keycard/manifest.json
     DESTINATION "${KEYCARD_MODULE_DIR}"
 )
 
+# Strip Nix store paths from RUNPATH so the plugin uses system libpcsclite.
+# Nix pcsclite may be a newer protocol version than the system pcscd,
+# causing "Communication protocol mismatch" at runtime.
+find_program(PATCHELF_EXECUTABLE patchelf)
+if(PATCHELF_EXECUTABLE)
+    install(CODE "
+        set(_plugin \"\${CMAKE_INSTALL_PREFIX}/${KEYCARD_MODULE_DIR}/keycard_plugin.so\")
+        if(EXISTS \"\${_plugin}\")
+            execute_process(
+                COMMAND ${PATCHELF_EXECUTABLE} --set-rpath \"\$ORIGIN\" \"\${_plugin}\"
+            )
+            message(STATUS \"Patched RUNPATH on keycard_plugin.so → \$ORIGIN\")
+        endif()
+    ")
+endif()
+
 # Note: libkeycard.so removed - now using keycard-qt (native C++/Qt)

@@ -16,12 +16,24 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
   - **Compounding error:** When Alisher flagged the first failure, I misdiagnosed it as a "read before message" prerequisite issue. I added a `read` call and retried, but still didn't press Enter and still didn't verify. Took a second correction from Alisher to identify the real problem.
   - **Fix:** After every `tmux-bridge message`, immediately run `tmux-bridge keys <target> Enter`, then `tmux-bridge read <target> 5` to confirm the message was received and processed.
 - **Doc-packet draft committed on issue-94 branch.** Mixed unrelated work (docs/doc-packet-draft.md) into a security fix branch. Should have been on a separate branch or committed to master before branching.
+- **Installing to wrong Basecamp directory.** CLAUDE.md says install to `LogosApp/` but the AppImage was loading from `LogosBasecamp/`. Spent multiple kill/relaunch cycles debugging why the `[authId:]` log line wasn't showing — the rebuilt `.so` was in `LogosApp/` while the running process loaded from `LogosBasecamp/`.
+  - **Root cause:** CLAUDE.md install prefix is stale. Need to determine which directory the current AppImage release uses, test, and update CLAUDE.md accordingly.
+  - **Fix:** Always install to both `LogosApp/` and `LogosBasecamp/` until we confirm which is canonical for the latest Basecamp release. Update CLAUDE.md with the correct path once confirmed.
 
 ### Project lessons (added to docs/skills/lessons.md)
 - (pending — will add tmux-bridge read-before-message lesson after merge)
 
 ### Feedback for Alisher
 - (none yet — review in progress)
+
+### Technical wins
+- **Diagnosed pcscd protocol mismatch from logs.** `journalctl -u pcscd` showed `Client protocol is 4:5 / Server protocol is 4:4` — immediately traced to Nix pcsclite 2.3.0 in RUNPATH vs system pcscd 2.0.3.
+- **Single patchelf command fixed runtime.** `patchelf --set-rpath '$ORIGIN'` on the installed .so switched it to system libpcsclite — pcscd started clean, no more mismatch.
+
+### Technical fails
+- **Nix RUNPATH leaking into installed plugin went unnoticed for days.** CMake `INSTALL_RPATH "$ORIGIN"` was set correctly, but Nix build tooling appends its own store paths to RUNPATH, overriding our intent. We had the "don't bundle libpcsclite" pitfall documented in CLAUDE.md but only for the .so *file* — the RUNPATH pointing to Nix store is the same problem in a different form.
+  - **Root cause:** Nix's `cc-wrapper` injects `-rpath /nix/store/...` for every dependency. `INSTALL_RPATH` in CMake is ignored when Nix's wrapper sets RUNPATH at link time.
+  - **Fix:** Added post-install `patchelf --set-rpath '$ORIGIN'` step in CMakeLists.txt and package-lgx.sh. Now both dev-install and LGX packaging produce a plugin that uses system pcsclite.
 
 ---
 
