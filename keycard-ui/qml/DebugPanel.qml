@@ -1019,15 +1019,22 @@ Rectangle {
                                     var parsed = JSON.parse(result)
 
                                     if (parsed.status === "complete") {
-                                        // Success — now retrieve key via the one-read-and-drop path
+                                        // Success — retrieve key via the one-read-and-drop path
                                         var keyResult = logos.callModule("keycard", "checkAuthStatus",
                                             [authWindow.currentAuthId])
                                         var keyParsed = JSON.parse(keyResult)
-                                        var derivedKey = (keyParsed.key) ? keyParsed.key : ""
-                                        refreshPendingAuths()
-                                        authWindow.currentAuthId = ""
-                                        authWindow.authorizationComplete(true, derivedKey)
-                                        authWindow.close()
+
+                                        if (keyParsed.key) {
+                                            refreshPendingAuths()
+                                            authWindow.currentAuthId = ""
+                                            authWindow.authorizationComplete(true, keyParsed.key)
+                                            authWindow.close()
+                                        } else {
+                                            // Key fetch failed — keep dialog open, show error
+                                            errorText.text = keyParsed.error || "Failed to retrieve derived key"
+                                            pinField.clear()
+                                            pinField.forceActiveFocus()
+                                        }
                                     } else if (parsed.status === "failed") {
                                         errorText.text = parsed.error || "Authorization failed"
 

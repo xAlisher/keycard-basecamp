@@ -200,9 +200,9 @@ Returns all pending authorization requests.
 
 ### authorizeRequest(authId, pin)
 
-Approve a pending request with the card PIN. Derives key on-card and auto-closes session.
+Approve a pending request with the card PIN. Derives key on-card and auto-closes session. The key is **not** returned in this response — retrieve it via a follow-up `checkAuthStatus(authId)` call (one-read-and-drop: the key is returned exactly once, then the request is wiped and removed).
 
-**Success:** `{ "authId": "...", "status": "complete", "key": "hex...", "message": "..." }`
+**Success:** `{ "authId": "...", "status": "complete", "message": "Authorization completed. Poll checkAuthStatus to retrieve key." }`
 **Wrong PIN:** `{ "authId": "...", "status": "retry", "remainingAttempts": N }` — no `error` field. The underlying `AuthRequest` stays `pending` on the consumer side.
 **Derivation error (after PIN verified):** `{ "authId": "...", "status": "retry" }` — no `error` field, no `remainingAttempts`. The underlying `AuthRequest` also stays `pending` on the consumer side.
 **Not found:** `{ "error": "Auth request not found or already completed" }`
