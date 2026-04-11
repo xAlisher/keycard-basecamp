@@ -1,5 +1,6 @@
 {
   "author": "alisher",
+  "capabilities": ["smartcard-auth", "key-derivation"],
   "category": "security",
   "dependencies": [],
   "description": "Keycard module for Basecamp app",
@@ -7,9 +8,8 @@
   "main": {
     "linux-amd64": "keycard_plugin.so"
   },
-  "manifestVersion": "0.1.0",
+  "manifestVersion": "0.2.0",
   "name": "keycard",
-  "capabilities": ["smartcard-auth", "key-derivation"],
   "type": "core",
   "version": "1.0.0"
 }
