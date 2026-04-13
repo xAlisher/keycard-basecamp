@@ -9,5 +9,5 @@
   "dependencies": ["keycard"],
   "category": "security",
   "capabilities": [],
-  "icon": "icons/keycard.png"
+  "icon": "keycard.png"
 }
