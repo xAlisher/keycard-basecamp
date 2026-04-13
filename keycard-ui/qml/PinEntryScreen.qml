@@ -23,41 +23,46 @@ FocusScope {
     property int maxPinLength: 6
     property bool verifyingPin: false
     property int attemptsRemaining: 3
+    property bool checkHardwareBusy: false
 
     function checkHardware() {
+        if (root.checkHardwareBusy) return  // callModule blocks ~20s; guard prevents re-entrant stack buildup
+        root.checkHardwareBusy = true
+
         var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
 
         var readerResult = logos.callModule("keycard", "checkReaderPresent", [])
-        try {
-            var r = JSON.parse(readerResult)
-            var coreWasReachable = root.coreReachable
-            var coreNowReachable = !r.error
-            root.coreReachable = coreNowReachable
-            if (coreWasReachable !== coreNowReachable) {
-                if (coreNowReachable) {
-                    activityLog.addEntry(ts, "Keycard module connected", "success")
-                } else {
-                    activityLog.addEntry(ts, "Keycard module not reachable", "error")
-                    root.readerDetected = false
-                    root.cardDetected = false
-                    root.paired = false
-                    root.pairingSlot = -1
-                    root.pairingStatus = ""
-                    root.currentRequest = null
-                    root.pendingChecked = false
-                }
-            }
-            if (!coreNowReachable) return
+        var r = null
+        try { r = JSON.parse(readerResult) } catch (e) {}
+        // DEBUG: activityLog.addEntry(ts, "callModule raw=" + JSON.stringify(readerResult), "info")
 
-            var wasReader = root.readerDetected
-            root.readerDetected = r.found || false
-            if (wasReader !== root.readerDetected) {
-                if (root.readerDetected)
-                    activityLog.addEntry(ts, "Smart card reader detected", "success")
-                else
-                    activityLog.addEntry(ts, "Smart card reader not detected", "error")
+        var coreWasReachable = root.coreReachable
+        var coreNowReachable = r !== null && !r.error
+        root.coreReachable = coreNowReachable
+        if (coreWasReachable !== coreNowReachable) {
+            if (coreNowReachable) {
+                activityLog.addEntry(ts, "Keycard module connected", "success")
+            } else {
+                activityLog.addEntry(ts, "Keycard module not reachable", "error")
+                root.readerDetected = false
+                root.cardDetected = false
+                root.paired = false
+                root.pairingSlot = -1
+                root.pairingStatus = ""
+                root.currentRequest = null
+                root.pendingChecked = false
             }
-        } catch (e) {}
+        }
+        if (!coreNowReachable) { root.checkHardwareBusy = false; return }
+
+        var wasReader = root.readerDetected
+        root.readerDetected = r.found || false
+        if (wasReader !== root.readerDetected) {
+            if (root.readerDetected)
+                activityLog.addEntry(ts, "Smart card reader detected", "success")
+            else
+                activityLog.addEntry(ts, "Smart card reader not detected", "error")
+        }
 
         if (root.readerDetected) {
             var cardResult = logos.callModule("keycard", "checkCardPresent", [])
@@ -94,6 +99,7 @@ FocusScope {
         if (root.paired && !root.currentRequest) {
             checkPendingRequests()
         }
+        root.checkHardwareBusy = false
     }
 
     function checkPairing() {
@@ -235,7 +241,10 @@ FocusScope {
         onTriggered: root.checkHardware()
     }
 
-    Component.onCompleted: Qt.callLater(root.checkHardware)
+    Component.onCompleted: {
+        // DEBUG: activityLog.addEntry(Qt.formatTime(new Date(), "[HH:mm:ss]"), "PinEntryScreen loaded", "info")
+        Qt.callLater(root.checkHardware)
+    }
 
     Rectangle {
         anchors.fill: parent
