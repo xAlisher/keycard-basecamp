@@ -4,7 +4,9 @@ Hardware deterministic key generator for Logos Basecamp.
 
 Think of it like a password manager — but there's no vault, no master password, no cloud. One smartcard derives infinite unique keys, one per domain, always reproducible, never stored anywhere. It's sovereign — you hold the card, you hold the keys. And it's crypto-ready — BIP32 derivation, the same standard used by hardware wallets.
 
-**Status:** ✅ v1.0.0 released — [Download LGX packages](https://github.com/xAlisher/keycard-basecamp/releases/tag/v1.0.0)
+> **Experimental — not for production use.** This project builds against a pre-release, unstable version of Logos Basecamp. APIs will break, behavior will change without notice. If you're looking for a consumer-facing key management solution, this isn't it yet.
+
+**Status:** 🚧 Active development — [v1.0.0 LGX packages available](https://github.com/xAlisher/keycard-basecamp/releases/tag/v1.0.0) (dev use only)
 
 ## How It Works
 
@@ -98,6 +100,14 @@ if (obj.status === "complete") {
 - [SPEC.md](SPEC.md) — Complete specification
 - [PROJECT_KNOWLEDGE.md](PROJECT_KNOWLEDGE.md) — Project dashboard and status
 - [docs/skills/](docs/skills/) — Architecture, lessons learned, ecosystem references
+
+## Contributing
+
+This is an experimental module in active development. Contributions and reviews welcome.
+
+[@bitgamma](https://github.com/bitgamma) (keycard-qt maintainer) is a collaborator and reviewer on this project — PRs touching keycard protocol integration will be reviewed by them.
+
+**Note on backward compatibility:** We're building against a moving target (pre-release Basecamp). There are no existing users to protect, so we won't hesitate to make breaking changes when the design calls for it. Don't let backward-compat framing block good decisions at this stage.
 
 ## License
 

@@ -1,15 +1,14 @@
 {
   "author": "alisher",
+  "capabilities": ["keycard-debug-ui"],
   "category": "security",
   "dependencies": ["keycard"],
   "description": "Keycard debug UI and test harness",
   "icon": "keycard.png",
-  "main": {
-    "linux-amd64": "Main.qml"
-  },
-  "manifestVersion": "0.1.0",
+  "main": {},
+  "manifestVersion": "0.2.0",
   "name": "keycard-ui",
-  "capabilities": ["keycard-debug-ui"],
   "type": "ui_qml",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "view": "Main.qml"
 }

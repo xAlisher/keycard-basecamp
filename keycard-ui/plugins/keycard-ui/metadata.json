@@ -5,9 +5,9 @@
   "author": "alisher",
   "type": "ui_qml",
   "pluginType": "qml",
-  "main": "Main.qml",
+  "view": "Main.qml",
   "dependencies": ["keycard"],
   "category": "security",
   "capabilities": [],
-  "icon": "icons/keycard.png"
+  "icon": "keycard.png"
 }
