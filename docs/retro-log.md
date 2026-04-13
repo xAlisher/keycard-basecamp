@@ -38,6 +38,30 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 
 ---
 
+## Issue #106 — AppImage compat verification (2026-04-13)
+
+### Process fails
+- **[process] Declared "pass" on UI verification without reading the code.** Saw "Looking for pending requests..." and empty activity log, concluded "UI loaded + communicating with core = idle success state." Both claims were wrong.
+  - **Moment:** After Basecamp launched and keycard-ui opened, I read the screen text and log state and issued a "compat work verified" verdict.
+  - **Wrong action:** Formed conclusion from UI surface text without reading PinEntryScreen.qml to understand what the text and empty log actually mean.
+  - **Root cause:** Treated visible UI + no errors = working. Did not apply "re-read actual source" protocol before concluding.
+
+- **[process] Misread "Looking for pending requests..." as idle success state.** The text appears when `pendingChecked === false`, which means `checkPendingRequests()` was never called, which means `paired` was never true — i.e., the hardware chain failed. It is a failure indicator, not an idle indicator.
+  - **Root cause:** Did not read the code. The string is unintuitive — it sounds neutral but signals a broken state.
+
+- **[process] Did not check whether keycard-core was running before concluding the UI was connected.** `ps aux | grep logos_host` showed only `capability_module` and `package_manager` — keycard never appeared. This was verifiable before issuing any verdict.
+  - **Root cause:** Skipped the process check. Should be a reflex: any time `callModule` behavior is in question, check if the target module is actually running first.
+
+### Project fails
+- **[project] User-installed core modules are not auto-loaded in ce48695-139.** keycard_plugin.so is installed to `~/.local/share/Logos/LogosBasecamp/modules/keycard/` but never appears in Module stats or `ps aux`. Platform does not auto-launch user modules on startup. Sidebar plugin discovery works; core module loading does not.
+  - **Root cause:** Unknown — may require explicit package_manager registration, or may be a known upstream limitation. Needs investigation.
+
+### Project wins
+- **[project] keycard-ui manifest 0.2.0 changes work.** Plugin visible in sidebar on ce48695-139 — `"view"` field and `"main": {}` format confirmed correct.
+- **[project] Stale Logos instance diagnosis.** Two AppImage mounts running simultaneously (`logos-NNfgbp` from 03:19 + `logos-Penjlj` from 12:29) — pkill didn't catch the old one because process name is `ld-linux-x86-64.so.2`. Kill by PID required.
+
+---
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 
