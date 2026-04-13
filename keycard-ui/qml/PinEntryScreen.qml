@@ -7,6 +7,7 @@ FocusScope {
     focus: true
 
     property alias activityLog: activityLog
+    property var coreReachable: null  // null = unknown, true/false after first poll
     property bool readerDetected: false
     property bool cardDetected: false
     property bool paired: false
@@ -29,6 +30,17 @@ FocusScope {
         var readerResult = logos.callModule("keycard", "checkReaderPresent", [])
         try {
             var r = JSON.parse(readerResult)
+            var coreWasReachable = root.coreReachable
+            var coreNowReachable = !r.error
+            root.coreReachable = coreNowReachable
+            if (coreWasReachable !== coreNowReachable) {
+                if (coreNowReachable)
+                    activityLog.addEntry(ts, "Keycard module connected", "success")
+                else
+                    activityLog.addEntry(ts, "Keycard module not reachable", "error")
+            }
+            if (!coreNowReachable) return
+
             var wasReader = root.readerDetected
             root.readerDetected = r.found || false
             if (wasReader !== root.readerDetected) {
