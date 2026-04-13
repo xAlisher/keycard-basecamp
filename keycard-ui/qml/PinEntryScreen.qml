@@ -34,10 +34,18 @@ FocusScope {
             var coreNowReachable = !r.error
             root.coreReachable = coreNowReachable
             if (coreWasReachable !== coreNowReachable) {
-                if (coreNowReachable)
+                if (coreNowReachable) {
                     activityLog.addEntry(ts, "Keycard module connected", "success")
-                else
+                } else {
                     activityLog.addEntry(ts, "Keycard module not reachable", "error")
+                    root.readerDetected = false
+                    root.cardDetected = false
+                    root.paired = false
+                    root.pairingSlot = -1
+                    root.pairingStatus = ""
+                    root.currentRequest = null
+                    root.pendingChecked = false
+                }
             }
             if (!coreNowReachable) return
 
