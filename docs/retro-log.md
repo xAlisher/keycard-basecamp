@@ -56,9 +56,17 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 - **[project] User-installed core modules are not auto-loaded in ce48695-139.** keycard_plugin.so is installed to `~/.local/share/Logos/LogosBasecamp/modules/keycard/` but never appears in Module stats or `ps aux`. Platform does not auto-launch user modules on startup. Sidebar plugin discovery works; core module loading does not.
   - **Root cause:** Unknown — may require explicit package_manager registration, or may be a known upstream limitation. Needs investigation.
 
+### Process wins
+- **[process] Binary search debugging with activity log.** When activity log showed no entries despite correct-looking code, added diagnostic `addEntry` calls step by step — first at `Component.onCompleted` (confirmed ActivityLog renders), then at `checkHardware` entry (confirmed timer fires), then wrapped `callModule` in try-catch (confirmed it doesn't throw). Each step ruled out a layer until the re-entrancy pattern emerged.
+- **[process] Re-entrancy guard as diagnostic.** Adding `checkHardwareBusy` flag revealed that `callModule` blocks ~20s while Qt event loop runs — timer was stacking re-entrant calls. The guard both fixed the bug and proved the root cause.
+
 ### Project wins
 - **[project] keycard-ui manifest 0.2.0 changes work.** Plugin visible in sidebar on ce48695-139 — `"view"` field and `"main": {}` format confirmed correct.
 - **[project] Stale Logos instance diagnosis.** Two AppImage mounts running simultaneously (`logos-NNfgbp` from 03:19 + `logos-Penjlj` from 12:29) — pkill didn't catch the old one because process name is `ld-linux-x86-64.so.2`. Kill by PID required.
+- **[project] callModule blocking behavior confirmed.** `logos.callModule` blocks synchronously for ~20s (invokeRemoteMethod timeout) while Qt's event loop pumps — it does NOT return a Promise or fire a callback. The return value is the final result, delivered after the full timeout when the module is unreachable.
+
+### Technical wins
+- **[technical] "Keycard module not reachable" verified.** Activity log entry appears ~20s after opening keycard-ui on ce48695-139. Code path confirmed: `callModule` returns `{"error":"Invalid response"}`, `r !== null && !r.error` = false, transition logged.
 
 ---
 
