@@ -89,11 +89,15 @@ public:
     // Last error from an operation (for debugging)
     QString lastError() const { return m_lastError; }
 
+    // Key mode — detected from SELECT response tag 0x8D bit 5
+    enum class KeyMode { None, BIP39, LEE };
+
     // Card info from last status query
     int remainingPINAttempts() const { return m_remainingPIN; }
     int remainingPUKAttempts() const { return m_remainingPUK; }
     bool keyInitialized() const { return m_keyInitialized; }
     QString keyUID() const { return m_keyUID; }
+    KeyMode keyMode() const { return m_keyMode; }
 
     // Operation lock — prevents concurrent PC/SC access during multi-step flows
     bool isOperationInProgress() const { return m_operationInProgress; }
@@ -130,6 +134,7 @@ private:
     int m_remainingPUK = -1;
     bool m_keyInitialized = false;
     QString m_keyUID;
+    KeyMode m_keyMode = KeyMode::None;
 
     // Throttle getStatus() calls (takes ~600ms each)
     qint64 m_lastStatusCheck = 0;

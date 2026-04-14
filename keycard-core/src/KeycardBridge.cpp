@@ -581,6 +581,12 @@ void KeycardBridge::onCardReady(const QString& uid)
             m_keyUID = uid;
         }
 
+        // Detect key mode from SELECT response (tag 0x8D bit 5)
+        m_keyMode = appInfo.isLEEKey() ? KeyMode::LEE
+                  : appInfo.initialized ? KeyMode::BIP39
+                  : KeyMode::None;
+        qDebug() << "KeycardBridge: KeyMode:" << static_cast<int>(m_keyMode);
+
         auto status = m_commandSet->getStatus();
         if (status.valid) {
             m_remainingPIN = status.pinRetryCount;
@@ -745,6 +751,9 @@ bool KeycardBridge::isCardPresent()
                             m_cardReady = true;
                             m_keyUID = uid;
                             m_keyInitialized = appInfo.initialized;
+                            m_keyMode = appInfo.isLEEKey() ? KeyMode::LEE
+                                      : appInfo.initialized ? KeyMode::BIP39
+                                      : KeyMode::None;
 
                             // Set state based on initialization status
                             if (appInfo.initialized) {

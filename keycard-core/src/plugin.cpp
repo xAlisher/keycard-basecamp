@@ -560,6 +560,28 @@ QString KeycardPlugin::getCardStatus()
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
+QString KeycardPlugin::detectMode()
+{
+    QJsonObject result;
+    if (!m_bridge) {
+        result["error"] = "Bridge not initialized";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    switch (m_bridge->keyMode()) {
+    case KeycardBridge::KeyMode::LEE:
+        result["mode"] = "LEE";
+        break;
+    case KeycardBridge::KeyMode::BIP39:
+        result["mode"] = "BIP39";
+        break;
+    default:
+        result["mode"] = "none";
+        break;
+    }
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
 QString KeycardPlugin::mapBridgeStateToSpec(KeycardBridge::State state)
 {
     // Map KeycardBridge states to SPEC.md 7-state model

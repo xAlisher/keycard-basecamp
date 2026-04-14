@@ -43,6 +43,7 @@ public:
     Q_INVOKABLE QString checkCardPresent();   // Fresh PC/SC check
     Q_INVOKABLE QString unblockPIN(const QString& puk, const QString& newPIN);
     Q_INVOKABLE QString getCardStatus();  // Get PIN/PUK attempts remaining
+    Q_INVOKABLE QString detectMode();     // Returns {"mode":"BIP39"|"LEE"|"none"}
 
     // Authorization request API
     Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);
