@@ -1,26 +1,22 @@
-# Halt — 2026-04-14 (#96 LEE bit-flip VERIFIED, ready for Senty review)
+# Halt — 2026-04-14 (epic #95 waiting on bitgamma review before any merges)
 
 ## Where we stopped
 
-#96 all code committed and end-to-end verified. LEE bit-flip test passed.
-Senty has been notified via halt.md (handoff on GitHub issue #96 was posted in previous session).
+#96 and #98 both have Senty LGTM. All branches are sitting open, waiting on
+bitgamma review of epic #95 before anything merges to master.
 
 ---
 
-## Verified end-to-end (2026-04-14, session 2)
+## Branch state
 
-```
-discoverReader  → {"found": true}
-discoverCard    → {"found": true, "uid": "c5196e35721641a3902e8421c8fc0ba0"}
-authorize       → {"authorized": true}        (using {"pin":"000440"} JSON format)
-detectMode      → {"mode": "LEE"}             ← LEE key loaded (from prev session)
-removeKey       → {"ok": true}
-detectMode      → {"mode": "none"}            ← none after key removed
-loadKey(LEE)    → {"keyUID": "3a9311e3..."}   ← LEE seed loaded
-detectMode      → {"mode": "LEE"}             ← LEE bit confirmed 0x3F
-```
+| Branch | Issue | Senty | bitgamma | Notes |
+|--------|-------|-------|----------|-------|
+| `master` | — | — | — | Clean, no #96/#98 code yet |
+| `issue-98-request-sign` | #98 | LGTM Round 2 | pending | requestSign API |
+| keycard-qt submodule | #96 | LGTM | pending | signWithPath scheme + loadKey type |
 
-All three detectMode states verified: `"LEE"`, `"none"`, and BIP39 (`"BIP39"` from session 1).
+All #96 commits are on master (they landed before the epic-merge rule was set).
+#98 is on its branch, not yet merged.
 
 ---
 
@@ -33,61 +29,37 @@ Pairing password: jyairW2naGbqtzDp
 InstanceUID: c5196e35721641a3902e8421c8fc0ba0
 ```
 
-Pairing injected in `/home/alisher/.local/share/Logos/LogosBasecamp/keycard-pairings.json`
-and `/home/alisher/.local/share/Logos/LogosApp/keycard-pairings.json`.
+Pairing in `~/.local/share/Logos/LogosBasecamp/keycard-pairings.json` and
+`~/.local/share/Logos/LogosApp/keycard-pairings.json`.
 
 ```
 PAIRING KEY (b64): TtowilnWIJYvyZ0aCINvThI4HINpEI+L0zrr7E62KlY=
 PAIRING INDEX: 0
 ```
 
----
-
-## #96 commits (all on master)
-
-- `bc09f36` keycard-qt: signWithPath scheme param + loadKey type param
-- `b998951` keycard-qt: Capability::LEEKey + isLEEKey()
-- `cbc289e` basecamp: submodule bump (signing modes)
-- `1cea9ee` basecamp: KeycardBridge KeyMode + detectMode() API
-- `d3c5d76` basecamp: submodule bump (LEEKey)
-- `3d13250` feat(#96): expose loadKey/removeKey for testing; update halt
-- `ea2d6c9` fix(#96): authorize JSON arg parsing, loadKey/removeKey setKeyMode, detectMode refresh
+Card currently has **LEE key loaded** (from #96 testing).
 
 ---
 
-## Key findings from this session
+## Next steps (in order)
 
-1. **logoscore arg passing**: Unquoted string args (e.g., `abcdef`) are passed raw. JSON-quoted
-   strings (`'"000440"'`) are passed WITH the surrounding quote chars. Numbers with leading
-   zeros (`000440`) fail JSON parsing → METHOD_FAILED. Use `'{"pin":"000440"}'` format.
-
-2. **LEE capability bit persists after removeKey**: Tag 0x8D bit 5 stays set after removing a
-   LEE key. Use `appInfo.keyUID.isEmpty()` as the authoritative "key loaded" indicator.
-
-3. **CommandSet::select() is cached**: `select()` returns cached `m_appInfo` if already parsed.
-   Use `select(true)` to force a fresh SELECT — BUT this breaks any existing SC. Better: track
-   key mode manually via setKeyMode() after loadKey/removeKey.
-
-4. **Pairing storage injection**: keycard-pairings.json key must be base64-encoded raw pairing
-   key. Our slot 0 key: `TtowilnWIJYvyZ0aCINvThI4HINpEI+L0zrr7E62KlY=` (index 0).
+1. **Wait for bitgamma review of epic #95** — then merge #96 + #98 together
+2. **#97** — mode-aware pairing
+3. **#109** — mock state bar
+4. **#111** — automated headless tests
+5. **#110** — pairing PBKDF2 bug
+6. **ECDSA sign path** — verify on BIP39 card when #97 lands
 
 ---
 
-## Next steps
-
-1. **Senty review of #96** — handoff posted on GitHub, ping Senty to review
-2. **Pairing bug** — pairCard() has PBKDF2 mismatch vs keycard-go. File as separate issue.
-3. **#98** — requestSign API (Schnorr signing from the module)
-4. **#97** — mode-aware pairing
-5. **#109** — mock state bar
-
----
-
-## Logoscore test sequence (for next session)
+## Logoscore test sequence
 
 ```bash
 LOGOSCORE=/nix/store/4v00839956lahxv54hf581x58z32nj4r-logos-logoscore-cli/bin/logoscore
-$LOGOSCORE -D --modules-dir ~/.local/share/Logos/LogosApp/modules &
+kill -9 $(cat ~/.logoscore/daemon.json | python3 -c "import sys,json; print(json.load(sys.stdin)['pid'])") 2>/dev/null
+rm -f ~/.logoscore/daemon.json
+mkdir -p /tmp/test-modules && cp -r ~/.local/share/Logos/LogosApp/modules/keycard /tmp/test-modules/
+$LOGOSCORE -D --modules-dir /tmp/test-modules &
 sleep 5
 $LOGOSCORE load-module keycard
 $LOGOSCORE call keycard discoverReader
@@ -95,3 +67,6 @@ $LOGOSCORE call keycard discoverCard
 $LOGOSCORE call keycard authorize '{"pin":"000440"}'
 $LOGOSCORE call keycard detectMode
 ```
+
+Note: use `/tmp/test-modules` with keycard only — full modules dir crashes on
+capability_module.
