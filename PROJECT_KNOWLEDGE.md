@@ -36,6 +36,8 @@
 | Dev Integration Kit | Epic #82 | Full API docs, install manifest sync | 2026-04 |
 | Key Persistence Fix | #94 / be284f0 | One-read-and-drop keys, SecureBuffer for AuthRequest, pcscd RUNPATH fix | 2026-04-10 |
 | Dev Card Setup | #107 / ff95f6f | LEE applet (v3.2) installed, card initialized, ISD key identified | 2026-04-14 |
+| Pending Requests Gate | #125 / PR #126 / cf62780 | Qt.callLater deferral + checkPairingBusy guard, gate fix root.cardDetected | 2026-04-14 |
+| Pairing Flow UI | Epic #127 / PR #130 / bdd943c | Inline pairing form, QML auto-mirror to LogosBasecamp, declineRequest reset | 2026-04-14 |
 
 ---
 
@@ -64,6 +66,16 @@
 2. **Logos Storage built-in encryption:** May be built-in eventually. Worth watching.
 3. **LEE mode probe (SW=0x6A86):** Requires Keycard secure channel wrapping. `keycard-cli` v0.7.0 has no LEE/P2=0x01 support. Deferred to #96 (`detectMode()`). Raw APDU outside SC returns SW=6D00.
 4. **logos-basecamp #141 (user core module discovery):** AppImage never spawns user-installed core modules from `dependencies[]` in UI manifests. Upstream fix pending. Dev workaround: use logoscore CLI (see lessons.md "Issue #108").
+
+---
+
+## QML / Install Pitfalls (Epic #127, 2026-04-14)
+
+- **QML does not auto-mirror to LogosBasecamp.** `cmake --install --prefix LogosApp` installs QML to `LogosApp/plugins/` only. The `.so` mirror in `keycard-core/CMakeLists.txt` does not cover QML. Fixed: `install(CODE)` mirror step in `keycard-ui/CMakeLists.txt`. Verify with `md5sum` on both paths after every install.
+- **Always clear `LogosBasecamp` cache, not `LogosApp`.** AppImage reads from `~/.cache/Logos/LogosBasecamp/qmlcache/`. Clearing `LogosApp/qmlcache` has no effect on the running app.
+- **Gate pairing UI on `!root.paired`, not `cardDetected`.** `cardDetected` can be false at the moment a pending request surfaces (timing race between `checkHardware` and deferred `checkPairing`). `paired` is the authoritative state.
+- **`Qt.callLater` changes property ordering.** Deferring `checkPairing()` means `currentRequest` can be populated before `paired` becomes true. Any focus or UI state depending on both must handle both orderings (`onCurrentRequestChanged` + `onPairedChanged`).
+- **`declineRequest()` must reset all request-scoped form state.** Fields introduced for a request flow (`pairingPassword`, `pairingError`, etc.) must be cleared in `declineRequest()` — not only on card removal or success path.
 
 ---
 
