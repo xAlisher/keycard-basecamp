@@ -1091,11 +1091,18 @@ QString KeycardPlugin::approveSign(const QString& jsonArgs)
     QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
     if (!authResult.value("authorized").toBool()) {
         if (m_bridge) m_bridge->setOperationInProgress(false);
-        int remaining = authResult.value("remainingAttempts").toInt(-1);
         QJsonObject result;
         result["signId"] = signId;
-        result["status"] = "retry";
-        result["remainingAttempts"] = remaining;
+        if (authResult.contains("error")) {
+            // Transport or readiness failure (card removed, reader missing, bridge not init)
+            // Surface the real error instead of normalising to retry
+            result["status"] = "failed";
+            result["error"] = authResult.value("error").toString();
+        } else {
+            // Card returned wrong PIN — safe to retry
+            result["status"] = "retry";
+            result["remainingAttempts"] = authResult.value("remainingAttempts").toInt(-1);
+        }
         addActivityToResponse(result);
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
