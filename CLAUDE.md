@@ -22,6 +22,12 @@ and halt-resume protocol are loaded via `.claude/rules/` — they are already in
 - API contract changes
 - Major roadmap decisions (new phases, pivots)
 
+**bitgamma** — Keycard protocol expert, external reviewer for signing and cryptographic API work.
+His review is required before merging anything in epic #95 (signing modes, Schnorr/BIP340, LEZ).
+Treat his findings as authoritative on keycard protocol correctness. Basecamp is pre-release and
+the blockchain is testnet — but building correctly now avoids rewrites when both go live. His
+guidance is the quality gate for anything touching the signing path.
+
 Everything else: agents handle autonomously. Trust the loop.
 
 ---
