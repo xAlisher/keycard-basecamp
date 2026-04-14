@@ -29,7 +29,7 @@ FocusScope {
     property int attemptsRemaining: 3
     property bool checkHardwareBusy: false
     property bool checkPairingBusy: false
-    property string pairingPassword: ""
+    property string pairingPassword: "KeycardDefaultPairing"
     property string pairingError: ""
     property bool pairingBusy: false
 
@@ -425,7 +425,7 @@ FocusScope {
                                 color: DesignTokens.foreground
                                 font.pixelSize: DesignTokens.fontSizeBody
                                 font.family: DesignTokens.fontPrimary
-                                echoMode: TextInput.Password
+                                echoMode: TextInput.Normal
                                 text: root.pairingPassword
                                 onTextChanged: root.pairingPassword = text
                                 Keys.onReturnPressed: root.doPairCard()
