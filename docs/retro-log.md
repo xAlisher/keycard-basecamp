@@ -70,6 +70,29 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 
 ---
 
+---
+
+## Epic #127 — UI recovery: pairing flow + auth completion (2026-04-14)
+
+### Process wins
+- **[process] Builder-auditor loop caught two MEDIUMs before merge.** #126 round 2 (missing `onPairedChanged` focus handoff) and #130 round 2 (stale `pairingPassword` after Decline) — both caught by Senty before Alisher tested. Zero regressions on master.
+- **[process] Iterating on real hardware beats theorycrafting.** #125 fix confirmed working within one session by inserting a card — no mocking needed.
+- **[process] QML auto-mirror added during the epic, not as a separate ticket.** Catching the `LogosBasecamp` vs `LogosApp` install divergence during #128 and fixing it in the same PR prevents future sessions hitting the same stale-UI trap.
+
+### Process fails
+- **[process] Cleared wrong QML cache across multiple restarts.** Clearing `~/.cache/Logos/LogosApp/qmlcache/` instead of `~/.cache/Logos/LogosBasecamp/qmlcache/` — new QML never took effect. Root cause: CLAUDE.md install instructions were stale relative to dev-install-convention.md. Fix: always follow dev-install-convention.md; kill/relaunch sequence there is authoritative.
+- **[process] Launched via shortcut instead of canonical AppImage path.** `~/logos-basecamp-current.AppImage` instead of `~/.local/share/Logos/appimages/current.AppImage` caused two instances to appear and wrong module versions to load.
+- **[process] Outer pairing ColumnLayout gated on `cardDetected` — invisible in practice.** `root.cardDetected && !root.paired` evaluated false because `cardDetected` was false at binding evaluation time. Root cause: added an unnecessary second dependency; `!root.paired` alone was sufficient. Fix: integrate pairing form inside the request flow, gated only on `!root.paired`.
+
+### Project lessons
+- **QML install does not auto-mirror to LogosBasecamp.** `cmake --install` to `LogosApp` only. Fixed with `install(CODE)` mirror step in `keycard-ui/CMakeLists.txt`. Always verify with `md5sum` on both paths.
+- **Gate pairing UI on `!root.paired` only, not `cardDetected`.** `cardDetected` can be false at the moment a pending request surfaces due to timing between `checkHardware` and `checkPairing`. `paired` is the authoritative source.
+- **`Qt.callLater` changes property ordering.** Deferring `checkPairing()` means `currentRequest` can be set before `paired` becomes true. Focus handlers must handle both orderings — add `onPairedChanged` alongside `onCurrentRequestChanged`.
+- **`declineRequest()` must reset all form state.** Any form fields introduced for a request flow (`pairingPassword`, `pairingError`) must be cleared in `declineRequest()`, not only on card removal or success.
+
+### Feedback for Alisher
+- (none)
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 

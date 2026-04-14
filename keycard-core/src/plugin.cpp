@@ -11,6 +11,7 @@
 #include <QDebug>
 #include <algorithm>
 #include <sodium.h>
+#include <vector>
 
 KeycardPlugin::KeycardPlugin(QObject* parent)
     : QObject(parent)
@@ -422,12 +423,16 @@ QString KeycardPlugin::checkReaderPresent()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    LPSTR readers = NULL;
-    DWORD dwReaders = SCARD_AUTOALLOCATE;
-    rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
-    bool found = (rv == SCARD_S_SUCCESS && dwReaders > 1);
+    // Two-step: get required size first, then fill — avoids SCARD_AUTOALLOCATE type-pun
+    DWORD dwReaders = 0;
+    rv = SCardListReaders(hContext, NULL, NULL, &dwReaders);
+    bool found = false;
+    if (rv == SCARD_S_SUCCESS && dwReaders > 1) {
+        std::vector<char> readersBuf(dwReaders);
+        rv = SCardListReaders(hContext, NULL, readersBuf.data(), &dwReaders);
+        found = (rv == SCARD_S_SUCCESS && dwReaders > 1);
+    }
 
-    if (readers) SCardFreeMemory(hContext, readers);
     SCardReleaseContext(hContext);
 
     QJsonObject result;
@@ -453,10 +458,18 @@ QString KeycardPlugin::checkCardPresent()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    LPSTR readers = NULL;
-    DWORD dwReaders = SCARD_AUTOALLOCATE;
-    rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
-    if (rv != SCARD_S_SUCCESS || !readers) {
+    // Two-step: get required size first, then fill — avoids SCARD_AUTOALLOCATE type-pun
+    DWORD dwReaders = 0;
+    rv = SCardListReaders(hContext, NULL, NULL, &dwReaders);
+    if (rv != SCARD_S_SUCCESS || dwReaders <= 1) {
+        SCardReleaseContext(hContext);
+        QJsonObject result;
+        result["found"] = false;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    std::vector<char> readersBuf(dwReaders);
+    rv = SCardListReaders(hContext, NULL, readersBuf.data(), &dwReaders);
+    if (rv != SCARD_S_SUCCESS) {
         SCardReleaseContext(hContext);
         QJsonObject result;
         result["found"] = false;
@@ -464,7 +477,7 @@ QString KeycardPlugin::checkCardPresent()
     }
 
     bool cardFound = false;
-    char* reader = readers;
+    char* reader = readersBuf.data();
     while (*reader != '\0') {
         SCARD_READERSTATE readerState;
         memset(&readerState, 0, sizeof(readerState));
@@ -479,7 +492,6 @@ QString KeycardPlugin::checkCardPresent()
         reader += strlen(reader) + 1;
     }
 
-    SCardFreeMemory(hContext, readers);
     SCardReleaseContext(hContext);
 
     QJsonObject result;
