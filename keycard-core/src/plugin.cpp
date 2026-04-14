@@ -598,12 +598,18 @@ QString KeycardPlugin::loadKey(const QString& jsonArgs)
     }
     QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
     if (doc.isNull() || !doc.isObject()) {
-        result["error"] = "Expected JSON object {\"seedHex\":\"...\",\"keyType\":0|1}";
+        result["error"] = "Expected JSON object {\"seedHex\":\"...\",\"keyType\":\"lee\"|\"bip39\"}";
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
     QJsonObject args = doc.object();
-    QString seedHex = args.value("seedHex").toString();
-    int keyType = args.value("keyType").toInt(0);
+    QString seedHex  = args.value("seedHex").toString();
+    QString keyTypeStr = args.value("keyType").toString().toLower();
+    // Accept descriptive strings; fall back to legacy int for compatibility
+    int keyType = 0; // default: BIP39
+    if (keyTypeStr == "lee")        keyType = 1;
+    else if (keyTypeStr == "bip39") keyType = 0;
+    else if (args.value("keyType").isDouble())
+        keyType = args.value("keyType").toInt(0);
 
     QByteArray seed = QByteArray::fromHex(seedHex.toLatin1());
     if (seed.size() != 64) {
@@ -954,22 +960,10 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
             err["cardMode"] = "unknown";
             return QJsonDocument(err).toJson(QJsonDocument::Compact);
         }
-        bool needsLEE = (scheme == "schnorr");
-        bool cardIsLEE = (mode == KeycardBridge::KeyMode::LEE);
-        if (needsLEE && !cardIsLEE) {
-            QJsonObject err;
-            err["error"] = "Paired card is in BIP39 mode; Schnorr signing requires a LEE-mode Keycard";
-            err["cardMode"] = "bip39";
-            err["requiredMode"] = "lee";
-            return QJsonDocument(err).toJson(QJsonDocument::Compact);
-        }
-        if (!needsLEE && cardIsLEE) {
-            QJsonObject err;
-            err["error"] = "Paired card is in LEE mode; ECDSA signing requires a standard BIP39 Keycard";
-            err["cardMode"] = "lee";
-            err["requiredMode"] = "bip39";
-            return QJsonDocument(err).toJson(QJsonDocument::Compact);
-        }
+        // Both Schnorr and ECDSA are valid on either key type (LEE or BIP39).
+        // The P2 byte passed to signWithPath selects the scheme on-card.
+        // No scheme/mode mismatch rejection — only gate is mode == None (no key loaded).
+        (void)mode;
     }
 
     QString signId = QUuid::createUuid().toString(QUuid::WithoutBraces);
