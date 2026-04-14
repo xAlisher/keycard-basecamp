@@ -117,6 +117,11 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 ### Feedback for Alisher
 - (none)
 
+### Senty addendum
+- **[review] The highest-value check was contract drift, not line-level syntax.** `aae176b` itself was behavior-preserving, but the surrounding review still exposed one stale contract hint: `plugin.h` continued to document `loadKey` as `keyType:0|1` even after the API had moved to strict `"lee"` / `"bip39"` strings. For these PRs, the dangerous bug class is "implementation updated, adjacent contract text not updated."
+- **[review] Narrow re-audits work when the invariant is explicit.** The targeted question was simple: does the post-cleanup path still preserve one mapping from external API -> `CommandSet::loadKey()` -> cached `KeyMode`? Once that invariant was stated, the audit stayed fast and did not need a full PR reread.
+- **[review] Cached state changes need a second source-of-truth check.** Any time `setKeyMode()` is written directly in the plugin, the audit should compare it against bridge-side `select()` / `isLEEKey()` detection, not just the local function body. That cross-check is what makes "no findings" defensible here.
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 
