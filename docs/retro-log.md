@@ -140,6 +140,47 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 - **cmake install is additive only.** Renames leave stale dirs. Always `rm -rf` old install paths manually after a rename.
 - **LogosBasecamp mirror covers keycard-ui only.** Showcase modules require manual copy to `LogosBasecamp/` on every install.
 
+---
+
+## PR #132 + #133 — TLV signing fix + keycard_showcase demo (2026-04-14)
+
+### Process wins
+
+- **[process] Builder-auditor loop caught three MEDIUMs before merge.** Round 1: ECDSA DER prefix stripped. Round 2: isCardPresent forced-SELECT fallback + approveSign transport/retry collapse. All three caught by Senty before Alisher tested. Zero regressions in master.
+- **[process] Retro-on-the-fly.** #133 rename failure (stale installed dirs, missing LogosBasecamp mirror) was documented mid-session and mirror CMake steps were added in the same PR. Next rename will be clean.
+- **[process] Pre-merge retro with full context.** Doing the retro before merge rather than after means nothing has to be reconstructed from git history.
+
+### Process fails
+
+- **[process] `Layout.alignment: Qt.AlignHCenter` without `Layout.fillWidth: true`.** Added `horizontalAlignment: Text.AlignHCenter` to center the showcase title, but Text items are sized to their content by default — `horizontalAlignment` has nothing to act on. Fix required adding `Layout.fillWidth: true` to give the item full width first. Two install/relaunch cycles wasted on a one-line root cause.
+  - **Fix:** In QML, `horizontalAlignment` on a `Text` only centers text when the item is wider than the content. Always pair with `Layout.fillWidth: true` inside a ColumnLayout, or set an explicit `width`.
+
+- **[process] Wrong AppImage path recalled from stale CLAUDE.md.** Attempted `~/logos-app/logos-app.AppImage` which does not exist. Correct path is `~/.local/share/Logos/appimages/current.AppImage`. Path was in memory from #127 retro but was not checked before acting.
+  - **Fix:** Saved to persistent memory. Path is now `feedback_appimage_path.md`.
+
+- **[process] hashMessage placed on unloaded module.** First implementation put `hashMessage` on `keycard_showcase` core plugin. Logos does not auto-load user core modules — `callModule("keycard_showcase", "hashMessage", ...)` always returned error. Required moving `hashMessage` to the already-running `keycard` plugin.
+  - **Root cause:** Did not re-check the #106 lesson ("user-installed core modules are not auto-loaded") before choosing where to place the method.
+  - **Fix:** Any utility callable from QML must live on a plugin that is guaranteed to be loaded. `keycard` plugin is always present; `keycard_showcase` is not.
+
+- **[process] requestSign guards blocked the async pending-request UX.** Initial implementation preserved card-presence and key-mode checks in `requestSign`, which broke the intended flow where requests queue before card insertion. Required a second commit to remove them.
+  - **Root cause:** Did not fully internalize the design: guards belong in `approveSign` (when card is physically present), not in `requestSign` (which queues before card arrives).
+
+### Project lessons
+
+- **`horizontalAlignment: Text.AlignHCenter` requires `Layout.fillWidth: true`.** Text items in ColumnLayout are sized to content by default. `horizontalAlignment` only works when the item has more width than its text.
+- **hashMessage and other callables must live on always-loaded plugins.** User core modules (`keycard_showcase`) are never auto-loaded by Logos. Only `keycard` plugin is guaranteed present.
+- **approveSign transport errors vs wrong-PIN errors are structurally different.** Transport/readiness failures carry an `"error"` field; wrong-PIN card responses have `"authorized": false` + `remainingAttempts`. Check for `"error"` first to route correctly.
+- **requestSign guards belong in approveSign.** The queued-request model requires `requestSign` to accept requests unconditionally. Mode/state checks execute at approve time when the card is physically present.
+
+### Feedback for Alisher
+
+- (none)
+
+### Senty addendum
+
+- **[review] The transport-vs-PIN collapse in approveSign was the right MEDIUM call.** Once requestSign was deliberately made card-agnostic, approveSign became the only gate — and collapsing two semantically different failures into one `retry` shape meant the caller could never distinguish "wrong PIN, try again" from "card was removed." The fix was one conditional but the principle applies broadly: async queued-request flows need explicit error taxonomy at the approval point.
+- **[review] hashMessage placement was an architecture issue, not a code quality issue.** The method itself was correct. The failure was module lifetime — putting a utility on a module that is not guaranteed to be running is a latent "always fails in production" bug. Worth checking module lifetime assumptions any time a new method is added.
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 
