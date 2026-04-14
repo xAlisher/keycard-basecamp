@@ -7,8 +7,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <PCSC/winscard.h>  // For direct PC/SC reader detection
-#include <QFile>
-#include <QTextStream>
 #include <QDateTime>
 #include <QStandardPaths>
 
@@ -713,6 +711,24 @@ bool KeycardBridge::isCardPresent()
     LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
 
     if (rv != SCARD_S_SUCCESS) {
+        // PC/SC context unavailable (e.g. pcscd using a different socket path).
+        // Fall back to CommandSet::select() only if channel is already connected.
+        if (m_commandSet && m_channel && m_channel->isConnected()) {
+            try {
+                auto appInfo = m_commandSet->select(true);  // force=true, bypass cache
+                QString uid = QString::fromUtf8(appInfo.instanceUID.toHex());
+                if (!uid.isEmpty()) {
+                    m_cardReady = true;
+                    m_keyUID = uid;
+                    m_keyInitialized = appInfo.initialized;
+                    m_keyMode = appInfo.keyUID.isEmpty() ? KeyMode::None
+                              : appInfo.isLEEKey() ? KeyMode::LEE
+                              : KeyMode::BIP39;
+                    setState(appInfo.initialized ? State::Ready : State::EmptyKeycard);
+                    return true;
+                }
+            } catch (const std::exception&) {}
+        }
         return false;
     }
 
@@ -734,8 +750,12 @@ bool KeycardBridge::isCardPresent()
         readerState.szReader = reader;
         readerState.dwCurrentState = SCARD_STATE_UNAWARE;
 
-        rv = SCardGetStatusChange(hContext, 0, &readerState, 1);
+        // Use 2000ms timeout: pcscd may have just started via socket activation
+        // and needs time to enumerate the card before reporting SCARD_STATE_PRESENT.
+        rv = SCardGetStatusChange(hContext, 2000, &readerState, 1);
 
+        qDebug() << "KeycardBridge::isCardPresent: SCardGetStatusChange rv:" << rv
+                 << "eventState:" << Qt::hex << readerState.dwEventState;
         if (rv == SCARD_S_SUCCESS) {
             // Check if card is present
             if (readerState.dwEventState & SCARD_STATE_PRESENT) {
