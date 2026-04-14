@@ -1,85 +1,86 @@
-# Halt — 2026-04-14 (session reset)
+# Halt — 2026-04-14 (session active — module confirmed working)
 
 ## Where we stopped
 
-Testing the keycard module via logoscore CLI as a workaround for logos-basecamp #141.
-Diagnosed pcsclite version mismatch. Chose Option C (run Nix pcscd). Session reset
-before executing the sudo commands.
+pcsclite fix confirmed working. Module-to-card communication verified via logoscore CLI.
+CMakeLists.txt updated with correct patchelf RPATH. Ready for #96 or #109.
 
 ---
 
-## Immediate next action
+## Confirmed working
 
-Run Nix pcscd 2.3.0 instead of system pcscd:
+```
+discoverReader  → {"found": true}
+discoverCard    → {"found": true, "uid": "89b88df8ae206b65b18e08744ec829a0"}
+getState        → {"state": "CARD_PRESENT"}
+```
+
+Card: dev card (LEE applet v3.2), reader: ACS ACR39U.
+
+---
+
+## Root cause (resolved)
+
+Nix dynamic linker does NOT search `/lib/x86_64-linux-gnu` by default on Ubuntu.
+`libpcsclite.so.1` was not found even though it exists at that path.
+Fix: explicitly add `/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu` to plugin RPATH.
+CMakeLists.txt updated to automate this on every `cmake --install`.
+
+---
+
+## How to run tests (current state)
+
+System pcscd (2.0.3) is running. Plugin uses system pcsclite (2.0.3) — protocol match.
 
 ```bash
-# Step 1 — stop system pcscd
-sudo systemctl stop pcscd.socket pcscd
-
-# Step 2 — start Nix pcscd 2.3.0 in foreground (keep terminal open, or use &)
-sudo /nix/store/3nwjm27lhc3v2pzgpx5qpinlcdz5dcs5-pcsclite-2.3.0/bin/pcscd --foreground &
-
-# Step 3 — verify it's running and reader is visible
-pcsc_scan -n
-
-# Step 4 — restore Nix pcsclite RUNPATH on plugin (currently has system pcsclite = broken)
-PATHS=$(ldd /home/alisher/keycard-basecamp/build/keycard-core/keycard_plugin.so | grep "nix/store" | awk '{print $3}' | xargs -I{} dirname {} | sort -u | tr '\n' ':' | sed 's/:$//')
-patchelf --set-rpath "\$ORIGIN:$PATHS" ~/.local/share/Logos/LogosApp/modules/keycard/keycard_plugin.so
-
-# Step 5 — start logoscore daemon and test
+# Normal logoscore (no spy, no stderr capture needed now)
 LOGOSCORE=/nix/store/4v00839956lahxv54hf581x58z32nj4r-logos-logoscore-cli/bin/logoscore
+pkill -f "logos-logoscore-cli" 2>/dev/null; sleep 1
 $LOGOSCORE -D --modules-dir ~/.local/share/Logos/LogosApp/modules &
-sleep 3
+sleep 4
 $LOGOSCORE load-module keycard
 $LOGOSCORE call keycard discoverReader
+$LOGOSCORE call keycard discoverCard
 $LOGOSCORE call keycard getState
 ```
 
----
-
-## Root cause (for context)
-
-**Nix pcsclite 2.3.0 vs system pcscd 2.0.3 protocol mismatch.**
-Nix devshell builds against pcsclite 2.3.0. System pcscd is 2.0.3. They use incompatible
-wire protocols — `SCardEstablishContext` returns `SCARD_E_NO_SERVICE (0x8010001e)` on
-every call. Module loads but can't talk to reader. `discoverReader` falsely returns
-`found: true` because `KeycardBridge::start()` always returns true (bug — ignores
-`startDetection()` failure).
-
-Ubuntu Noble apt only has pcscd 2.0.3. Nix pcscd 2.3.0 is at:
-`/nix/store/3nwjm27lhc3v2pzgpx5qpinlcdz5dcs5-pcsclite-2.3.0/bin/pcscd`
-
----
-
-## Current state of installed plugin
-
-`~/.local/share/Logos/LogosApp/modules/keycard/keycard_plugin.so` has **system pcsclite
-2.0.3** in RUNPATH (crashes logos_host). Must run the patchelf step above before testing.
-
----
-
-## After pcscd is fixed — test sequence
-
+If logoscore's METHOD_FAILED appears again, switch to the spy wrapper:
 ```bash
-LOGOSCORE=...
-$LOGOSCORE call keycard discoverReader    # expect: found: true
-$LOGOSCORE call keycard getState         # expect: CARD_NOT_PRESENT (no card) or CARD_CONNECTED
-# Insert dev card (LEE applet v3.2)
-$LOGOSCORE call keycard getState         # expect: CARD_CONNECTED or CARD_NOT_PRESENT → CARD_CONNECTED
+# Spy wrapper (captures logos_host stderr to /tmp/lh_spy_output.log)
+cat > /tmp/lh_spy.sh << 'SCRIPT'
+#!/bin/bash
+exec /nix/store/670si0vvg1r9pig99qyr3x2fwj4iirsb-logos-liblogos/bin/logos_host "$@" 2>>/tmp/lh_spy_output.log
+SCRIPT
+chmod +x /tmp/lh_spy.sh
+
+INNER=/nix/store/4yx67kjfwvfqx795ap20imgzds458x2g-logos-logoscore-cli-bin-0.1.0/bin/.logoscore-wrapped
+export LOGOS_HOST_PATH=/tmp/lh_spy.sh
+export LOGOS_BUNDLED_MODULES_DIR=/nix/store/kzxqy0f39nhs7ns15l742inbw462hjbx-logos-logoscore-cli-modules-0.1.0/modules
+$INNER -D --modules-dir ~/.local/share/Logos/LogosApp/modules &
 ```
 
 ---
 
-## What comes after
+## Next steps
 
-Once module-to-card communication confirmed → proceed to **#96** (Schnorr/LEE patch in
-keycard-qt). The dev card is ready (LEE applet v3.2, initialized).
+1. **#96** — Schnorr/LEE patch in keycard-qt (`detectMode()`, LEE applet probe).
+   Dev card ready. Reader confirmed working.
+2. **#109** — Mock state bar (no hardware dependency, parallel).
+3. Commit CMakeLists.txt patchelf fix + document lessons.
 
-Also parallel: **#109** (mock state bar, no hardware dependency).
+---
 
-## logos_host mystery (resolved, for reference)
+## Lesson learned (for PROJECT_KNOWLEDGE.md)
 
-logos_host is a Nix wrapper chain. The actual running binary is
-`.logos_host-wrapped` which has `qtremoteobjects-6.9.2` in its RUNPATH. This is how
-`QRemoteObjectRegistryHost` is available to the plugin without being in the plugin's own
-RUNPATH.
+**Nix linker doesn't search system lib paths.**
+When a Nix binary (logos_host) dlopen()s a plugin, the Nix ld-linux-x86-64.so.2
+only searches the plugin's RPATH + loaded libs. `/lib/x86_64-linux-gnu` is NOT in
+the default search path. Any system library (pcsclite, libusb, etc.) must be
+explicitly added to the plugin RPATH.
+
+**How to debug logos_host plugin loading failures:**
+1. Run the inner logoscore binary directly (not the wrapper) with `LOGOS_HOST_PATH`
+   pointing to a spy script that captures logos_host stderr.
+2. logos_host prints `"Failed to load plugin: ... Error: ..."` to stderr on dlopen failure.
+3. logos_host wrapper chain: `logos_host` → `.logos_host-wrapped` (bin) → `.logos_host-wrapped` (build)
+   The "build" variant has Qt Remote Objects in RPATH. The "bin" variants are just env-setup wrappers.
