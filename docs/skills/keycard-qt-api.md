@@ -82,17 +82,25 @@ Avoid using this for recurring operations — those belong in CommandSet.
 bitgamma confirmed: LEE detection logic lives in keycard-basecamp (our module),
 not in keycard-qt. Two approaches:
 
-**Current (SW probe):**
-Send `EXPORT LEE` (`INS=0xC3, P1=0xF0`) via raw APDU passthrough.
-Interpret SW only:
-- `0x6985` → Standard (BIP39) key loaded
-- `0x6A86` → LEE key loaded
-- Other → Unknown
+**Final approach (applet v3.2, confirmed bitgamma 2026-04-14):**
 
-**Upcoming (tag 0x8D in select response):**
-Next applet version will set bit 5 of tag `0x8D` (application capability) in the
-SELECT response when LEE key is loaded. Parse in `select()` result TLV.
-Waiting on updated cap file from bitgamma (referenced in #96, 2026-04-14).
+Tag `0x8D` in the SELECT response (initialized card) holds the capability byte.
+Bit 5 (`0x20`) is set when a LEE key is currently loaded.
+
+```
+No key loaded:   0x8D = 0x1F  (0001 1111) — bit 5 = 0
+BIP39/generated: 0x8D = 0x1F  (0001 1111) — bit 5 = 0
+LEE key loaded:  0x8D = 0x3F  (0011 1111) — bit 5 = 1
+```
+
+Verified empirically with dev card + keycard_lee_20260414.cap (BIP39 path: 0x1F ✓).
+LEE path (0x3F) not yet verified end-to-end — blocked on pairing bug workaround.
+
+Detection in code: `appInfo.capabilities & 0x20` (or `appInfo.isLEEKey()` via keycard-qt).
+
+**SW probe (obsolete — skip):**
+Previously `EXPORT LEE` (INS=0xC3, P1=0xF0) via raw APDU: `6985`=BIP39, `6A86`=LEE.
+Do not implement — bitgamma confirmed tag 0x8D is the final mechanism.
 
 ---
 

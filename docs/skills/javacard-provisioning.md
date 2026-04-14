@@ -182,7 +182,37 @@ gp-send-apdu                 gp-get-status
 
 ---
 
-## LEE mode probe
+## Raw APDU debugging with scriptor
 
-The mode probe APDU (`80 C3 F0 00`) must be sent within the Keycard secure channel.
-Sending raw (outside SC) returns SW=6D00. Actual probe implemented in #96 `detectMode()`.
+`scriptor` (from `pcsc-tools`) lets you send raw APDUs to the card for diagnosis.
+Useful when keycard-cli or gp.jar give opaque errors.
+
+```bash
+# SELECT keycard instance AID (9-byte, what keycard-go uses)
+echo "00 A4 04 00 09 A0 00 00 08 04 00 01 01 01" | scriptor
+
+# SELECT keycard applet AID (8-byte, what gp.jar installs by default)
+echo "00 A4 04 00 08 A0 00 00 08 04 00 01 01" | scriptor
+```
+
+**Key lesson (2026-04-14):** `keycard-cli init` was returning 6A82 (not found).
+Scriptor confirmed the 8-byte AID selected fine (`90 00`) but the 9-byte AID returned 6A82.
+Root cause: gp.jar `--install` defaults to 8-byte instance AIDs; keycard-go selects 9-byte.
+
+**Parsing SELECT response:**
+
+Pre-initialized card response starts with `80 41 04...` (EC public key, no tag 0x8D).
+Initialized card response starts with `A4 61 8F 10 [UID-16] 80 41 [pubkey-65] ... 8D 01 XX`.
+
+Tag `0x8D` (last byte `XX`) is the capability byte:
+- `0x1F` = no key or BIP39 key loaded (bit 5 = 0)
+- `0x3F` = LEE key loaded (bit 5 = 1)
+
+Note: scriptor uses T=1. Append no Le byte — `00` at end causes `67 00` (Wrong Length) on ACR39U.
+
+---
+
+## LEE mode probe (obsolete)
+
+The SW probe (`80 C3 F0 00`) is obsolete. Use tag `0x8D` bit 5 from SELECT instead.
+See keycard-qt-api.md "LEE mode detection" for full details.
