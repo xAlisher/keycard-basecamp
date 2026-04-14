@@ -103,6 +103,7 @@ void KeycardBridge::stop()
 
     m_running = false;
     m_cardReady = false;
+    m_keyMode = KeyMode::None;
     setState(State::Unknown);
 
     qDebug() << "KeycardBridge: Stopped";
@@ -626,6 +627,7 @@ void KeycardBridge::onCardLost()
     m_remainingPIN = -1;
     m_remainingPUK = -1;
     m_keyInitialized = false;
+    m_keyMode = KeyMode::None;
 
     setState(State::WaitingForCard);
 }
