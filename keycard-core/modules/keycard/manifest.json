@@ -6,7 +6,9 @@
   "description": "Keycard module for Basecamp app",
   "icon": "",
   "main": {
-    "linux-amd64": "keycard_plugin.so"
+    "linux-amd64": "keycard_plugin.so",
+    "linux-amd64-dev": "keycard_plugin.so",
+    "linux-x86_64-dev": "keycard_plugin.so"
   },
   "manifestVersion": "0.2.0",
   "name": "keycard",
