@@ -44,6 +44,8 @@ public:
     Q_INVOKABLE QString unblockPIN(const QString& puk, const QString& newPIN);
     Q_INVOKABLE QString getCardStatus();  // Get PIN/PUK attempts remaining
     Q_INVOKABLE QString detectMode();     // Returns {"mode":"BIP39"|"LEE"|"none"}
+    Q_INVOKABLE QString loadKey(const QString& seedHex, int keyType); // Debug: load key with explicit type (0=BIP39, 1=LEE)
+    Q_INVOKABLE QString removeKey();      // Debug: remove loaded key
 
     // Authorization request API
     Q_INVOKABLE QString requestAuth(const QString& domain, const QString& caller);

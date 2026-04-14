@@ -1,10 +1,9 @@
-# Halt — 2026-04-14 (card initialized with LEE applet v3.2)
+# Halt — 2026-04-14 (#96 keycard-qt patches done, LEE bit-flip test mid-flight)
 
 ## Where we stopped
 
-New math-library CAP (`keycard_lee_20260414.cap`) installed and card initialized.
-Root cause of `keycard-cli init` failure identified and fixed: applet was installed
-with 8-byte AIDs but keycard-go selects 9-byte instance AIDs.
+#96 keycard-qt patches committed and built. Regression tests pass (BIP39 detectMode ✓).
+Mid-way through LEE bit-flip verification — blocked on plugin pairing bug workaround.
 
 ---
 
@@ -12,114 +11,106 @@ with 8-byte AIDs but keycard-go selects 9-byte instance AIDs.
 
 ```
 discoverReader  → {"found": true}
-discoverCard    → {"found": true, "uid": "89b88df8ae206b65b18e08744ec829a0"}
+discoverCard    → {"found": true, "uid": "c5196e35721641a3902e8421c8fc0ba0"}
 getState        → {"state": "CARD_PRESENT"}
-keycard-cli info → Installed: true, Initialized: true, Version: 0x0302
+detectMode      → {"mode": "BIP39"}   ← NEW — verified with BIP39 key loaded
 ```
-
-Card: dev card (LEE applet v3.2), reader: ACS ACR39U.
 
 ---
 
-## Card credentials (current state — initialized, no key loaded)
+## Card credentials
 
 ```
 PIN: 000440
 PUK: 193258644395
 Pairing password: jyairW2naGbqtzDp
+InstanceUID: c5196e35721641a3902e8421c8fc0ba0
 ```
 
-InstanceUID: `c5196e35721641a3902e8421c8fc0ba0`
-
----
-
-## Root causes (resolved)
-
-### 1. Nix dynamic linker (pcsclite)
-Nix ld-linux does NOT search `/lib/x86_64-linux-gnu` by default on Ubuntu.
-Fix: explicitly add system paths to plugin RPATH. CMakeLists.txt updated.
-
-### 2. Keycard instance AID mismatch
-New CAP was installed with default (8-byte) applet AIDs, but keycard-go
-selects 9-byte instance AIDs: `AppletAID + 0x01`.
-
-Fix: reinstall using `gp.jar --load` then `--create` with explicit instance AIDs:
-- Keycard: `A00000080400010101`
-- NDEF:    `D2760000850101`
-- Cash:    `A00000080400010301`
-- Ident:   `A00000080400010401`
-
-If card needs to be re-flashed, see scripts/install-card.md (or use commands below).
-
----
-
-## How to install applets (correct procedure)
-
-```bash
-# 1. Uninstall existing package (deletes all instances too)
-java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
-  --uninstall inbox/keycard_lee_20260414.cap
-
-# 2. Load CAP
-java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
-  --load inbox/keycard_lee_20260414.cap
-
-# 3. Install each applet with correct instance AIDs
-java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
-  --create A00000080400010101 --applet A000000804000101 --package A0000008040001
-
-java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
-  --create D2760000850101 --applet A000000804000102 --package A0000008040001
-
-java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
-  --create A00000080400010301 --applet A000000804000103 --package A0000008040001
-
-java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
-  --create A00000080400010401 --applet A000000804000104 --package A0000008040001
-
-# 4. Initialize
-scripts/keycard-cli init
+keycard-cli pairing (slot 0, saved to dev-card.md):
+```
+PAIRING KEY (hex): 4eda308a59d620962fc99d1a08836f4e12381c8369108f8bd33aebec4eb62a56
+PAIRING KEY (b64): TtowilnWIJYvyZ0aCINvThI4HINpEI+L0zrr7E62KlY=
+PAIRING INDEX: 0
 ```
 
+Card state: initialized, BIP39 key loaded (keycard-generate-key).
+
 ---
 
-## How to run tests (current state)
+## #96 commits (all on master)
 
-System pcscd (2.0.3) is running. Plugin uses system pcsclite (2.0.3) — protocol match.
+- `bc09f36` keycard-qt: signWithPath scheme param + loadKey type param
+- `b998951` keycard-qt: Capability::LEEKey + isLEEKey()
+- `cbc289e` basecamp: submodule bump (signing modes)
+- `1cea9ee` basecamp: KeycardBridge KeyMode + detectMode() API
+- `d3c5d76` basecamp: submodule bump (LEEKey)
+- (dirty) plugin.h/cpp: loadKey() + removeKey() Q_INVOKABLE — NOT yet committed
 
+---
+
+## Immediate next step: commit loadKey/removeKey, then test LEE bit-flip
+
+### Step 1: commit dirty files
 ```bash
-# Normal logoscore (no spy, no stderr capture needed now)
+git add keycard-core/src/plugin.h keycard-core/src/plugin.cpp
+git commit -m "feat(#96): expose loadKey(seedHex, keyType) and removeKey() for testing"
+```
+
+### Step 2: pre-populate plugin pairing storage
+The plugin's `pairCard()` has a PBKDF2 bug (different result than keycard-go even though params match — root cause TBD). Workaround: manually inject the keycard-cli pairing into the plugin's storage.
+
+Edit `/home/alisher/.local/share/Logos/LogosBasecamp/keycard-pairings.json`:
+```json
+{
+    "fb8c9acce1e286ff88fa36be6fb7f5e5": { "index": 34, "key": "..." },
+    "fe4bc5abf90886187aa5c5db7b6f9a41": { "index": 1, "key": "..." },
+    "c5196e35721641a3902e8421c8fc0ba0": {
+        "index": 0,
+        "key": "TtowilnWIJYvyZ0aCINvThI4HINpEI+L0zrr7E62KlY="
+    }
+}
+```
+
+### Step 3: restart logoscore and run full LEE test
+```bash
 LOGOSCORE=/nix/store/4v00839956lahxv54hf581x58z32nj4r-logos-logoscore-cli/bin/logoscore
-pkill -f "logos-logoscore-cli" 2>/dev/null; sleep 1
+pkill -f "logos-logoscore-cli"; pkill -f "logos_host"; sleep 2
 $LOGOSCORE -D --modules-dir ~/.local/share/Logos/LogosApp/modules &
-sleep 4
+sleep 5
 $LOGOSCORE load-module keycard
 $LOGOSCORE call keycard discoverReader
 $LOGOSCORE call keycard discoverCard
-$LOGOSCORE call keycard getState
-```
+$LOGOSCORE call keycard detectMode       # expect: BIP39
 
-If logoscore's METHOD_FAILED appears again, switch to the spy wrapper:
-```bash
-# Spy wrapper (captures logos_host stderr to /tmp/lh_spy_output.log)
-cat > /tmp/lh_spy.sh << 'SCRIPT'
-#!/bin/bash
-exec /nix/store/670si0vvg1r9pig99qyr3x2fwj4iirsb-logos-liblogos/bin/logos_host "$@" 2>>/tmp/lh_spy_output.log
-SCRIPT
-chmod +x /tmp/lh_spy.sh
+$LOGOSCORE call keycard authorize '{"pin":"000440"}'
+$LOGOSCORE call keycard removeKey
+$LOGOSCORE call keycard detectMode       # expect: none
 
-INNER=/nix/store/4yx67kjfwvfqx795ap20imgzds458x2g-logos-logoscore-cli-bin-0.1.0/bin/.logoscore-wrapped
-export LOGOS_HOST_PATH=/tmp/lh_spy.sh
-export LOGOS_BUNDLED_MODULES_DIR=/nix/store/kzxqy0f39nhs7ns15l742inbw462hjbx-logos-logoscore-cli-modules-0.1.0/modules
-$INNER -D --modules-dir ~/.local/share/Logos/LogosApp/modules &
+TEST_SEED="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+$LOGOSCORE call keycard loadKey "{\"seedHex\":\"$TEST_SEED\",\"keyType\":1}"
+$LOGOSCORE call keycard detectMode       # expect: LEE  ← this is the key verification
 ```
 
 ---
 
-## Next steps
+## Pairing bug (LOW, separate from #96)
 
-1. **#96 keycard-qt patches** — bitgamma confirmed P2 values. Start:
-   - `signWithPath(data, path, scheme, makeCurrent)` where scheme P2: ECDSA=0x00, BIP340_SCHNORR=0x03
-   - `loadKey(seed, type)` where type P2: BIP39=0x00, LEE=0x01
-2. **LEE detection** — use tag `0x8D` bit-5 in SELECT response (bitgamma confirmed, skip SW probe)
-3. **#109** — Mock state bar (no hardware dependency, can start in parallel)
+`pairCard()` in KeycardBridge fails with "Invalid card cryptogram" even with correct password.
+keycard-qt's PBKDF2 seems correct (same params as keycard-go) but produces different pairing token.
+Root cause not yet determined. Does NOT block #96 — workaround is pairing storage injection.
+File as separate issue after #96 is closed.
+
+---
+
+## Next issues after #96
+
+1. **#98** — requestSign API (Schnorr signing from the module)
+2. **#97** — mode-aware pairing
+3. **#109** — mock state bar
+
+---
+
+## Senty review
+
+Handoff posted on #96. Senty has not yet reviewed — ping when context is fresh.

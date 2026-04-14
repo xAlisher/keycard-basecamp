@@ -582,6 +582,41 @@ QString KeycardPlugin::detectMode()
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
+QString KeycardPlugin::loadKey(const QString& seedHex, int keyType)
+{
+    QJsonObject result;
+    if (!m_bridge || !m_bridge->commandSet()) {
+        result["error"] = "Not connected";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    QByteArray seed = QByteArray::fromHex(seedHex.toLatin1());
+    if (seed.size() != 64) {
+        result["error"] = "Seed must be 64 bytes (128 hex chars)";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    auto cs = m_bridge->commandSet();
+    QByteArray keyUID = cs->loadKey(seed, static_cast<uint8_t>(keyType));
+    if (keyUID.isEmpty()) {
+        result["error"] = cs->lastError();
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    result["keyUID"] = QString::fromUtf8(keyUID.toHex());
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::removeKey()
+{
+    QJsonObject result;
+    if (!m_bridge || !m_bridge->commandSet()) {
+        result["error"] = "Not connected";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    bool ok = m_bridge->commandSet()->removeKey();
+    result["ok"] = ok;
+    if (!ok) result["error"] = m_bridge->commandSet()->lastError();
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
 QString KeycardPlugin::mapBridgeStateToSpec(KeycardBridge::State state)
 {
     // Map KeycardBridge states to SPEC.md 7-state model
