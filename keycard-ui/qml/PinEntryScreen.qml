@@ -18,12 +18,17 @@ FocusScope {
         if (currentRequest !== null && paired)
             hiddenInput.forceActiveFocus()
     }
+    onPairedChanged: {
+        if (paired && currentRequest !== null)
+            hiddenInput.forceActiveFocus()
+    }
     property bool pendingChecked: false
     property string pinValue: ""
     property int maxPinLength: 6
     property bool verifyingPin: false
     property int attemptsRemaining: 3
     property bool checkHardwareBusy: false
+    property bool checkPairingBusy: false
 
     // logos.callModule wraps the C++ QString return in an extra JSON layer — parse twice
     function callModuleParse(raw) {
@@ -79,7 +84,7 @@ FocusScope {
                 if (wasCard !== root.cardDetected) {
                     if (root.cardDetected) {
                         activityLog.addEntry(ts, "Keycard detected", "success")
-                        checkPairing()
+                        Qt.callLater(root.checkPairing)
                     } else {
                         activityLog.addEntry(ts, "Keycard not detected", "error")
                         root.paired = false
@@ -87,6 +92,7 @@ FocusScope {
                         root.pairingStatus = ""
                         root.currentRequest = null
                         root.pendingChecked = false
+                        root.checkPairingBusy = false
                     }
                 }
             } catch (e) {}
@@ -98,17 +104,21 @@ FocusScope {
                 root.pairingStatus = ""
                 root.currentRequest = null
                 root.pendingChecked = false
+                root.checkPairingBusy = false
                 activityLog.addEntry(ts, "Keycard not detected", "error")
             }
         }
 
-        if (root.paired && !root.currentRequest) {
+        if (root.cardDetected && !root.currentRequest) {
             checkPendingRequests()
         }
         root.checkHardwareBusy = false
     }
 
     function checkPairing() {
+        if (root.checkPairingBusy) return
+        root.checkPairingBusy = true
+
         var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
         activityLog.addEntry(ts, "Checking pairing...", "info")
 
@@ -130,6 +140,7 @@ FocusScope {
                 activityLog.addEntry(ts, "Keycard not paired", "warning")
             }
         } catch (e) {}
+        root.checkPairingBusy = false
     }
 
     function checkPendingRequests() {
