@@ -1,20 +1,26 @@
-# Halt — 2026-04-14 (#96 keycard-qt patches done, LEE bit-flip test mid-flight)
+# Halt — 2026-04-14 (#96 LEE bit-flip VERIFIED, ready for Senty review)
 
 ## Where we stopped
 
-#96 keycard-qt patches committed and built. Regression tests pass (BIP39 detectMode ✓).
-Mid-way through LEE bit-flip verification — blocked on plugin pairing bug workaround.
+#96 all code committed and end-to-end verified. LEE bit-flip test passed.
+Senty has been notified via halt.md (handoff on GitHub issue #96 was posted in previous session).
 
 ---
 
-## Confirmed working
+## Verified end-to-end (2026-04-14, session 2)
 
 ```
 discoverReader  → {"found": true}
 discoverCard    → {"found": true, "uid": "c5196e35721641a3902e8421c8fc0ba0"}
-getState        → {"state": "CARD_PRESENT"}
-detectMode      → {"mode": "BIP39"}   ← NEW — verified with BIP39 key loaded
+authorize       → {"authorized": true}        (using {"pin":"000440"} JSON format)
+detectMode      → {"mode": "LEE"}             ← LEE key loaded (from prev session)
+removeKey       → {"ok": true}
+detectMode      → {"mode": "none"}            ← none after key removed
+loadKey(LEE)    → {"keyUID": "3a9311e3..."}   ← LEE seed loaded
+detectMode      → {"mode": "LEE"}             ← LEE bit confirmed 0x3F
 ```
+
+All three detectMode states verified: `"LEE"`, `"none"`, and BIP39 (`"BIP39"` from session 1).
 
 ---
 
@@ -27,14 +33,13 @@ Pairing password: jyairW2naGbqtzDp
 InstanceUID: c5196e35721641a3902e8421c8fc0ba0
 ```
 
-keycard-cli pairing (slot 0, saved to dev-card.md):
+Pairing injected in `/home/alisher/.local/share/Logos/LogosBasecamp/keycard-pairings.json`
+and `/home/alisher/.local/share/Logos/LogosApp/keycard-pairings.json`.
+
 ```
-PAIRING KEY (hex): 4eda308a59d620962fc99d1a08836f4e12381c8369108f8bd33aebec4eb62a56
 PAIRING KEY (b64): TtowilnWIJYvyZ0aCINvThI4HINpEI+L0zrr7E62KlY=
 PAIRING INDEX: 0
 ```
-
-Card state: initialized, BIP39 key loaded (keycard-generate-key).
 
 ---
 
@@ -45,72 +50,48 @@ Card state: initialized, BIP39 key loaded (keycard-generate-key).
 - `cbc289e` basecamp: submodule bump (signing modes)
 - `1cea9ee` basecamp: KeycardBridge KeyMode + detectMode() API
 - `d3c5d76` basecamp: submodule bump (LEEKey)
-- (dirty) plugin.h/cpp: loadKey() + removeKey() Q_INVOKABLE — NOT yet committed
+- `3d13250` feat(#96): expose loadKey/removeKey for testing; update halt
+- `ea2d6c9` fix(#96): authorize JSON arg parsing, loadKey/removeKey setKeyMode, detectMode refresh
 
 ---
 
-## Immediate next step: commit loadKey/removeKey, then test LEE bit-flip
+## Key findings from this session
 
-### Step 1: commit dirty files
-```bash
-git add keycard-core/src/plugin.h keycard-core/src/plugin.cpp
-git commit -m "feat(#96): expose loadKey(seedHex, keyType) and removeKey() for testing"
-```
+1. **logoscore arg passing**: Unquoted string args (e.g., `abcdef`) are passed raw. JSON-quoted
+   strings (`'"000440"'`) are passed WITH the surrounding quote chars. Numbers with leading
+   zeros (`000440`) fail JSON parsing → METHOD_FAILED. Use `'{"pin":"000440"}'` format.
 
-### Step 2: pre-populate plugin pairing storage
-The plugin's `pairCard()` has a PBKDF2 bug (different result than keycard-go even though params match — root cause TBD). Workaround: manually inject the keycard-cli pairing into the plugin's storage.
+2. **LEE capability bit persists after removeKey**: Tag 0x8D bit 5 stays set after removing a
+   LEE key. Use `appInfo.keyUID.isEmpty()` as the authoritative "key loaded" indicator.
 
-Edit `/home/alisher/.local/share/Logos/LogosBasecamp/keycard-pairings.json`:
-```json
-{
-    "fb8c9acce1e286ff88fa36be6fb7f5e5": { "index": 34, "key": "..." },
-    "fe4bc5abf90886187aa5c5db7b6f9a41": { "index": 1, "key": "..." },
-    "c5196e35721641a3902e8421c8fc0ba0": {
-        "index": 0,
-        "key": "TtowilnWIJYvyZ0aCINvThI4HINpEI+L0zrr7E62KlY="
-    }
-}
-```
+3. **CommandSet::select() is cached**: `select()` returns cached `m_appInfo` if already parsed.
+   Use `select(true)` to force a fresh SELECT — BUT this breaks any existing SC. Better: track
+   key mode manually via setKeyMode() after loadKey/removeKey.
 
-### Step 3: restart logoscore and run full LEE test
+4. **Pairing storage injection**: keycard-pairings.json key must be base64-encoded raw pairing
+   key. Our slot 0 key: `TtowilnWIJYvyZ0aCINvThI4HINpEI+L0zrr7E62KlY=` (index 0).
+
+---
+
+## Next steps
+
+1. **Senty review of #96** — handoff posted on GitHub, ping Senty to review
+2. **Pairing bug** — pairCard() has PBKDF2 mismatch vs keycard-go. File as separate issue.
+3. **#98** — requestSign API (Schnorr signing from the module)
+4. **#97** — mode-aware pairing
+5. **#109** — mock state bar
+
+---
+
+## Logoscore test sequence (for next session)
+
 ```bash
 LOGOSCORE=/nix/store/4v00839956lahxv54hf581x58z32nj4r-logos-logoscore-cli/bin/logoscore
-pkill -f "logos-logoscore-cli"; pkill -f "logos_host"; sleep 2
 $LOGOSCORE -D --modules-dir ~/.local/share/Logos/LogosApp/modules &
 sleep 5
 $LOGOSCORE load-module keycard
 $LOGOSCORE call keycard discoverReader
 $LOGOSCORE call keycard discoverCard
-$LOGOSCORE call keycard detectMode       # expect: BIP39
-
 $LOGOSCORE call keycard authorize '{"pin":"000440"}'
-$LOGOSCORE call keycard removeKey
-$LOGOSCORE call keycard detectMode       # expect: none
-
-TEST_SEED="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
-$LOGOSCORE call keycard loadKey "{\"seedHex\":\"$TEST_SEED\",\"keyType\":1}"
-$LOGOSCORE call keycard detectMode       # expect: LEE  ← this is the key verification
+$LOGOSCORE call keycard detectMode
 ```
-
----
-
-## Pairing bug (LOW, separate from #96)
-
-`pairCard()` in KeycardBridge fails with "Invalid card cryptogram" even with correct password.
-keycard-qt's PBKDF2 seems correct (same params as keycard-go) but produces different pairing token.
-Root cause not yet determined. Does NOT block #96 — workaround is pairing storage injection.
-File as separate issue after #96 is closed.
-
----
-
-## Next issues after #96
-
-1. **#98** — requestSign API (Schnorr signing from the module)
-2. **#97** — mode-aware pairing
-3. **#109** — mock state bar
-
----
-
-## Senty review
-
-Handoff posted on #96. Senty has not yet reviewed — ping when context is fresh.
