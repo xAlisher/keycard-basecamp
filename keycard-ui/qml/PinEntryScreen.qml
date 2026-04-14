@@ -18,6 +18,10 @@ FocusScope {
         if (currentRequest !== null && paired)
             hiddenInput.forceActiveFocus()
     }
+    onPairedChanged: {
+        if (paired && currentRequest !== null)
+            hiddenInput.forceActiveFocus()
+    }
     property bool pendingChecked: false
     property string pinValue: ""
     property int maxPinLength: 6
