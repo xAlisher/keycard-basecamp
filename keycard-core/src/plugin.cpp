@@ -1,6 +1,7 @@
 #include "plugin.h"
 #include "KeycardBridge.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/types.h>
 #include <PCSC/winscard.h>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -256,6 +257,26 @@ QString KeycardPlugin::authorize(const QString& pin)
     return QJsonDocument(authResult).toJson(QJsonDocument::Compact);
 }
 
+QString KeycardPlugin::domainToPath(const QString& domain)
+{
+    // EIP-1581: m/43'/60'/1581'/<idx1>'/<idx2>'/<idx3>'/<idx4>'
+    // "logos-" prefix for namespace separation; 16 bytes of hash for collision resistance.
+    QByteArray namespaced = ("logos-" + domain).toUtf8();
+    unsigned char hash[32];
+    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(namespaced.constData()), namespaced.size());
+
+    uint32_t idx1 = (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 |
+                     uint32_t(hash[2])  << 8  | uint32_t(hash[3]))  & 0x7FFFFFFF;
+    uint32_t idx2 = (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 |
+                     uint32_t(hash[6])  << 8  | uint32_t(hash[7]))  & 0x7FFFFFFF;
+    uint32_t idx3 = (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 |
+                     uint32_t(hash[10]) << 8  | uint32_t(hash[11])) & 0x7FFFFFFF;
+    uint32_t idx4 = (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 |
+                     uint32_t(hash[14]) << 8  | uint32_t(hash[15])) & 0x7FFFFFFF;
+
+    return QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'").arg(idx1).arg(idx2).arg(idx3).arg(idx4);
+}
+
 QString KeycardPlugin::deriveKey(const QString& domain)
 {
     qDebug() << "KeycardPlugin::deriveKey() called, domain:" << domain;
@@ -273,28 +294,7 @@ QString KeycardPlugin::deriveKey(const QString& domain)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // EIP-1581 standard: on-card BIP32 derivation at custom paths
-    // Map domain to EIP-1581 BIP32 path with deeper nesting (per mikkoph feedback)
-    // Path: m/43'/60'/1581'/<idx1>'/<idx2>'/<idx3>'/<idx4>'
-    // Uses 16 bytes of hash for better collision resistance
-    // Add "logos-" prefix for namespace separation
-    QByteArray namespaced = ("logos-" + domain).toUtf8();
-    unsigned char hash[32];
-    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(namespaced.constData()), namespaced.size());
-
-    // Extract 4 indices from hash (use hardened derivation, 31-bit values)
-    uint32_t idx1 = (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 |
-                     uint32_t(hash[2])  << 8  | uint32_t(hash[3]))  & 0x7FFFFFFF;
-    uint32_t idx2 = (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 |
-                     uint32_t(hash[6])  << 8  | uint32_t(hash[7]))  & 0x7FFFFFFF;
-    uint32_t idx3 = (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 |
-                     uint32_t(hash[10]) << 8  | uint32_t(hash[11])) & 0x7FFFFFFF;
-    uint32_t idx4 = (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 |
-                     uint32_t(hash[14]) << 8  | uint32_t(hash[15])) & 0x7FFFFFFF;
-
-    // Construct EIP-1581 path with deeper nesting (uses 16 bytes of hash)
-    QString eip1581Path = QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'")
-        .arg(idx1).arg(idx2).arg(idx3).arg(idx4);
+    QString eip1581Path = domainToPath(domain);
     qDebug() << "KeycardPlugin::deriveKey() - domain:" << domain << "→ path:" << eip1581Path;
 
     // Derive key on-card at custom EIP-1581 path (real BIP32 derivation)
@@ -900,6 +900,285 @@ QString KeycardPlugin::rejectRequest(const QString& authId)
     result["status"] = "rejected";
     result["message"] = "Authorization request declined by user";
 
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+// --- Signing request API (#98) ---
+
+QString KeycardPlugin::requestSign(const QString& jsonArgs)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        QJsonObject err;
+        err["error"] = "Expected JSON object: {\"domain\",\"payloadHash\",\"caller\",\"scheme\"}";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    QJsonObject args = doc.object();
+    QString domain      = args.value("domain").toString();
+    QString payloadHash = args.value("payloadHash").toString();
+    QString caller      = args.value("caller").toString();
+    QString scheme      = args.value("scheme").toString().toLower();
+
+    if (domain.isEmpty() || payloadHash.isEmpty() || caller.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: domain, payloadHash, caller";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    if (scheme != "ecdsa" && scheme != "schnorr") {
+        QJsonObject err;
+        err["error"] = "scheme must be \"ecdsa\" or \"schnorr\"";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    if (QByteArray::fromHex(payloadHash.toUtf8()).size() != 32) {
+        QJsonObject err;
+        err["error"] = "payloadHash must be hex-encoded 32 bytes";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    // Mode-mismatch check — immediate, before any card interaction.
+    // ecdsa requires BIP39 card; schnorr requires LEE card.
+    // If mode is None (card absent, bridge not started, or cache cleared on unplug)
+    // we cannot guarantee the request is valid — reject immediately rather than
+    // enqueuing something that will fail at approveSign time.
+    if (!m_bridge || !m_bridge->isRunning()) {
+        QJsonObject err;
+        err["error"] = "Card not ready — discover card before requesting a signature";
+        err["cardMode"] = "unknown";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    {
+        KeycardBridge::KeyMode mode = m_bridge->keyMode();
+        if (mode == KeycardBridge::KeyMode::None) {
+            QJsonObject err;
+            err["error"] = "Card key mode unknown — insert card and discover before requesting a signature";
+            err["cardMode"] = "unknown";
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
+        }
+        bool needsLEE = (scheme == "schnorr");
+        bool cardIsLEE = (mode == KeycardBridge::KeyMode::LEE);
+        if (needsLEE && !cardIsLEE) {
+            QJsonObject err;
+            err["error"] = "Paired card is in BIP39 mode; Schnorr signing requires a LEE-mode Keycard";
+            err["cardMode"] = "bip39";
+            err["requiredMode"] = "lee";
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
+        }
+        if (!needsLEE && cardIsLEE) {
+            QJsonObject err;
+            err["error"] = "Paired card is in LEE mode; ECDSA signing requires a standard BIP39 Keycard";
+            err["cardMode"] = "lee";
+            err["requiredMode"] = "bip39";
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
+        }
+    }
+
+    QString signId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    SignRequest req;
+    req.id          = signId;
+    req.domain      = domain;
+    req.payloadHash = payloadHash;
+    req.caller      = caller;
+    req.scheme      = scheme;
+    req.status      = "pending";
+    req.timestamp   = QDateTime::currentMSecsSinceEpoch();
+    m_signRequests.push_back(std::move(req));
+
+    QString shortId = signId.left(8);
+    logActivity(QString("[%1] Module %2 requesting %3 sign for domain %4 (payload: %5…)")
+        .arg(shortId, caller, scheme, domain, payloadHash.left(16)), "warning");
+
+    QJsonObject result;
+    result["signId"] = signId;
+    result["status"] = "pending";
+    result["message"] = "Sign request created. Open Keycard UI to approve.";
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::checkSignStatus(const QString& jsonOrId)
+{
+    // Accept {"signId":"..."} or plain UUID string
+    QString signId = jsonOrId;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonOrId.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        signId = doc.object().value("signId").toString();
+
+    for (size_t i = 0; i < m_signRequests.size(); ++i) {
+        auto& req = m_signRequests[i];
+        if (req.id != signId) continue;
+
+        QJsonObject result;
+        result["signId"] = signId;
+        result["domain"] = req.domain;
+        result["caller"] = req.caller;
+        result["scheme"] = req.scheme;
+
+        if (req.status == "complete") {
+            // SECURITY: One-read-and-drop — return signature exactly once, then wipe.
+            result["status"] = "complete";
+            QByteArray sigHex = req.signature.ref().toHex();
+            result["signature"] = QString::fromUtf8(sigHex);
+            sodium_memzero(sigHex.data(), sigHex.size());
+            req.signature.wipe();
+            m_loggedRequestIds.remove(signId);
+            m_signRequests.erase(m_signRequests.begin() + i);
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+
+        result["status"] = req.status;
+        if (!req.error.isEmpty()) result["error"] = req.error;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject result;
+    result["error"] = "Sign request not found";
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::getPendingSigns()
+{
+    QJsonArray pending;
+    for (auto& req : m_signRequests) {
+        if (req.status != "pending") continue;
+        QJsonObject obj;
+        obj["signId"]      = req.id;
+        obj["domain"]      = req.domain;
+        obj["caller"]      = req.caller;
+        obj["scheme"]      = req.scheme;
+        obj["payloadHash"] = req.payloadHash;
+        obj["timestamp"]   = req.timestamp;
+        pending.append(obj);
+
+        if (!m_loggedRequestIds.contains(req.id)) {
+            QString shortId = req.id.left(8);
+            logActivity(QString("[%1] New %2 sign request from %3 for domain %4")
+                .arg(shortId, req.scheme, req.caller, req.domain), "warning");
+            m_loggedRequestIds.insert(req.id);
+        }
+    }
+    QJsonObject result;
+    result["pending"] = pending;
+    result["count"]   = pending.size();
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::approveSign(const QString& jsonArgs)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        QJsonObject err;
+        err["error"] = "Expected JSON object: {\"signId\",\"pin\"}";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    QString signId = doc.object().value("signId").toString();
+    QString pin    = doc.object().value("pin").toString();
+
+    if (signId.isEmpty() || pin.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: signId, pin";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    qDebug() << "KeycardPlugin::approveSign() called for signId:" << signId;
+
+    SignRequest* req = nullptr;
+    for (auto& r : m_signRequests) {
+        if (r.id == signId && r.status == "pending") { req = &r; break; }
+    }
+    if (!req) {
+        QJsonObject result;
+        result["error"] = "Sign request not found or already completed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    if (m_bridge) m_bridge->setOperationInProgress(true);
+
+    // Step 1: verify PIN (opens SC)
+    QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
+    if (!authResult.value("authorized").toBool()) {
+        if (m_bridge) m_bridge->setOperationInProgress(false);
+        int remaining = authResult.value("remainingAttempts").toInt(-1);
+        QJsonObject result;
+        result["signId"] = signId;
+        result["status"] = "retry";
+        result["remainingAttempts"] = remaining;
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Step 2: sign on-card — private key never leaves card
+    QString path = domainToPath(req->domain);
+    QByteArray hashBytes = QByteArray::fromHex(req->payloadHash.toUtf8());
+
+    uint8_t schemeP2 = (req->scheme == "schnorr") ? Keycard::APDU::P2SignSchnorr
+                                                   : Keycard::APDU::P2SignECDSA;
+
+    QByteArray sigBytes = m_bridge->commandSet()->signWithPath(hashBytes, path, false, schemeP2);
+    sodium_memzero(hashBytes.data(), hashBytes.size());
+
+    if (m_bridge) m_bridge->setOperationInProgress(false);
+
+    if (sigBytes.isEmpty()) {
+        req->status = "failed";
+        req->error  = m_bridge ? m_bridge->commandSet()->lastError() : "Signing failed";
+        QString shortId = signId.left(8);
+        logActivity(QString("[%1] Signing failed: %2").arg(shortId, req->error), "error");
+        QJsonObject result;
+        result["signId"] = signId;
+        result["status"] = "failed";
+        result["error"]  = req->error;
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // SECURITY: Store in SecureBuffer; hand out only via checkSignStatus (one-read-and-drop).
+    req->status    = "complete";
+    req->signature = SecureBuffer(std::move(sigBytes));
+
+    QString shortId = signId.left(8);
+    logActivity(QString("[%1] %2 signature produced for %3 domain %4")
+        .arg(shortId, req->scheme, req->caller, req->domain), "success");
+
+    m_sessionState = SessionState::NoSession;
+    logActivity("Session closed", "success");
+
+    QJsonObject result;
+    result["signId"]  = signId;
+    result["status"]  = "complete";
+    result["message"] = "Signing completed. Poll checkSignStatus to retrieve signature.";
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::rejectSign(const QString& jsonOrId)
+{
+    // Accept {"signId":"..."} or plain UUID string
+    QString signId = jsonOrId;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonOrId.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        signId = doc.object().value("signId").toString();
+
+    SignRequest* req = nullptr;
+    for (auto& r : m_signRequests) {
+        if (r.id == signId && r.status == "pending") { req = &r; break; }
+    }
+    if (!req) {
+        QJsonObject result;
+        result["error"] = "Sign request not found or already completed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    req->status = "rejected";
+    QString shortId = signId.left(8);
+    logActivity(QString("[%1] Sign request from %2 rejected").arg(shortId, req->caller), "warning");
+    m_loggedRequestIds.remove(signId);
+
+    QJsonObject result;
+    result["signId"]  = signId;
+    result["status"]  = "rejected";
+    result["message"] = "Sign request rejected by user";
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
