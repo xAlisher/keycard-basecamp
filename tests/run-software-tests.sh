@@ -163,44 +163,32 @@ assert_has_field "empty caller → error" "$R" "error"
 
 echo ""
 
-# ── 3. requestSign: mode-mismatch (live card required) ────────────────────────
-# Reads cached card mode (populated by prior authorize). Does NOT call
-# discoverCard — that crashes the plugin when no reader is connected.
-echo "requestSign — mode-mismatch (live card)"
+# ── 3. requestSign: both schemes valid on any key type (live card required) ────
+# Per bitgamma review: both Schnorr and ECDSA are valid on either key type.
+# The P2 byte selects the scheme on-card; mode only gates "no key loaded".
+echo "requestSign — both schemes accepted on any key type (live card)"
 
 DETECT_R=$(call detectMode) || DETECT_R='{}'
 CARD_MODE=$(extract_field "$DETECT_R" "mode") || CARD_MODE=""
 
 if [[ "$CARD_MODE" == "none" || "$CARD_MODE" == "" ]]; then
-    echo "  (skipped — no key loaded on card, mode-mismatch tests require BIP39 or LEE key)"
-elif [[ "$CARD_MODE" == "LEE" ]]; then
-    # ECDSA requires BIP39 — should be rejected immediately
-    R=$(call requestSign "{\"domain\":\"test\",\"payloadHash\":\"$VALID_HASH\",\"caller\":\"test\",\"scheme\":\"ecdsa\"}")
-    assert_field "ecdsa on LEE card → cardMode=lee" "$R" "cardMode" "lee"
-    assert_has_field "ecdsa on LEE card → has error" "$R" "error"
-
-    # Schnorr matches LEE — should be enqueued (no error)
+    echo "  (skipped — no key loaded on card)"
+elif [[ "$CARD_MODE" == "LEE" || "$CARD_MODE" == "BIP39" ]]; then
+    # Schnorr should be accepted on either key type
     R=$(call requestSign "{\"domain\":\"test\",\"payloadHash\":\"$VALID_HASH\",\"caller\":\"test\",\"scheme\":\"schnorr\"}")
-    assert_not_field "schnorr on LEE card → no error (correct mode)" "$R" "error"
-    assert_field "schnorr on LEE card → status pending" "$R" "status" "pending"
-    PENDING_ID=$(extract_field "$R" "signId")
+    assert_not_field "schnorr on $CARD_MODE card → no error" "$R" "error"
+    assert_field     "schnorr on $CARD_MODE card → status pending" "$R" "status" "pending"
+    PENDING_SCHNORR=$(extract_field "$R" "signId") || PENDING_SCHNORR=""
+
+    # ECDSA should also be accepted on either key type
+    R=$(call requestSign "{\"domain\":\"test\",\"payloadHash\":\"$VALID_HASH\",\"caller\":\"test\",\"scheme\":\"ecdsa\"}")
+    assert_not_field "ecdsa on $CARD_MODE card → no error" "$R" "error"
+    assert_field     "ecdsa on $CARD_MODE card → status pending" "$R" "status" "pending"
+    PENDING_ECDSA=$(extract_field "$R" "signId") || PENDING_ECDSA=""
 
     # Clean up
-    [[ -n "$PENDING_ID" ]] && "$LOGOSCORE" call keycard rejectSign "{\"signId\":\"$PENDING_ID\"}" >/dev/null 2>&1 || true
-
-elif [[ "$CARD_MODE" == "BIP39" ]]; then
-    # Schnorr requires LEE — should be rejected immediately
-    R=$(call requestSign "{\"domain\":\"test\",\"payloadHash\":\"$VALID_HASH\",\"caller\":\"test\",\"scheme\":\"schnorr\"}")
-    assert_field "schnorr on BIP39 card → cardMode=bip39" "$R" "cardMode" "bip39"
-    assert_has_field "schnorr on BIP39 card → has error" "$R" "error"
-
-    # ECDSA matches BIP39 — should be enqueued
-    R=$(call requestSign "{\"domain\":\"test\",\"payloadHash\":\"$VALID_HASH\",\"caller\":\"test\",\"scheme\":\"ecdsa\"}")
-    assert_not_field "ecdsa on BIP39 card → no error (correct mode)" "$R" "error"
-    assert_field "ecdsa on BIP39 card → status pending" "$R" "status" "pending"
-    PENDING_ID=$(extract_field "$R" "signId")
-
-    [[ -n "$PENDING_ID" ]] && "$LOGOSCORE" call keycard rejectSign "{\"signId\":\"$PENDING_ID\"}" >/dev/null 2>&1 || true
+    [[ -n "$PENDING_SCHNORR" ]] && "$LOGOSCORE" call keycard rejectSign "{\"signId\":\"$PENDING_SCHNORR\"}" >/dev/null 2>&1 || true
+    [[ -n "$PENDING_ECDSA"   ]] && "$LOGOSCORE" call keycard rejectSign "{\"signId\":\"$PENDING_ECDSA\"}"   >/dev/null 2>&1 || true
 fi
 
 echo ""
