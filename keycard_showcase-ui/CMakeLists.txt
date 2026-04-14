@@ -12,3 +12,12 @@ install(FILES
     qml/Main.qml
     DESTINATION "${KEYCARD_SHOWCASE_UI_DIR}"
 )
+
+# Mirror to LogosBasecamp (same as keycard-ui)
+install(CODE "
+    set(SRC \"\${CMAKE_INSTALL_PREFIX}/plugins/keycard_showcase-ui\")
+    set(DST \"\$ENV{HOME}/.local/share/Logos/LogosBasecamp/plugins/keycard_showcase-ui\")
+    message(STATUS \"Mirroring keycard_showcase-ui to LogosBasecamp: \${DST}\")
+    file(COPY \"\${SRC}/\" DESTINATION \"\${DST}\")
+    message(STATUS \"Mirror complete\")
+")

@@ -122,6 +122,24 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 - **[review] Narrow re-audits work when the invariant is explicit.** The targeted question was simple: does the post-cleanup path still preserve one mapping from external API -> `CommandSet::loadKey()` -> cached `KeyMode`? Once that invariant was stated, the audit stayed fast and did not need a full PR reread.
 - **[review] Cached state changes need a second source-of-truth check.** Any time `setKeyMode()` is written directly in the plugin, the audit should compare it against bridge-side `select()` / `isLEEKey()` detection, not just the local function body. That cross-check is what makes "no findings" defensible here.
 
+---
+
+## Issue #133 — keycard_showcase rename (2026-04-14)
+
+### Process fails
+
+- **[process] Did not audit installed state after rename before declaring launch ready.** After `cmake --install`, I launched immediately without checking `ls ~/.local/share/Logos/LogosApp/plugins/` or `LogosBasecamp/plugins/`. Both still had `auth_showcase-ui/` and `auth_showcase/` sitting alongside the new `keycard_showcase` dirs. Two rounds of "still auth_showcase" before root cause was found.
+  - **Root cause:** cmake install never removes old files. A directory rename in source means the old install path is orphaned — cmake only adds, never cleans.
+  - **Fix:** After any plugin/module rename, explicitly `rm -rf` the old installed path in both `LogosApp/` and `LogosBasecamp/` before relaunching. Add this to the install checklist.
+
+- **[process] LogosBasecamp not covered by the showcase mirror.** The CMake `install(CODE)` mirror step only syncs `keycard-ui`. Showcase modules installed to `LogosApp/` never reach `LogosBasecamp/` automatically.
+  - **Root cause:** Mirror step was added only for `keycard-ui` when that divergence was discovered. Showcase was never added.
+  - **Fix:** After any showcase install, manually `cp -r` to `LogosBasecamp/` — or add a CMake mirror step for showcase too.
+
+### Project lessons
+- **cmake install is additive only.** Renames leave stale dirs. Always `rm -rf` old install paths manually after a rename.
+- **LogosBasecamp mirror covers keycard-ui only.** Showcase modules require manual copy to `LogosBasecamp/` on every install.
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 

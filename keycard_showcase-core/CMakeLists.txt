@@ -66,3 +66,12 @@ install(TARGETS keycard_showcase_plugin
 install(FILES modules/keycard_showcase/manifest.json
     DESTINATION "${KEYCARD_SHOWCASE_MODULE_DIR}"
 )
+
+# Mirror to LogosBasecamp
+install(CODE "
+    set(SRC \"\${CMAKE_INSTALL_PREFIX}/modules/keycard_showcase\")
+    set(DST \"\$ENV{HOME}/.local/share/Logos/LogosBasecamp/modules/keycard_showcase\")
+    message(STATUS \"Mirroring keycard_showcase to LogosBasecamp: \${DST}\")
+    file(COPY \"\${SRC}/\" DESTINATION \"\${DST}\")
+    message(STATUS \"Mirror complete\")
+")
