@@ -45,10 +45,18 @@ Rectangle {
         forceActiveFocus()
     }
 
+    // logos.callModule wraps C++ QString in an extra JSON layer — parse twice
+    function callModuleParse(raw) {
+        try {
+            var tmp = JSON.parse(raw)
+            return (typeof tmp === 'string') ? JSON.parse(tmp) : tmp
+        } catch (e) { return null }
+    }
+
     // Helper to process activity log entries from API responses
     function processActivity(responseJson) {
         try {
-            var response = JSON.parse(responseJson)
+            var response = callModuleParse(responseJson)
             if (response._activity && Array.isArray(response._activity)) {
                 var screen = productionLoader.item
                 if (screen && screen.activityLog) {
