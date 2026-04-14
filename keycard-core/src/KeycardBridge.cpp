@@ -711,24 +711,7 @@ bool KeycardBridge::isCardPresent()
     LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
 
     if (rv != SCARD_S_SUCCESS) {
-        // PC/SC context unavailable (e.g. pcscd using a different socket path).
-        // Fall back to CommandSet::select() only if channel is already connected.
-        if (m_commandSet && m_channel && m_channel->isConnected()) {
-            try {
-                auto appInfo = m_commandSet->select(true);  // force=true, bypass cache
-                QString uid = QString::fromUtf8(appInfo.instanceUID.toHex());
-                if (!uid.isEmpty()) {
-                    m_cardReady = true;
-                    m_keyUID = uid;
-                    m_keyInitialized = appInfo.initialized;
-                    m_keyMode = appInfo.keyUID.isEmpty() ? KeyMode::None
-                              : appInfo.isLEEKey() ? KeyMode::LEE
-                              : KeyMode::BIP39;
-                    setState(appInfo.initialized ? State::Ready : State::EmptyKeycard);
-                    return true;
-                }
-            } catch (const std::exception&) {}
-        }
+        qDebug() << "KeycardBridge::isCardPresent: PC/SC not available, error:" << rv;
         return false;
     }
 
