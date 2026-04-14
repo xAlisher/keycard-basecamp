@@ -1,9 +1,10 @@
-# Halt — 2026-04-14 (epic #95 waiting on bitgamma review before any merges)
+# Halt — 2026-04-14 (epic #95 waiting on bitgamma review before merges)
 
 ## Where we stopped
 
-#96 and #98 both have Senty LGTM. All branches are sitting open, waiting on
-bitgamma review of epic #95 before anything merges to master.
+#96 and #98 both have Senty LGTM. Waiting on bitgamma review of epic #95
+before any further merges. Rule: nothing from epic #95 merges to master
+until bitgamma approves.
 
 ---
 
@@ -11,12 +12,8 @@ bitgamma review of epic #95 before anything merges to master.
 
 | Branch | Issue | Senty | bitgamma | Notes |
 |--------|-------|-------|----------|-------|
-| `master` | — | — | — | Clean, no #96/#98 code yet |
-| `issue-98-request-sign` | #98 | LGTM Round 2 | pending | requestSign API |
-| keycard-qt submodule | #96 | LGTM | pending | signWithPath scheme + loadKey type |
-
-All #96 commits are on master (they landed before the epic-merge rule was set).
-#98 is on its branch, not yet merged.
+| `master` | #96 | LGTM | pending | Landed before merge rule — stays |
+| `issue-98-request-sign` | #98 | LGTM Round 2 | pending | Waits for bitgamma |
 
 ---
 
@@ -29,8 +26,8 @@ Pairing password: jyairW2naGbqtzDp
 InstanceUID: c5196e35721641a3902e8421c8fc0ba0
 ```
 
-Pairing in `~/.local/share/Logos/LogosBasecamp/keycard-pairings.json` and
-`~/.local/share/Logos/LogosApp/keycard-pairings.json`.
+Pairing in `~/.local/share/Logos/LogosBasecamp/keycard-pairings.json`
+and `~/.local/share/Logos/LogosApp/keycard-pairings.json`.
 
 ```
 PAIRING KEY (b64): TtowilnWIJYvyZ0aCINvThI4HINpEI+L0zrr7E62KlY=
@@ -43,7 +40,7 @@ Card currently has **LEE key loaded** (from #96 testing).
 
 ## Next steps (in order)
 
-1. **Wait for bitgamma review of epic #95** — then merge #96 + #98 together
+1. **Wait for bitgamma review of epic #95** — then merge #98
 2. **#97** — mode-aware pairing
 3. **#109** — mock state bar
 4. **#111** — automated headless tests
@@ -68,5 +65,4 @@ $LOGOSCORE call keycard authorize '{"pin":"000440"}'
 $LOGOSCORE call keycard detectMode
 ```
 
-Note: use `/tmp/test-modules` with keycard only — full modules dir crashes on
-capability_module.
+Note: use `/tmp/test-modules` (keycard only) — full modules dir crashes on capability_module.
