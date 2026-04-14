@@ -35,6 +35,7 @@
 | Encrypted Pairing | #43 | Encrypted pairing storage, migration-after-verify, fail-closed corruption | 2026-04 |
 | Dev Integration Kit | Epic #82 | Full API docs, install manifest sync | 2026-04 |
 | Key Persistence Fix | #94 / be284f0 | One-read-and-drop keys, SecureBuffer for AuthRequest, pcscd RUNPATH fix | 2026-04-10 |
+| Dev Card Setup | #107 / ff95f6f | LEE applet (v3.2) installed, card initialized, ISD key identified | 2026-04-14 |
 
 ---
 
@@ -59,6 +60,7 @@
 
 1. ~~**pcsclite protocol compatibility (#67):**~~ **Resolved in #94.** CMake install and package-lgx.sh now auto-patch RUNPATH to `$ORIGIN`, ensuring system libpcsclite is used at runtime. Nix pcsclite (protocol 4:5) no longer leaks into installed plugins.
 2. **Logos Storage built-in encryption:** May be built-in eventually. Worth watching.
+3. **LEE mode probe (SW=0x6A86):** Requires Keycard secure channel wrapping. `keycard-cli` v0.7.0 has no LEE/P2=0x01 support. Deferred to #96 (`detectMode()`). Raw APDU outside SC returns SW=6D00.
 
 ---
 

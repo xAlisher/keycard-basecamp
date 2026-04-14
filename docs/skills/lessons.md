@@ -4,6 +4,25 @@ All numbered lessons and issue/phase completion lessons. Original numbering pres
 
 ---
 
+## Issue #107 — Dev Card Setup (2026-04-14)
+
+### gp.jar only tries the GP default key — always pass Keycard dev key explicitly
+`gp.jar` defaults to `404142...` only. `keycard-cli` tries two keys in sequence: `KeycardDevelopmentKey` (`c212e073ff8b4bbfaff4de8ab655221f`) first, then GP default. Our dev card uses the Keycard dev key. If `gp.jar` returns "Card cryptogram invalid!" with default key, try `--key c212e073ff8b4bbfaff4de8ab655221f` before declaring keys lost.
+
+### gp.jar --install fails on multi-applet CAP files — use --load then --install-only
+`gp --install <capfile>` fails with "CAP contains more than one applet" when the package has multiple applets (Keycard, NDEF, Cash, Ident). Pattern: `--load` the package first, then `--install-only <appletAID> --pkg <pkgAID> --applet <appletAID> --create <instanceAID>` for each applet separately.
+
+### Factory reset only clears Keycard applet state — ISD keys unchanged
+Card factory reset (via Keycard Shell 3-wrong-PINs flow) resets PIN/PUK/keys/pairing but does NOT touch GlobalPlatform. ISD keys survive factory reset. You still need the correct ISD key to install a new applet after reset.
+
+### LEE mode probe requires Keycard secure channel — raw APDU returns 6D00
+The mode probe APDU (`80 C3 F0 00`) is not accessible outside the Keycard secure channel. Sending raw after SELECT returns SW=6D00. Probe must be wrapped in SC — see #96 `detectMode()`.
+
+### keycard-cli v0.7.0 has no LEE/P2=0x01 support
+`keycard-load-seed` in keycard-cli v0.7.0 has P2 hardcoded to 0x00. Loading a seed in LEE mode (P2=0x01) requires a patched CLI or raw APDU via the Keycard SC. The latest Linux binary is v0.7.0; v0.8.2 dropped Linux support.
+
+---
+
 ## Extracted Lessons from logos-notes
 
 ### Lesson #2: Q_INVOKABLE methods must return JSON strings, not raw values
