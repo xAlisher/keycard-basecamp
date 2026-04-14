@@ -100,7 +100,7 @@ Rectangle {
     function requestSign() {
         root.signError = ""
         // Hash the message via keycard_showcase core plugin
-        var hashResult = logos.callModule("keycard_showcase", "hashMessage", [messageInput.text])
+        var hashResult = logos.callModule("keycard", "hashMessage", [messageInput.text])
         var hashResponse = callModuleParse(hashResult)
         if (!hashResponse || !hashResponse.hash) {
             root.signError = "Failed to hash message"
@@ -170,12 +170,14 @@ Rectangle {
                     font.weight: Font.Bold
                     color: "#ffffff"
                     Layout.alignment: Qt.AlignHCenter
+                    horizontalAlignment: Text.AlignHCenter
                 }
                 Text {
                     text: "End-to-end Keycard auth and signing demo"
                     font.pixelSize: 14
                     color: "#888888"
                     Layout.alignment: Qt.AlignHCenter
+                    horizontalAlignment: Text.AlignHCenter
                 }
             }
 

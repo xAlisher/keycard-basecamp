@@ -54,6 +54,9 @@ public:
     Q_INVOKABLE QString authorizeRequest(const QString& authId, const QString& pin);
     Q_INVOKABLE QString rejectRequest(const QString& authId);
 
+    // Utility
+    Q_INVOKABLE QString hashMessage(const QString& message);  // SHA-256 hex of UTF-8 message
+
     // Signing request API (#98)
     Q_INVOKABLE QString requestSign(const QString& jsonArgs); // {"domain","payloadHash","caller","scheme"}
     Q_INVOKABLE QString checkSignStatus(const QString& signId);

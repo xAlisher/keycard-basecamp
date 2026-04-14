@@ -126,4 +126,13 @@ if(PATCHELF_EXECUTABLE)
     ")
 endif()
 
+# Mirror keycard module to LogosBasecamp
+install(CODE "
+    set(SRC \"\${CMAKE_INSTALL_PREFIX}/modules/keycard\")
+    set(DST \"\$ENV{HOME}/.local/share/Logos/LogosBasecamp/modules/keycard\")
+    message(STATUS \"Mirroring keycard module to LogosBasecamp: \${DST}\")
+    file(COPY \"\${SRC}/\" DESTINATION \"\${DST}\")
+    message(STATUS \"Mirror complete\")
+")
+
 # Note: libkeycard.so removed - now using keycard-qt (native C++/Qt)

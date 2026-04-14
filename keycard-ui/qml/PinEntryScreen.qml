@@ -201,7 +201,7 @@ FocusScope {
         } catch (e) {}
 
         // Check sign requests
-        var signResult = logos.callModule("keycard", "getPendingSignRequests", [])
+        var signResult = logos.callModule("keycard", "getPendingSigns", [])
         try {
             var signResponse = callModuleParse(signResult)
             if (signResponse && signResponse.pending && signResponse.pending.length > 0 && !root.currentRequest) {
@@ -230,7 +230,7 @@ FocusScope {
 
         hwTimer.stop()
         var result = isSign
-            ? logos.callModule("keycard", "approveSign", [currentRequest.signId, pinValue])
+            ? logos.callModule("keycard", "approveSign", [JSON.stringify({signId: currentRequest.signId, pin: pinValue})])
             : logos.callModule("keycard", "authorizeRequest", [currentRequest.authId, pinValue])
         hwTimer.start()
         verifyingPin = false
@@ -276,7 +276,7 @@ FocusScope {
         if (!currentRequest) return
         var isSign = !!currentRequest.signId
         if (isSign) {
-            logos.callModule("keycard", "declineSign", [currentRequest.signId])
+            logos.callModule("keycard", "rejectSign", [currentRequest.signId])
         } else {
             logos.callModule("keycard", "rejectRequest", [currentRequest.authId])
         }

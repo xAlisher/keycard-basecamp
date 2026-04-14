@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QUuid>
 #include <QDateTime>
+#include <QCryptographicHash>
 #include <QDebug>
 #include <algorithm>
 #include <sodium.h>
@@ -919,6 +920,14 @@ QString KeycardPlugin::rejectRequest(const QString& authId)
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
+QString KeycardPlugin::hashMessage(const QString& message)
+{
+    QByteArray hash = QCryptographicHash::hash(message.toUtf8(), QCryptographicHash::Sha256);
+    QJsonObject result;
+    result["hash"] = QString::fromLatin1(hash.toHex());
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
 // --- Signing request API (#98) ---
 
 QString KeycardPlugin::requestSign(const QString& jsonArgs)
@@ -951,30 +960,9 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
 
-    // Mode-mismatch check — immediate, before any card interaction.
-    // ecdsa requires BIP39 card; schnorr requires LEE card.
-    // If mode is None (card absent, bridge not started, or cache cleared on unplug)
-    // we cannot guarantee the request is valid — reject immediately rather than
-    // enqueuing something that will fail at approveSign time.
-    if (!m_bridge || !m_bridge->isRunning()) {
-        QJsonObject err;
-        err["error"] = "Card not ready — discover card before requesting a signature";
-        err["cardMode"] = "unknown";
-        return QJsonDocument(err).toJson(QJsonDocument::Compact);
-    }
-    {
-        KeycardBridge::KeyMode mode = m_bridge->keyMode();
-        if (mode == KeycardBridge::KeyMode::None) {
-            QJsonObject err;
-            err["error"] = "Card key mode unknown — insert card and discover before requesting a signature";
-            err["cardMode"] = "unknown";
-            return QJsonDocument(err).toJson(QJsonDocument::Compact);
-        }
-        // Both Schnorr and ECDSA are valid on either key type (LEE or BIP39).
-        // The P2 byte passed to signWithPath selects the scheme on-card.
-        // No scheme/mode mismatch rejection — only gate is mode == None (no key loaded).
-        (void)mode;
-    }
+    // No card-presence check here — requests are queued before the card is inserted.
+    // keycard-ui polls getPendingSignRequests after card detection and calls approveSign.
+    // Mode-mismatch check happens in approveSign when the card is actually present.
 
     QString signId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
