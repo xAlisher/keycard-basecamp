@@ -604,10 +604,7 @@ QString KeycardPlugin::loadKey(const QString& jsonArgs)
     QJsonObject args = doc.object();
     QString seedHex    = args.value("seedHex").toString();
     QString keyTypeStr = args.value("keyType").toString().toLower();
-    int keyType;
-    if      (keyTypeStr == "lee")   keyType = 1;
-    else if (keyTypeStr == "bip39") keyType = 0;
-    else {
+    if (keyTypeStr != "lee" && keyTypeStr != "bip39") {
         result["error"] = "Invalid keyType — must be \"lee\" or \"bip39\"";
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
@@ -618,13 +615,13 @@ QString KeycardPlugin::loadKey(const QString& jsonArgs)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
     auto cs = m_bridge->commandSet();
-    QByteArray keyUID = cs->loadKey(seed, static_cast<uint8_t>(keyType));
+    QByteArray keyUID = cs->loadKey(seed, keyTypeStr == "lee" ? uint8_t(1) : uint8_t(0));
     if (keyUID.isEmpty()) {
         result["error"] = cs->lastError();
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
     // Update cached key mode so detectMode() reflects the new state without requiring SELECT
-    m_bridge->setKeyMode(keyType == 1 ? KeycardBridge::KeyMode::LEE : KeycardBridge::KeyMode::BIP39);
+    m_bridge->setKeyMode(keyTypeStr == "lee" ? KeycardBridge::KeyMode::LEE : KeycardBridge::KeyMode::BIP39);
     result["keyUID"] = QString::fromUtf8(keyUID.toHex());
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
