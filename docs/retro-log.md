@@ -98,6 +98,25 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 - **[review] Request-scoped secrets need explicit teardown on every dismissal path.** The pairing form looked correct on success and card removal, but the request-dismiss path retained the password in UI state. Any credential-bearing QML property should be reviewed like backend secret state: success, failure, cancel, replace, disconnect.
 - **[review] GitHub connector permissions are not guaranteed for PR comments.** The MCP GitHub comment attempt for #130 failed with `403 Resource not accessible by integration`; fallback to `gh issue comment` worked immediately. For future review loops, keep the CLI fallback ready instead of assuming connector write access.
 
+---
+
+## PR #113 — requestSign / approveSign signing API (2026-04-14)
+
+### Process wins
+- **[process] Targeted re-audit kept review fast.** Senty's re-audit of `aae176b` was scoped to the int-removal path only — no full re-review needed. Verified `loadKey` + `setKeyMode` alignment in one pass.
+- **[process] Conflict resolution was clean.** Three-file merge conflict (plugin.cpp, PROJECT_KNOWLEDGE.md, .gitignore) resolved correctly: our string-keyType code on all three conflict hunks, master's QML pitfall lessons preserved.
+- **[process] Alisher called the merge without waiting for bitgamma re-approval.** Fix was minimal and obvious; skipping the re-approval gate was a reasonable call. Worth noting as a precedent for trivial cleanup commits on external-reviewer PRs.
+
+### Process fails
+- **[process] tmux-bridge gate error repeated multiple times this session.** Chaining `message && keys Enter` in one Bash call fails every time. Required updating both the fieldcraft protocol AND the memory file to lock in the 5-step sequence. Pattern was already documented — the failure was not reading memory before acting.
+
+### Project lessons
+- **bitgamma review cadence is async.** PR #113 sat open for multiple sessions waiting on bitgamma. For obvious cleanup commits, Alisher can call the merge unilaterally — no need to block on external reviewer re-approval.
+- **String keyType (`"lee"` / `"bip39"`) is now the only valid API.** No integer fallback anywhere in the codebase. Any caller passing `0`/`1` will get an explicit error.
+
+### Feedback for Alisher
+- (none)
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 
