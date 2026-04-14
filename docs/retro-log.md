@@ -93,6 +93,11 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 ### Feedback for Alisher
 - (none)
 
+### Senty addendum
+- **[review] The two bugs worth catching here were lifecycle bugs, not feature bugs.** Both MEDIUM findings were "state becomes valid, then later transitions expose a stale edge" problems: `currentRequest` arriving before `paired`, and `pairingPassword` surviving Decline. For QML review on this codebase, the highest-yield pass is "what happens on every exit edge?" rather than "does the happy path render?"
+- **[review] Request-scoped secrets need explicit teardown on every dismissal path.** The pairing form looked correct on success and card removal, but the request-dismiss path retained the password in UI state. Any credential-bearing QML property should be reviewed like backend secret state: success, failure, cancel, replace, disconnect.
+- **[review] GitHub connector permissions are not guaranteed for PR comments.** The MCP GitHub comment attempt for #130 failed with `403 Resource not accessible by integration`; fallback to `gh issue comment` worked immediately. For future review loops, keep the CLI fallback ready instead of assuming connector write access.
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 

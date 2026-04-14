@@ -1,5 +1,5 @@
 # Project Knowledge: keycard-basecamp
-*Last updated: 2026-04-10 (fieldcraft retrofit)*
+*Last updated: 2026-04-14 (epic #127 retro)*
 
 > **Architecture change (2026-04-02):** KeycardBridge, libkeycard.so, and direct PC/SC code
 > have been removed from logos-notes. Keycard support now uses the external keycard-basecamp
@@ -72,6 +72,7 @@
 ## QML / Install Pitfalls (Epic #127, 2026-04-14)
 
 - **QML does not auto-mirror to LogosBasecamp.** `cmake --install --prefix LogosApp` installs QML to `LogosApp/plugins/` only. The `.so` mirror in `keycard-core/CMakeLists.txt` does not cover QML. Fixed: `install(CODE)` mirror step in `keycard-ui/CMakeLists.txt`. Verify with `md5sum` on both paths after every install.
+- **Launch the canonical AppImage path, not an ad-hoc shortcut.** Use `~/.local/share/Logos/appimages/current.AppImage`. Launching a different copy/symlink can leave multiple Basecamp instances alive with different mount roots, which makes module/QML verification misleading.
 - **Always clear `LogosBasecamp` cache, not `LogosApp`.** AppImage reads from `~/.cache/Logos/LogosBasecamp/qmlcache/`. Clearing `LogosApp/qmlcache` has no effect on the running app.
 - **Gate pairing UI on `!root.paired`, not `cardDetected`.** `cardDetected` can be false at the moment a pending request surfaces (timing race between `checkHardware` and deferred `checkPairing`). `paired` is the authoritative state.
 - **`Qt.callLater` changes property ordering.** Deferring `checkPairing()` means `currentRequest` can be populated before `paired` becomes true. Any focus or UI state depending on both must handle both orderings (`onCurrentRequestChanged` + `onPairedChanged`).
