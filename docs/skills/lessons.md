@@ -23,6 +23,24 @@ The mode probe APDU (`80 C3 F0 00`) is not accessible outside the Keycard secure
 
 ---
 
+## Issue #108 — logoscore dev testing workaround (2026-04-14)
+
+### logoscore requires "-dev" platform variant keys in manifest
+`logoscore` resolves modules using platform variants like `"linux-amd64-dev"` or `"linux-x86_64-dev"`. A manifest with only `"linux-amd64"` will list the module but silently skip it on `load-module` with "No entry for platform variants". Fix: add `-dev` suffixed keys pointing to the same `.so`.
+
+### cmake --install sets RUNPATH=$ORIGIN — libsodium missing on system for logoscore testing
+After `cmake --install`, the `.so` has `RUNPATH: $ORIGIN`. On a system without libsodium or the matching Qt version (Nix builds Qt 6.9; system may have older), the plugin crashes at logos_host startup with exit code 1. Dev workaround: `patchelf --set-rpath "$ORIGIN:<nix-lib-paths>" ~/.local/share/Logos/LogosApp/modules/keycard/keycard_plugin.so`. Get the correct Nix paths from `ldd build/keycard-core/keycard_plugin.so | grep nix`. Production LGX correctly uses `$ORIGIN` because all libs are bundled.
+
+### Confirmed working logoscore test path (after RUNPATH patch + dev manifest variants)
+```bash
+$LOGOSCORE load-module keycard   # → {"status":"ok"}
+$LOGOSCORE list-modules --loaded # → keycard: loaded
+$LOGOSCORE call keycard getState # → {"result":"{\"state\":\"READER_NOT_FOUND\"}","status":"ok"}
+```
+This confirms the module initializes, the state machine runs, and PC/SC polling works — without a full AppImage launch.
+
+---
+
 ## Extracted Lessons from logos-notes
 
 ### Lesson #2: Q_INVOKABLE methods must return JSON strings, not raw values

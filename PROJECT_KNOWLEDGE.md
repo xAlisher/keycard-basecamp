@@ -44,6 +44,8 @@
 - **Test release:** v1.0.0-test.2 (keycard-core.lgx 3.3MB, keycard-ui.lgx 5.3KB)
 - **Tutorial adoption:** Phases 1-3 complete, Phase 4+ planned
 - **Parked:** AppImage packaging (Qt 6.9 AOT conflict, upstream logos-co/logos-app#60)
+- **logoscore test path confirmed:** Module loads and responds via logoscore after: (1) adding `-dev` manifest variants, (2) patchelf RUNPATH to include Nix lib paths (dev workaround only)
+- **#108 / logos-basecamp #141:** AppImage does NOT auto-load user-installed core modules. Reported upstream. logoscore is the recommended dev test path.
 
 ---
 
@@ -61,6 +63,7 @@
 1. ~~**pcsclite protocol compatibility (#67):**~~ **Resolved in #94.** CMake install and package-lgx.sh now auto-patch RUNPATH to `$ORIGIN`, ensuring system libpcsclite is used at runtime. Nix pcsclite (protocol 4:5) no longer leaks into installed plugins.
 2. **Logos Storage built-in encryption:** May be built-in eventually. Worth watching.
 3. **LEE mode probe (SW=0x6A86):** Requires Keycard secure channel wrapping. `keycard-cli` v0.7.0 has no LEE/P2=0x01 support. Deferred to #96 (`detectMode()`). Raw APDU outside SC returns SW=6D00.
+4. **logos-basecamp #141 (user core module discovery):** AppImage never spawns user-installed core modules from `dependencies[]` in UI manifests. Upstream fix pending. Dev workaround: use logoscore CLI (see lessons.md "Issue #108").
 
 ---
 
