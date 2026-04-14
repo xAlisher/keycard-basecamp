@@ -253,6 +253,8 @@ FocusScope {
         currentRequest = null
         pinValue = ""
         pendingChecked = false
+        pairingPassword = ""
+        pairingError = ""
     }
 
     // Hidden PIN input
