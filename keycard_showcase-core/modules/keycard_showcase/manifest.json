@@ -1,0 +1,16 @@
+{
+  "author": "alisher",
+  "category": "demo",
+  "dependencies": ["keycard"],
+  "description": "Keycard showcase module - demonstrates auth and signing",
+  "icon": "",
+  "main": {
+    "linux-amd64": "keycard_showcase_plugin.so",
+    "darwin-arm64": "keycard_showcase_plugin.dylib"
+  },
+  "manifestVersion": "0.1.0",
+  "name": "keycard_showcase",
+  "capabilities": ["keycard-showcase-demo"],
+  "type": "core",
+  "version": "1.0.0"
+}

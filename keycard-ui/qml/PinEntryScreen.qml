@@ -185,29 +185,53 @@ FocusScope {
     }
 
     function checkPendingRequests() {
-        var result = logos.callModule("keycard", "getPendingAuths", [])
+        var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
+        var wasPendingChecked = root.pendingChecked
+        root.pendingChecked = true
+
+        // Check auth requests
+        var authResult = logos.callModule("keycard", "getPendingAuths", [])
         try {
-            var response = callModuleParse(result)
-            var wasPendingChecked = root.pendingChecked
-            root.pendingChecked = true
-            var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
-            if (response.pending && response.pending.length > 0 && !root.currentRequest) {
-                root.currentRequest = response.pending[0]
-                activityLog.addEntry(ts, "New request from " + root.currentRequest.caller + " for domain " + root.currentRequest.domain, "warning")
-            } else if (!wasPendingChecked && (!response.pending || response.pending.length === 0)) {
-                activityLog.addEntry(ts, "No pending requests", "success")
+            var authResponse = callModuleParse(authResult)
+            if (authResponse && authResponse.pending && authResponse.pending.length > 0 && !root.currentRequest) {
+                root.currentRequest = authResponse.pending[0]
+                activityLog.addEntry(ts, "New auth request from " + root.currentRequest.caller, "warning")
+                return
             }
         } catch (e) {}
+
+        // Check sign requests
+        var signResult = logos.callModule("keycard", "getPendingSignRequests", [])
+        try {
+            var signResponse = callModuleParse(signResult)
+            if (signResponse && signResponse.pending && signResponse.pending.length > 0 && !root.currentRequest) {
+                root.currentRequest = signResponse.pending[0]
+                activityLog.addEntry(ts, "New sign request from " + root.currentRequest.caller, "warning")
+                return
+            }
+        } catch (e) {}
+
+        if (!wasPendingChecked) {
+            activityLog.addEntry(ts, "No pending requests", "success")
+        }
     }
 
     function approveRequest() {
         if (!currentRequest) return
         verifyingPin = true
         var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
-        activityLog.addEntry(ts, "Authorizing request from " + currentRequest.caller + "...", "info")
+        var isSign = !!currentRequest.signId
+
+        if (isSign) {
+            activityLog.addEntry(ts, "Signing for " + currentRequest.caller + "...", "info")
+        } else {
+            activityLog.addEntry(ts, "Authorizing request from " + currentRequest.caller + "...", "info")
+        }
 
         hwTimer.stop()
-        var result = logos.callModule("keycard", "authorizeRequest", [currentRequest.authId, pinValue])
+        var result = isSign
+            ? logos.callModule("keycard", "approveSign", [currentRequest.signId, pinValue])
+            : logos.callModule("keycard", "authorizeRequest", [currentRequest.authId, pinValue])
         hwTimer.start()
         verifyingPin = false
 
@@ -221,11 +245,14 @@ FocusScope {
             }
             var ts2 = Qt.formatTime(new Date(), "[HH:mm:ss]")
             if (response.status === "complete") {
+                var caller = currentRequest.caller
                 currentRequest = null
                 pinValue = ""
                 pendingChecked = false
+                if (isSign) {
+                    activityLog.addEntry(ts2, "Signed — return to " + caller, "success")
+                }
             } else {
-                // Retry — show remaining attempts from card
                 var remaining = response.remainingAttempts
                 if (remaining >= 0) {
                     if (remaining === 0) {
@@ -235,7 +262,7 @@ FocusScope {
                         activityLog.addEntry(ts2, "Try again", "warning")
                     }
                 } else {
-                    var err = response.error || "Authorization failed"
+                    var err = response.error || (isSign ? "Signing failed" : "Authorization failed")
                     activityLog.addEntry(ts2, err, "error")
                     activityLog.addEntry(ts2, "Try again", "warning")
                 }
@@ -247,7 +274,12 @@ FocusScope {
 
     function declineRequest() {
         if (!currentRequest) return
-        logos.callModule("keycard", "rejectRequest", [currentRequest.authId])
+        var isSign = !!currentRequest.signId
+        if (isSign) {
+            logos.callModule("keycard", "declineSign", [currentRequest.signId])
+        } else {
+            logos.callModule("keycard", "rejectRequest", [currentRequest.authId])
+        }
         var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
         activityLog.addEntry(ts, "Request declined", "warning")
         currentRequest = null
@@ -349,7 +381,12 @@ FocusScope {
 
                         Text {
                             Layout.alignment: Qt.AlignHCenter
-                            text: root.currentRequest ? root.currentRequest.caller + " requesting access" : ""
+                            text: {
+                                if (!root.currentRequest) return ""
+                                return root.currentRequest.signId
+                                    ? root.currentRequest.caller + " requesting signature"
+                                    : root.currentRequest.caller + " requesting access"
+                            }
                             color: DesignTokens.foreground
                             font.pixelSize: 24
                             font.weight: Font.Bold
@@ -359,7 +396,9 @@ FocusScope {
                         Text {
                             Layout.alignment: Qt.AlignHCenter
                             Layout.preferredWidth: 345
-                            text: "Approve will allow the module to derive an encryption key only for approved path"
+                            text: root.currentRequest && root.currentRequest.signId
+                                  ? "Sign will produce a Schnorr signature with your Keycard key"
+                                  : "Approve will allow the module to derive an encryption key only for approved path"
                             color: DesignTokens.foregroundSecondary
                             font.pixelSize: DesignTokens.fontSizeSmall
                             font.family: DesignTokens.fontPrimary
@@ -381,11 +420,35 @@ FocusScope {
                             anchors.margins: 16
                             spacing: 12
 
+                            // Auth fields
                             Column {
+                                visible: root.currentRequest && !root.currentRequest.signId
                                 spacing: 4
                                 Text { text: "domain"; color: DesignTokens.mutedForeground; font.pixelSize: DesignTokens.fontSizeSmall; font.family: DesignTokens.fontPrimary }
                                 Text { text: root.currentRequest ? root.currentRequest.domain : ""; color: DesignTokens.foreground; font.pixelSize: DesignTokens.fontSizeBody; font.family: DesignTokens.fontPrimary }
                             }
+
+                            // Sign fields
+                            Column {
+                                visible: root.currentRequest && !!root.currentRequest.signId
+                                spacing: 4
+                                Text { text: "payload"; color: DesignTokens.mutedForeground; font.pixelSize: DesignTokens.fontSizeSmall; font.family: DesignTokens.fontPrimary }
+                                Text {
+                                    text: root.currentRequest && root.currentRequest.payloadHash
+                                          ? root.currentRequest.payloadHash.substring(0, 32) + "..."
+                                          : ""
+                                    color: DesignTokens.foreground
+                                    font.pixelSize: DesignTokens.fontSizeBody
+                                    font.family: "monospace"
+                                }
+                            }
+                            Column {
+                                visible: root.currentRequest && !!root.currentRequest.signId
+                                spacing: 4
+                                Text { text: "scheme"; color: DesignTokens.mutedForeground; font.pixelSize: DesignTokens.fontSizeSmall; font.family: DesignTokens.fontPrimary }
+                                Text { text: root.currentRequest ? (root.currentRequest.scheme || "") : ""; color: DesignTokens.foreground; font.pixelSize: DesignTokens.fontSizeBody; font.family: DesignTokens.fontPrimary }
+                            }
+
                             Column {
                                 spacing: 4
                                 Text { text: "module"; color: DesignTokens.mutedForeground; font.pixelSize: DesignTokens.fontSizeSmall; font.family: DesignTokens.fontPrimary }
@@ -569,7 +632,7 @@ FocusScope {
                             Text {
                                 anchors.centerIn: parent
                                 visible: !root.verifyingPin
-                                text: "Approve"
+                                text: root.currentRequest && root.currentRequest.signId ? "Sign" : "Approve"
                                 color: DesignTokens.foreground
                                 font.pixelSize: 14
                                 font.weight: Font.Medium
