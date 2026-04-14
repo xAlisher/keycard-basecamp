@@ -54,13 +54,6 @@ public:
     Q_INVOKABLE QString authorizeRequest(const QString& authId, const QString& pin);
     Q_INVOKABLE QString rejectRequest(const QString& authId);
 
-    // Signing request API (#98)
-    Q_INVOKABLE QString requestSign(const QString& jsonArgs); // {"domain","payloadHash","caller","scheme"}
-    Q_INVOKABLE QString checkSignStatus(const QString& signId);
-    Q_INVOKABLE QString getPendingSigns();
-    Q_INVOKABLE QString approveSign(const QString& jsonArgs); // {"signId":"...","pin":"..."}
-    Q_INVOKABLE QString rejectSign(const QString& signId);
-
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
     void activityLogged(const QString& timestamp, const QString& message, const QString& level);
@@ -86,7 +79,6 @@ private:
     void purgeCompletedRequests();
 
     QString mapBridgeStateToSpec(KeycardBridge::State state);
-    QString domainToPath(const QString& domain);
     void logActivity(const QString& message, const QString& level = "info");
     void addActivityToResponse(QJsonObject& response);
 
@@ -96,29 +88,9 @@ private:
     };
 
 private:
-    struct SignRequest {
-        QString id;
-        QString domain;
-        QString payloadHash;  // hex-encoded 32-byte digest
-        QString caller;
-        QString scheme;       // "ecdsa" or "schnorr"
-        QString status;       // "pending", "complete", "rejected", "failed"
-        SecureBuffer signature; // Result — wiped after first read
-        QString error;
-        qint64 timestamp;
-
-        SignRequest() = default;
-        SignRequest(SignRequest&&) = default;
-        SignRequest& operator=(SignRequest&&) = default;
-        SignRequest(const SignRequest&) = delete;
-        SignRequest& operator=(const SignRequest&) = delete;
-    };
-
-private:
     KeycardBridge* m_bridge = nullptr;
     SessionState m_sessionState = SessionState::NoSession;
     std::vector<AuthRequest> m_authRequests;
-    std::vector<SignRequest> m_signRequests;
 
     // Activity log queue (for QML)
     struct ActivityEntry {
