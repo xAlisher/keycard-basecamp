@@ -96,22 +96,32 @@ install(CODE "
 install(TARGETS keycard_plugin
     LIBRARY DESTINATION "${KEYCARD_MODULE_DIR}"
 )
-install(FILES modules/keycard/manifest.json
+install(FILES modules/keycard/manifest.json src/plugin_metadata.json
     DESTINATION "${KEYCARD_MODULE_DIR}"
 )
 
-# Strip Nix store paths from RUNPATH so the plugin uses system libpcsclite.
-# Nix pcsclite may be a newer protocol version than the system pcscd,
-# causing "Communication protocol mismatch" at runtime.
+# Patch RUNPATH after install:
+#   1. Include all Nix store lib paths (libsodium, Qt, etc.) from the build artifact.
+#   2. Exclude Nix pcsclite — use system libpcsclite instead (protocol version match).
+#   3. Explicitly add system lib paths so the Nix dynamic linker can find libpcsclite.so.1.
+#      (Nix ld-linux does not search /lib/x86_64-linux-gnu by default on Ubuntu.)
 find_program(PATCHELF_EXECUTABLE patchelf)
 if(PATCHELF_EXECUTABLE)
     install(CODE "
         set(_plugin \"\${CMAKE_INSTALL_PREFIX}/${KEYCARD_MODULE_DIR}/keycard_plugin.so\")
+        set(_build_so \"${CMAKE_BINARY_DIR}/keycard-core/keycard_plugin.so\")
         if(EXISTS \"\${_plugin}\")
+            # Collect Nix store paths from the build artifact, excluding pcsclite
             execute_process(
-                COMMAND ${PATCHELF_EXECUTABLE} --set-rpath \"\$ORIGIN\" \"\${_plugin}\"
+                COMMAND bash -c \"ldd '\${_build_so}' | grep nix/store | grep -v pcsclite | awk '{print \\\$3}' | xargs -I{} dirname {} | sort -u | tr '\\n' ':' | sed 's/:$//'\"\
+                OUTPUT_VARIABLE _nix_paths
+                OUTPUT_STRIP_TRAILING_WHITESPACE
             )
-            message(STATUS \"Patched RUNPATH on keycard_plugin.so → \$ORIGIN\")
+            set(_rpath \"\\\$ORIGIN:\${_nix_paths}:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu\")
+            execute_process(
+                COMMAND ${PATCHELF_EXECUTABLE} --set-rpath \"\${_rpath}\" \"\${_plugin}\"
+            )
+            message(STATUS \"Patched RUNPATH on keycard_plugin.so\")
         endif()
     ")
 endif()

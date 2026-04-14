@@ -59,6 +59,14 @@ Item {
         onTriggered: root._checkStatus()
     }
 
+    // logos.callModule wraps C++ QString in an extra JSON layer — parse twice
+    function callModuleParse(raw) {
+        try {
+            var tmp = JSON.parse(raw)
+            return (typeof tmp === 'string') ? JSON.parse(tmp) : tmp
+        } catch (e) { return null }
+    }
+
     // ── Public API ─────────────────────────────────────────────────
 
     function connect() {
@@ -74,7 +82,7 @@ Item {
         root.errorMessage = ""
         var result = logos.callModule("keycard", "requestAuth", [root.domain, root.caller])
         try {
-            var response = JSON.parse(result)
+            var response = callModuleParse(result)
             if (response.authId) {
                 root.authId = response.authId
                 root._setStatus("pending")
@@ -101,7 +109,7 @@ Item {
         if (!root.authId) return
         var result = logos.callModule("keycard", "checkAuthStatus", [root.authId])
         try {
-            var response = JSON.parse(result)
+            var response = callModuleParse(result)
             if (response.status === "complete" && response.key) {
                 root._setStatus("connected")
                 root.keyReceived(response.key)

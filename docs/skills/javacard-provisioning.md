@@ -49,9 +49,23 @@ java -jar scripts/gp.jar --list --key c212e073ff8b4bbfaff4de8ab655221f
 ```
 
 ### 3. Delete existing Keycard package (if present)
+
+**Preferred: use `--uninstall` with the CAP file** — deletes all instances AND the package atomically.
 ```bash
-java -jar scripts/gp.jar --delete A0000008040001 --force --key c212e073ff8b4bbfaff4de8ab655221f
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --uninstall path/to/applet.cap
 ```
+
+Fallback (if CAP not available): delete instances one by one, then the package.
+```bash
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f --delete A000000804000101
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f --delete A000000804000102
+# ... repeat for each instance
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f --delete A0000008040001
+```
+
+> `--delete A0000008040001 --force` does NOT work if instances still exist. Delete instances first.
+> If an instance refuses to delete with 0x6985, use `--uninstall` with the CAP.
 
 ### 4. Inspect CAP file for applet AIDs
 ```bash
@@ -65,19 +79,40 @@ cat /tmp/cap_inspect/META-INF/MANIFEST.MF
 java -jar scripts/gp.jar --load path/to/applet.cap --key c212e073ff8b4bbfaff4de8ab655221f
 ```
 
-### 6. Install each applet instance
+### 6. Install each applet instance with correct instance AIDs
+
+**CRITICAL: keycard-go selects 9-byte instance AIDs (`AppletAID + 0x01`), NOT the 8-byte applet AIDs.**
+If you install with default AIDs, `keycard-cli init` will fail with 6A82 (not found).
+
+Use `--create <instance-AID> --applet <applet-AID> --package <package-AID>`:
+
 ```bash
-# Repeat for each applet in the CAP:
-java -jar scripts/gp.jar \
-  --install-only <applet-AID> \
-  --pkg <package-AID> \
-  --applet <applet-AID> \
-  --create <instance-AID> \
-  --key c212e073ff8b4bbfaff4de8ab655221f
+# Keycard main applet: instance = A00000080400010101 (AppletAID A000000804000101 + 01)
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --create A00000080400010101 --applet A000000804000101 --package A0000008040001
+
+# NDEF applet: instance = D2760000850101 (standard NDEF AID, hardcoded in keycard-go)
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --create D2760000850101 --applet A000000804000102 --package A0000008040001
+
+# Cash applet: instance = A00000080400010301 (CashAID + 01)
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --create A00000080400010301 --applet A000000804000103 --package A0000008040001
+
+# Ident applet: instance = A00000080400010401 (IdentAID + 01)
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --create A00000080400010401 --applet A000000804000104 --package A0000008040001
 ```
 
-> `--install <capfile>` fails when CAP contains multiple applets.
-> Use `--load` + `--install-only` per applet instead.
+Expected instance AIDs (from `keycard-go/identifiers/identifiers.go`):
+```go
+KeycardInstanceAID(1) = A000000804000101 + 01 = A00000080400010101
+NdefInstanceAID       = D2760000850101  (hardcoded)
+CashInstanceAID       = A00000080400010301
+```
+
+> Do NOT use `--install <capfile>` — it installs with 8-byte applet AIDs (wrong for keycard-go).
+> Do NOT use `--install-only` — it has the same default AID behavior.
 
 ### 7. Verify installation
 ```bash
@@ -147,7 +182,37 @@ gp-send-apdu                 gp-get-status
 
 ---
 
-## LEE mode probe
+## Raw APDU debugging with scriptor
 
-The mode probe APDU (`80 C3 F0 00`) must be sent within the Keycard secure channel.
-Sending raw (outside SC) returns SW=6D00. Actual probe implemented in #96 `detectMode()`.
+`scriptor` (from `pcsc-tools`) lets you send raw APDUs to the card for diagnosis.
+Useful when keycard-cli or gp.jar give opaque errors.
+
+```bash
+# SELECT keycard instance AID (9-byte, what keycard-go uses)
+echo "00 A4 04 00 09 A0 00 00 08 04 00 01 01 01" | scriptor
+
+# SELECT keycard applet AID (8-byte, what gp.jar installs by default)
+echo "00 A4 04 00 08 A0 00 00 08 04 00 01 01" | scriptor
+```
+
+**Key lesson (2026-04-14):** `keycard-cli init` was returning 6A82 (not found).
+Scriptor confirmed the 8-byte AID selected fine (`90 00`) but the 9-byte AID returned 6A82.
+Root cause: gp.jar `--install` defaults to 8-byte instance AIDs; keycard-go selects 9-byte.
+
+**Parsing SELECT response:**
+
+Pre-initialized card response starts with `80 41 04...` (EC public key, no tag 0x8D).
+Initialized card response starts with `A4 61 8F 10 [UID-16] 80 41 [pubkey-65] ... 8D 01 XX`.
+
+Tag `0x8D` (last byte `XX`) is the capability byte:
+- `0x1F` = no key or BIP39 key loaded (bit 5 = 0)
+- `0x3F` = LEE key loaded (bit 5 = 1)
+
+Note: scriptor uses T=1. Append no Le byte — `00` at end causes `67 00` (Wrong Length) on ACR39U.
+
+---
+
+## LEE mode probe (obsolete)
+
+The SW probe (`80 C3 F0 00`) is obsolete. Use tag `0x8D` bit 5 from SELECT instead.
+See keycard-qt-api.md "LEE mode detection" for full details.

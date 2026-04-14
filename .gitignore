@@ -43,3 +43,6 @@ inbox/
 # Downloaded tools
 scripts/gp.jar
 scripts/keycard-cli
+
+# Dev card credentials — never commit
+dev-card.md

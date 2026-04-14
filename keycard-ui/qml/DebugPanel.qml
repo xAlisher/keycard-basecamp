@@ -21,14 +21,20 @@ Rectangle {
     property string authResultMessage: "Test flow:\n1. 'Create Fake Request' → adds to Pending Authorizations\n2. Click 'Authorize' in pending list → opens modal\n3. 'Show Auth Window' → direct test (no pending request)"
     property string authResultColor: "#88ccff"
 
+    // logos.callModule wraps C++ QString in an extra JSON layer — parse twice
+    function callModuleParse(raw) {
+        try {
+            var tmp = JSON.parse(raw)
+            return (typeof tmp === 'string') ? JSON.parse(tmp) : tmp
+        } catch (e) { return null }
+    }
+
     // Auto-start detection on load
     Component.onCompleted: {
         // Initialize reader detection
         var result = logos.callModule("keycard", "discoverReader", [])
-        try {
-            var obj = JSON.parse(result)
-            root.readerFound = obj.found === true
-        } catch (e) {}
+        var obj = callModuleParse(result)
+        if (obj) root.readerFound = obj.found === true
 
         // Load pending auth requests
         refreshPendingAuths()
@@ -36,13 +42,9 @@ Rectangle {
 
     function refreshPendingAuths() {
         var result = logos.callModule("keycard", "getPendingAuths", [])
-        try {
-            var obj = JSON.parse(result)
-            if (obj.pending) {
-                root.pendingAuthRequests = obj.pending
-            }
-        } catch (e) {
-            console.log("Error fetching pending auths:", e)
+        var obj = callModuleParse(result)
+        if (obj && obj.pending) {
+            root.pendingAuthRequests = obj.pending
         }
     }
 
@@ -54,18 +56,17 @@ Rectangle {
         onTriggered: {
             // Get current state
             var result = logos.callModule("keycard", "getState", [])
-            try {
-                var obj = JSON.parse(result)
-                if (obj.state) {
-                    root.currentState = obj.state
-                }
-            } catch (e) {}
+            var obj = callModuleParse(result)
+            if (obj && obj.state) {
+                root.currentState = obj.state
+            }
 
             // Auto-detect card if reader is present
             if (root.currentState !== "READER_NOT_FOUND") {
                 var cardResult = logos.callModule("keycard", "discoverCard", [])
                 try {
-                    var cardObj = JSON.parse(cardResult)
+                    var cardObj = callModuleParse(cardResult)
+                    if (!cardObj) cardObj = {}
                     root.cardFound = cardObj.found === true
                     if (cardObj.uid) {
                         root.cardUID = cardObj.uid
@@ -77,9 +78,11 @@ Rectangle {
                     if (cardObj.found) {
                         var pairingResult = logos.callModule("keycard", "checkPairing", [])
                         try {
-                            var pairObj = JSON.parse(pairingResult)
-                            root.cardPaired = pairObj.paired === true
-                            root.pairingSlot = pairObj.pairingIndex || -1
+                            var pairObj = callModuleParse(pairingResult)
+                            if (pairObj) {
+                                root.cardPaired = pairObj.paired === true
+                                root.pairingSlot = pairObj.pairingIndex || -1
+                            }
                         } catch (e) {
                             root.cardPaired = false
                             root.pairingSlot = -1
@@ -286,8 +289,8 @@ Rectangle {
                                     result = logos.callModule("keycard", "unpairCard", [])
                                     pairResultDisplay.text = result
                                     try {
-                                        var obj = JSON.parse(result)
-                                        if (obj.unpaired === true) {
+                                        var obj = callModuleParse(result)
+                                        if (obj && obj.unpaired === true) {
                                             root.cardPaired = false
                                             root.pairingSlot = -1
                                             pairResultDisplay.color = "#00ff00"
@@ -309,8 +312,8 @@ Rectangle {
                                     result = logos.callModule("keycard", "pairCard", [password])
                                     pairResultDisplay.text = result
                                     try {
-                                        var obj = JSON.parse(result)
-                                        if (obj.paired === true) {
+                                        var obj = callModuleParse(result)
+                                        if (obj && obj.paired === true) {
                                             root.cardPaired = true
                                             root.pairingSlot = obj.pairingIndex || -1
                                             pairResultDisplay.color = "#00ff00"
@@ -695,13 +698,13 @@ Rectangle {
                             onClicked: {
                                 var result = logos.callModule("keycard", "requestAuth", ["notes-encryption", "notes"])
                                 try {
-                                    var parsed = JSON.parse(result)
-                                    if (parsed.authId) {
+                                    var parsed = callModuleParse(result)
+                                    if (parsed && parsed.authId) {
                                         root.authResultMessage = "📝 Pending request created!\nAuth ID: " + parsed.authId.substring(0, 16) + "...\n\nCheck 'Pending Authorization Requests' section above."
                                         root.authResultColor = "#ffaa00"
                                         refreshPendingAuths()
                                     } else {
-                                        root.authResultMessage = "❌ Failed: " + (parsed.error || "Unknown error")
+                                        root.authResultMessage = "❌ Failed: " + (parsed ? (parsed.error || "Unknown error") : "Parse error")
                                         root.authResultColor = "#ff4444"
                                     }
                                 } catch (e) {
@@ -1016,13 +1019,13 @@ Rectangle {
                                     [authWindow.currentAuthId, pinField.text])
 
                                 try {
-                                    var parsed = JSON.parse(result)
+                                    var parsed = callModuleParse(result)
 
-                                    if (parsed.status === "complete") {
+                                    if (parsed && parsed.status === "complete") {
                                         // Success — retrieve key via the one-read-and-drop path
                                         var keyResult = logos.callModule("keycard", "checkAuthStatus",
                                             [authWindow.currentAuthId])
-                                        var keyParsed = JSON.parse(keyResult)
+                                        var keyParsed = callModuleParse(keyResult)
 
                                         if (keyParsed.key) {
                                             refreshPendingAuths()
@@ -1061,11 +1064,11 @@ Rectangle {
                                 var result = logos.callModule("keycard", "authorize", [pinField.text])
 
                                 try {
-                                    var parsed = JSON.parse(result)
+                                    var parsed = callModuleParse(result)
 
-                                    if (parsed.authorized) {
+                                    if (parsed && parsed.authorized) {
                                         var keyResult = logos.callModule("keycard", "deriveKey", [authWindow.domain])
-                                        var keyParsed = JSON.parse(keyResult)
+                                        var keyParsed = callModuleParse(keyResult)
 
                                         if (keyParsed.key) {
                                             authWindow.authorizationComplete(true, keyParsed.key)
@@ -1327,14 +1330,12 @@ Rectangle {
                     onClicked: {
                         var result = row.executeFunc()
                         resultDisplay.text = result
-                        try {
-                            var obj = JSON.parse(result)
-                            if (obj.error) {
-                                resultDisplay.color = "#ff4444"
-                            } else {
-                                resultDisplay.color = "#00ff00"
-                            }
-                        } catch (e) {
+                        var obj = callModuleParse(result)
+                        if (obj && obj.error) {
+                            resultDisplay.color = "#ff4444"
+                        } else if (obj) {
+                            resultDisplay.color = "#00ff00"
+                        } else {
                             resultDisplay.color = "#ffaa00"
                         }
                     }

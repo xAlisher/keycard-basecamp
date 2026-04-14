@@ -10,6 +10,7 @@
 #include <QDebug>
 #include <algorithm>
 #include <sodium.h>
+#include <vector>
 
 KeycardPlugin::KeycardPlugin(QObject* parent)
     : QObject(parent)
@@ -220,8 +221,15 @@ QString KeycardPlugin::authorize(const QString& pin)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Accept JSON object {"pin":"XXXXXX"} or raw string (logoscore CLI compat)
+    QString actualPin = pin;
+    QJsonDocument doc = QJsonDocument::fromJson(pin.toUtf8());
+    if (!doc.isNull() && doc.isObject()) {
+        actualPin = doc.object().value("pin").toString();
+    }
+
     // Authorize with card
-    QJsonObject authResult = m_bridge->authorize(pin);
+    QJsonObject authResult = m_bridge->authorize(actualPin);
 
     // If successful, start session
     if (authResult.value("authorized").toBool()) {
@@ -415,12 +423,16 @@ QString KeycardPlugin::checkReaderPresent()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    LPSTR readers = NULL;
-    DWORD dwReaders = SCARD_AUTOALLOCATE;
-    rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
-    bool found = (rv == SCARD_S_SUCCESS && dwReaders > 1);
+    // Two-step: get required size first, then fill — avoids SCARD_AUTOALLOCATE type-pun
+    DWORD dwReaders = 0;
+    rv = SCardListReaders(hContext, NULL, NULL, &dwReaders);
+    bool found = false;
+    if (rv == SCARD_S_SUCCESS && dwReaders > 1) {
+        std::vector<char> readersBuf(dwReaders);
+        rv = SCardListReaders(hContext, NULL, readersBuf.data(), &dwReaders);
+        found = (rv == SCARD_S_SUCCESS && dwReaders > 1);
+    }
 
-    if (readers) SCardFreeMemory(hContext, readers);
     SCardReleaseContext(hContext);
 
     QJsonObject result;
@@ -446,10 +458,18 @@ QString KeycardPlugin::checkCardPresent()
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    LPSTR readers = NULL;
-    DWORD dwReaders = SCARD_AUTOALLOCATE;
-    rv = SCardListReaders(hContext, NULL, (LPSTR)&readers, &dwReaders);
-    if (rv != SCARD_S_SUCCESS || !readers) {
+    // Two-step: get required size first, then fill — avoids SCARD_AUTOALLOCATE type-pun
+    DWORD dwReaders = 0;
+    rv = SCardListReaders(hContext, NULL, NULL, &dwReaders);
+    if (rv != SCARD_S_SUCCESS || dwReaders <= 1) {
+        SCardReleaseContext(hContext);
+        QJsonObject result;
+        result["found"] = false;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    std::vector<char> readersBuf(dwReaders);
+    rv = SCardListReaders(hContext, NULL, readersBuf.data(), &dwReaders);
+    if (rv != SCARD_S_SUCCESS) {
         SCardReleaseContext(hContext);
         QJsonObject result;
         result["found"] = false;
@@ -457,7 +477,7 @@ QString KeycardPlugin::checkCardPresent()
     }
 
     bool cardFound = false;
-    char* reader = readers;
+    char* reader = readersBuf.data();
     while (*reader != '\0') {
         SCARD_READERSTATE readerState;
         memset(&readerState, 0, sizeof(readerState));
@@ -472,7 +492,6 @@ QString KeycardPlugin::checkCardPresent()
         reader += strlen(reader) + 1;
     }
 
-    SCardFreeMemory(hContext, readers);
     SCardReleaseContext(hContext);
 
     QJsonObject result;
@@ -557,6 +576,79 @@ QString KeycardPlugin::getCardStatus()
     result["pukAttempts"] = m_bridge->remainingPUKAttempts();
     result["blocked"] = (m_bridge->state() == KeycardBridge::State::BlockedPIN);
     result["keyInitialized"] = m_bridge->keyInitialized();
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::detectMode()
+{
+    QJsonObject result;
+    if (!m_bridge) {
+        result["error"] = "Bridge not initialized";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    switch (m_bridge->keyMode()) {
+    case KeycardBridge::KeyMode::LEE:
+        result["mode"] = "LEE";
+        break;
+    case KeycardBridge::KeyMode::BIP39:
+        result["mode"] = "BIP39";
+        break;
+    default:
+        result["mode"] = "none";
+        break;
+    }
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::loadKey(const QString& jsonArgs)
+{
+    QJsonObject result;
+    if (!m_bridge || !m_bridge->commandSet()) {
+        result["error"] = "Not connected";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        result["error"] = "Expected JSON object {\"seedHex\":\"...\",\"keyType\":0|1}";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    QJsonObject args = doc.object();
+    QString seedHex = args.value("seedHex").toString();
+    int keyType = args.value("keyType").toInt(0);
+
+    QByteArray seed = QByteArray::fromHex(seedHex.toLatin1());
+    if (seed.size() != 64) {
+        result["error"] = "Seed must be 64 bytes (128 hex chars)";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    auto cs = m_bridge->commandSet();
+    QByteArray keyUID = cs->loadKey(seed, static_cast<uint8_t>(keyType));
+    if (keyUID.isEmpty()) {
+        result["error"] = cs->lastError();
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    // Update cached key mode so detectMode() reflects the new state without requiring SELECT
+    m_bridge->setKeyMode(keyType == 1 ? KeycardBridge::KeyMode::LEE : KeycardBridge::KeyMode::BIP39);
+    result["keyUID"] = QString::fromUtf8(keyUID.toHex());
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::removeKey()
+{
+    QJsonObject result;
+    if (!m_bridge || !m_bridge->commandSet()) {
+        result["error"] = "Not connected";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    bool ok = m_bridge->commandSet()->removeKey();
+    result["ok"] = ok;
+    if (!ok) {
+        result["error"] = m_bridge->commandSet()->lastError();
+    } else {
+        // Update cached key mode so detectMode() reflects the new state
+        m_bridge->setKeyMode(KeycardBridge::KeyMode::None);
+    }
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 

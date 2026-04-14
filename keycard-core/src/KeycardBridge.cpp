@@ -103,10 +103,12 @@ void KeycardBridge::stop()
 
     m_running = false;
     m_cardReady = false;
+    m_keyMode = KeyMode::None;
     setState(State::Unknown);
 
     qDebug() << "KeycardBridge: Stopped";
 }
+
 
 QString KeycardBridge::statusText() const
 {
@@ -581,6 +583,14 @@ void KeycardBridge::onCardReady(const QString& uid)
             m_keyUID = uid;
         }
 
+        // Detect key mode from SELECT response (tag 0x8D bit 5 + keyUID presence)
+        // Note: LEE capability bit persists after removeKey; keyUID presence is the
+        // authoritative "key loaded" indicator.
+        m_keyMode = appInfo.keyUID.isEmpty() ? KeyMode::None
+                  : appInfo.isLEEKey() ? KeyMode::LEE
+                  : KeyMode::BIP39;
+        qDebug() << "KeycardBridge: KeyMode:" << static_cast<int>(m_keyMode);
+
         auto status = m_commandSet->getStatus();
         if (status.valid) {
             m_remainingPIN = status.pinRetryCount;
@@ -617,6 +627,7 @@ void KeycardBridge::onCardLost()
     m_remainingPIN = -1;
     m_remainingPUK = -1;
     m_keyInitialized = false;
+    m_keyMode = KeyMode::None;
 
     setState(State::WaitingForCard);
 }
@@ -745,6 +756,9 @@ bool KeycardBridge::isCardPresent()
                             m_cardReady = true;
                             m_keyUID = uid;
                             m_keyInitialized = appInfo.initialized;
+                            m_keyMode = appInfo.keyUID.isEmpty() ? KeyMode::None
+                                      : appInfo.isLEEKey() ? KeyMode::LEE
+                                      : KeyMode::BIP39;
 
                             // Set state based on initialization status
                             if (appInfo.initialized) {
