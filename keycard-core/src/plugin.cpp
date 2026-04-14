@@ -937,25 +937,38 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
 
     // Mode-mismatch check — immediate, before any card interaction.
     // ecdsa requires BIP39 card; schnorr requires LEE card.
-    if (m_bridge) {
+    // If mode is None (card absent, bridge not started, or cache cleared on unplug)
+    // we cannot guarantee the request is valid — reject immediately rather than
+    // enqueuing something that will fail at approveSign time.
+    if (!m_bridge || !m_bridge->isRunning()) {
+        QJsonObject err;
+        err["error"] = "Card not ready — discover card before requesting a signature";
+        err["cardMode"] = "unknown";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    {
         KeycardBridge::KeyMode mode = m_bridge->keyMode();
-        if (mode != KeycardBridge::KeyMode::None) {
-            bool needsLEE = (scheme == "schnorr");
-            bool cardIsLEE = (mode == KeycardBridge::KeyMode::LEE);
-            if (needsLEE && !cardIsLEE) {
-                QJsonObject err;
-                err["error"] = "Paired card is in BIP39 mode; Schnorr signing requires a LEE-mode Keycard";
-                err["cardMode"] = "bip39";
-                err["requiredMode"] = "lee";
-                return QJsonDocument(err).toJson(QJsonDocument::Compact);
-            }
-            if (!needsLEE && cardIsLEE) {
-                QJsonObject err;
-                err["error"] = "Paired card is in LEE mode; ECDSA signing requires a standard BIP39 Keycard";
-                err["cardMode"] = "lee";
-                err["requiredMode"] = "bip39";
-                return QJsonDocument(err).toJson(QJsonDocument::Compact);
-            }
+        if (mode == KeycardBridge::KeyMode::None) {
+            QJsonObject err;
+            err["error"] = "Card key mode unknown — insert card and discover before requesting a signature";
+            err["cardMode"] = "unknown";
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
+        }
+        bool needsLEE = (scheme == "schnorr");
+        bool cardIsLEE = (mode == KeycardBridge::KeyMode::LEE);
+        if (needsLEE && !cardIsLEE) {
+            QJsonObject err;
+            err["error"] = "Paired card is in BIP39 mode; Schnorr signing requires a LEE-mode Keycard";
+            err["cardMode"] = "bip39";
+            err["requiredMode"] = "lee";
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
+        }
+        if (!needsLEE && cardIsLEE) {
+            QJsonObject err;
+            err["error"] = "Paired card is in LEE mode; ECDSA signing requires a standard BIP39 Keycard";
+            err["cardMode"] = "lee";
+            err["requiredMode"] = "bip39";
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
         }
     }
 
@@ -1061,6 +1074,12 @@ QString KeycardPlugin::approveSign(const QString& jsonArgs)
     }
     QString signId = doc.object().value("signId").toString();
     QString pin    = doc.object().value("pin").toString();
+
+    if (signId.isEmpty() || pin.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: signId, pin";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
 
     qDebug() << "KeycardPlugin::approveSign() called for signId:" << signId;
 
