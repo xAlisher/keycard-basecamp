@@ -98,6 +98,7 @@ public:
     bool keyInitialized() const { return m_keyInitialized; }
     QString keyUID() const { return m_keyUID; }
     KeyMode keyMode() const { return m_keyMode; }
+    void setKeyMode(KeyMode mode) { m_keyMode = mode; }  // For plugin to update after loadKey/removeKey
 
     // Operation lock — prevents concurrent PC/SC access during multi-step flows
     bool isOperationInProgress() const { return m_operationInProgress; }

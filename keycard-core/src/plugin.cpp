@@ -220,8 +220,15 @@ QString KeycardPlugin::authorize(const QString& pin)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
+    // Accept JSON object {"pin":"XXXXXX"} or raw string (logoscore CLI compat)
+    QString actualPin = pin;
+    QJsonDocument doc = QJsonDocument::fromJson(pin.toUtf8());
+    if (!doc.isNull() && doc.isObject()) {
+        actualPin = doc.object().value("pin").toString();
+    }
+
     // Authorize with card
-    QJsonObject authResult = m_bridge->authorize(pin);
+    QJsonObject authResult = m_bridge->authorize(actualPin);
 
     // If successful, start session
     if (authResult.value("authorized").toBool()) {
@@ -582,13 +589,22 @@ QString KeycardPlugin::detectMode()
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::loadKey(const QString& seedHex, int keyType)
+QString KeycardPlugin::loadKey(const QString& jsonArgs)
 {
     QJsonObject result;
     if (!m_bridge || !m_bridge->commandSet()) {
         result["error"] = "Not connected";
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        result["error"] = "Expected JSON object {\"seedHex\":\"...\",\"keyType\":0|1}";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+    QJsonObject args = doc.object();
+    QString seedHex = args.value("seedHex").toString();
+    int keyType = args.value("keyType").toInt(0);
+
     QByteArray seed = QByteArray::fromHex(seedHex.toLatin1());
     if (seed.size() != 64) {
         result["error"] = "Seed must be 64 bytes (128 hex chars)";
@@ -600,6 +616,8 @@ QString KeycardPlugin::loadKey(const QString& seedHex, int keyType)
         result["error"] = cs->lastError();
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
+    // Update cached key mode so detectMode() reflects the new state without requiring SELECT
+    m_bridge->setKeyMode(keyType == 1 ? KeycardBridge::KeyMode::LEE : KeycardBridge::KeyMode::BIP39);
     result["keyUID"] = QString::fromUtf8(keyUID.toHex());
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
@@ -613,7 +631,12 @@ QString KeycardPlugin::removeKey()
     }
     bool ok = m_bridge->commandSet()->removeKey();
     result["ok"] = ok;
-    if (!ok) result["error"] = m_bridge->commandSet()->lastError();
+    if (!ok) {
+        result["error"] = m_bridge->commandSet()->lastError();
+    } else {
+        // Update cached key mode so detectMode() reflects the new state
+        m_bridge->setKeyMode(KeycardBridge::KeyMode::None);
+    }
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
