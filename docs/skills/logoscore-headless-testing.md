@@ -84,6 +84,57 @@ $LOGOSCORE call keycard getState         # → {"state": "CARD_PRESENT"}
 
 ---
 
+## Argument passing rules — CRITICAL
+
+logoscore does NOT deserialize CLI arguments before passing to C++. It passes them
+**as raw strings** with this behavior:
+
+| What you type            | What the C++ method receives |
+|--------------------------|------------------------------|
+| `'abcdef'`               | `abcdef` (6 chars, raw) |
+| `'"000440"'`             | `"000440"` (8 chars, WITH quote chars) |
+| `'{"pin":"000440"}'`     | `{"pin":"000440"}` (18 chars, full JSON text) |
+| `'000440'`               | METHOD_FAILED (leading-zero number = invalid JSON) |
+
+**Consequence:** A Q_INVOKABLE taking `QString` gets the quotes as part of the value
+when a JSON-quoted string is passed.
+
+**Fix:** Accept a JSON object and parse internally:
+
+```cpp
+QString KeycardPlugin::authorize(const QString& pinOrJson) {
+    QString pin = pinOrJson;
+    QJsonDocument doc = QJsonDocument::fromJson(pinOrJson.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        pin = doc.object().value("pin").toString();
+    // ...
+}
+// Call: $LOGOSCORE call keycard authorize '{"pin":"000440"}'
+```
+
+**Multi-param methods:** logoscore cannot map a JSON object to two separate C++ params.
+Use a single JSON string arg:
+
+```cpp
+// WRONG (two params)
+Q_INVOKABLE QString loadKey(const QString& seedHex, int keyType);
+// RIGHT
+Q_INVOKABLE QString loadKey(const QString& jsonArgs);  // {"seedHex":"...", "keyType":1}
+```
+
+**Debugging arg content:** logos_host stdout/stderr goes to a logoscore-managed pipe.
+Write to `/tmp/` directly to capture debug output from inside the plugin:
+
+```cpp
+QFile f("/tmp/keycard_debug.log");
+if (f.open(QIODevice::WriteOnly | QIODevice::Append)) {
+    QTextStream ts(&f);
+    ts << "arg hex: " << arg.toUtf8().toHex() << "\n";
+}
+```
+
+---
+
 ## Debugging plugin load failures (logos_host exit code 1)
 
 logos_host exits with code 1 silently — no output captured by logoscore.

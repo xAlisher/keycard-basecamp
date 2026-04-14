@@ -93,10 +93,36 @@ BIP39/generated: 0x8D = 0x1F  (0001 1111) — bit 5 = 0
 LEE key loaded:  0x8D = 0x3F  (0011 1111) — bit 5 = 1
 ```
 
-Verified empirically with dev card + keycard_lee_20260414.cap (BIP39 path: 0x1F ✓).
-LEE path (0x3F) not yet verified end-to-end — blocked on pairing bug workaround.
+Verified end-to-end (2026-04-14):
+- BIP39 key loaded → 0x1F ✓
+- `removeKey` → 0x1F (key gone) ✓
+- `loadKey(LEE)` → 0x3F ✓
 
 Detection in code: `appInfo.capabilities & 0x20` (or `appInfo.isLEEKey()` via keycard-qt).
+
+**CAVEAT: The LEE bit (0x20) persists after `removeKey` if the removed key was a LEE key.**
+Capabilities byte alone is not sufficient to detect "no key loaded". Use `appInfo.keyUID.isEmpty()`
+as the authoritative "no key" indicator. Correct mode logic:
+
+```cpp
+m_keyMode = appInfo.keyUID.isEmpty() ? KeyMode::None
+          : appInfo.isLEEKey()       ? KeyMode::LEE
+          : KeyMode::BIP39;
+```
+
+**`CommandSet::select()` is cached.** `select()` returns `m_appInfo` from the last SELECT
+without hitting the card. Use `select(true)` to force a fresh read — but note: `select(true)`
+resets the secure channel. Do NOT call it mid-session if you still need the SC.
+
+**Tracking mode after loadKey/removeKey without SELECT:** Update a cached `m_keyMode` field
+directly after each operation rather than re-reading from card:
+
+```cpp
+// In plugin, after loadKey succeeds:
+m_bridge->setKeyMode(keyType == 1 ? KeycardBridge::KeyMode::LEE : KeycardBridge::KeyMode::BIP39);
+// After removeKey succeeds:
+m_bridge->setKeyMode(KeycardBridge::KeyMode::None);
+```
 
 **SW probe (obsolete — skip):**
 Previously `EXPORT LEE` (INS=0xC3, P1=0xF0) via raw APDU: `6985`=BIP39, `6A86`=LEE.
