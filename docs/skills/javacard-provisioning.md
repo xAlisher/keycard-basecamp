@@ -49,9 +49,23 @@ java -jar scripts/gp.jar --list --key c212e073ff8b4bbfaff4de8ab655221f
 ```
 
 ### 3. Delete existing Keycard package (if present)
+
+**Preferred: use `--uninstall` with the CAP file** — deletes all instances AND the package atomically.
 ```bash
-java -jar scripts/gp.jar --delete A0000008040001 --force --key c212e073ff8b4bbfaff4de8ab655221f
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --uninstall path/to/applet.cap
 ```
+
+Fallback (if CAP not available): delete instances one by one, then the package.
+```bash
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f --delete A000000804000101
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f --delete A000000804000102
+# ... repeat for each instance
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f --delete A0000008040001
+```
+
+> `--delete A0000008040001 --force` does NOT work if instances still exist. Delete instances first.
+> If an instance refuses to delete with 0x6985, use `--uninstall` with the CAP.
 
 ### 4. Inspect CAP file for applet AIDs
 ```bash
@@ -65,19 +79,40 @@ cat /tmp/cap_inspect/META-INF/MANIFEST.MF
 java -jar scripts/gp.jar --load path/to/applet.cap --key c212e073ff8b4bbfaff4de8ab655221f
 ```
 
-### 6. Install each applet instance
+### 6. Install each applet instance with correct instance AIDs
+
+**CRITICAL: keycard-go selects 9-byte instance AIDs (`AppletAID + 0x01`), NOT the 8-byte applet AIDs.**
+If you install with default AIDs, `keycard-cli init` will fail with 6A82 (not found).
+
+Use `--create <instance-AID> --applet <applet-AID> --package <package-AID>`:
+
 ```bash
-# Repeat for each applet in the CAP:
-java -jar scripts/gp.jar \
-  --install-only <applet-AID> \
-  --pkg <package-AID> \
-  --applet <applet-AID> \
-  --create <instance-AID> \
-  --key c212e073ff8b4bbfaff4de8ab655221f
+# Keycard main applet: instance = A00000080400010101 (AppletAID A000000804000101 + 01)
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --create A00000080400010101 --applet A000000804000101 --package A0000008040001
+
+# NDEF applet: instance = D2760000850101 (standard NDEF AID, hardcoded in keycard-go)
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --create D2760000850101 --applet A000000804000102 --package A0000008040001
+
+# Cash applet: instance = A00000080400010301 (CashAID + 01)
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --create A00000080400010301 --applet A000000804000103 --package A0000008040001
+
+# Ident applet: instance = A00000080400010401 (IdentAID + 01)
+java -jar scripts/gp.jar --key c212e073ff8b4bbfaff4de8ab655221f \
+  --create A00000080400010401 --applet A000000804000104 --package A0000008040001
 ```
 
-> `--install <capfile>` fails when CAP contains multiple applets.
-> Use `--load` + `--install-only` per applet instead.
+Expected instance AIDs (from `keycard-go/identifiers/identifiers.go`):
+```go
+KeycardInstanceAID(1) = A000000804000101 + 01 = A00000080400010101
+NdefInstanceAID       = D2760000850101  (hardcoded)
+CashInstanceAID       = A00000080400010301
+```
+
+> Do NOT use `--install <capfile>` — it installs with 8-byte applet AIDs (wrong for keycard-go).
+> Do NOT use `--install-only` — it has the same default AID behavior.
 
 ### 7. Verify installation
 ```bash
