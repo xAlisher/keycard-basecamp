@@ -58,7 +58,7 @@ public:
     Q_INVOKABLE QString requestSign(const QString& jsonArgs); // {"domain","payloadHash","caller","scheme"}
     Q_INVOKABLE QString checkSignStatus(const QString& signId);
     Q_INVOKABLE QString getPendingSigns();
-    Q_INVOKABLE QString approveSign(const QString& signId, const QString& pin);
+    Q_INVOKABLE QString approveSign(const QString& jsonArgs); // {"signId":"...","pin":"..."}
     Q_INVOKABLE QString rejectSign(const QString& signId);
 
 signals:

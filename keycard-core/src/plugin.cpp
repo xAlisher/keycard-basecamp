@@ -983,8 +983,14 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::checkSignStatus(const QString& signId)
+QString KeycardPlugin::checkSignStatus(const QString& jsonOrId)
 {
+    // Accept {"signId":"..."} or plain UUID string
+    QString signId = jsonOrId;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonOrId.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        signId = doc.object().value("signId").toString();
+
     for (size_t i = 0; i < m_signRequests.size(); ++i) {
         auto& req = m_signRequests[i];
         if (req.id != signId) continue;
@@ -1045,8 +1051,17 @@ QString KeycardPlugin::getPendingSigns()
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::approveSign(const QString& signId, const QString& pin)
+QString KeycardPlugin::approveSign(const QString& jsonArgs)
 {
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        QJsonObject err;
+        err["error"] = "Expected JSON object: {\"signId\",\"pin\"}";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    QString signId = doc.object().value("signId").toString();
+    QString pin    = doc.object().value("pin").toString();
+
     qDebug() << "KeycardPlugin::approveSign() called for signId:" << signId;
 
     SignRequest* req = nullptr;
@@ -1118,8 +1133,14 @@ QString KeycardPlugin::approveSign(const QString& signId, const QString& pin)
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::rejectSign(const QString& signId)
+QString KeycardPlugin::rejectSign(const QString& jsonOrId)
 {
+    // Accept {"signId":"..."} or plain UUID string
+    QString signId = jsonOrId;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonOrId.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        signId = doc.object().value("signId").toString();
+
     SignRequest* req = nullptr;
     for (auto& r : m_signRequests) {
         if (r.id == signId && r.status == "pending") { req = &r; break; }
