@@ -25,6 +25,14 @@ FocusScope {
     property int attemptsRemaining: 3
     property bool checkHardwareBusy: false
 
+    // logos.callModule wraps the C++ QString return in an extra JSON layer — parse twice
+    function callModuleParse(raw) {
+        try {
+            var tmp = JSON.parse(raw)
+            return (typeof tmp === 'string') ? JSON.parse(tmp) : tmp
+        } catch (e) { return null }
+    }
+
     function checkHardware() {
         if (root.checkHardwareBusy) return  // callModule blocks ~20s; guard prevents re-entrant stack buildup
         root.checkHardwareBusy = true
@@ -32,9 +40,7 @@ FocusScope {
         var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
 
         var readerResult = logos.callModule("keycard", "checkReaderPresent", [])
-        var r = null
-        try { r = JSON.parse(readerResult) } catch (e) {}
-        // DEBUG: activityLog.addEntry(ts, "callModule raw=" + JSON.stringify(readerResult), "info")
+        var r = callModuleParse(readerResult)
 
         var coreWasReachable = root.coreReachable
         var coreNowReachable = r !== null && !r.error
@@ -67,7 +73,7 @@ FocusScope {
         if (root.readerDetected) {
             var cardResult = logos.callModule("keycard", "checkCardPresent", [])
             try {
-                var c = JSON.parse(cardResult)
+                var c = callModuleParse(cardResult)
                 var wasCard = root.cardDetected
                 root.cardDetected = c.found || false
                 if (wasCard !== root.cardDetected) {
@@ -112,7 +118,7 @@ FocusScope {
         var result = logos.callModule("keycard", "checkPairing", [])
         ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
         try {
-            var r = JSON.parse(result)
+            var r = callModuleParse(result)
             if (r.paired) {
                 root.paired = true
                 root.pairingSlot = r.pairingIndex || -1
@@ -129,7 +135,7 @@ FocusScope {
     function checkPendingRequests() {
         var result = logos.callModule("keycard", "getPendingAuths", [])
         try {
-            var response = JSON.parse(result)
+            var response = callModuleParse(result)
             var wasPendingChecked = root.pendingChecked
             root.pendingChecked = true
             var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
@@ -154,7 +160,7 @@ FocusScope {
         verifyingPin = false
 
         try {
-            var response = JSON.parse(result)
+            var response = callModuleParse(result)
             if (response._activity) {
                 for (var i = 0; i < response._activity.length; i++) {
                     var entry = response._activity[i]
