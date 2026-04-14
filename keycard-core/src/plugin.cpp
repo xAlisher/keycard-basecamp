@@ -602,14 +602,15 @@ QString KeycardPlugin::loadKey(const QString& jsonArgs)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
     QJsonObject args = doc.object();
-    QString seedHex  = args.value("seedHex").toString();
+    QString seedHex    = args.value("seedHex").toString();
     QString keyTypeStr = args.value("keyType").toString().toLower();
-    // Accept descriptive strings; fall back to legacy int for compatibility
-    int keyType = 0; // default: BIP39
-    if (keyTypeStr == "lee")        keyType = 1;
+    int keyType;
+    if      (keyTypeStr == "lee")   keyType = 1;
     else if (keyTypeStr == "bip39") keyType = 0;
-    else if (args.value("keyType").isDouble())
-        keyType = args.value("keyType").toInt(0);
+    else {
+        result["error"] = "Invalid keyType — must be \"lee\" or \"bip39\"";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
 
     QByteArray seed = QByteArray::fromHex(seedHex.toLatin1());
     if (seed.size() != 64) {
