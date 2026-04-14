@@ -46,3 +46,6 @@ scripts/keycard-cli
 
 # Dev card credentials — never commit
 dev-card.md
+
+# Claude Code runtime files
+.claude/scheduled_tasks.lock
