@@ -29,6 +29,9 @@ FocusScope {
     property int attemptsRemaining: 3
     property bool checkHardwareBusy: false
     property bool checkPairingBusy: false
+    property string pairingPassword: "KeycardDefaultPairing"
+    property string pairingError: ""
+    property bool pairingBusy: false
 
     // logos.callModule wraps the C++ QString return in an extra JSON layer — parse twice
     function callModuleParse(raw) {
@@ -93,6 +96,9 @@ FocusScope {
                         root.currentRequest = null
                         root.pendingChecked = false
                         root.checkPairingBusy = false
+                        root.pairingPassword = ""
+                        root.pairingError = ""
+                        root.pairingBusy = false
                     }
                 }
             } catch (e) {}
@@ -105,6 +111,9 @@ FocusScope {
                 root.currentRequest = null
                 root.pendingChecked = false
                 root.checkPairingBusy = false
+                root.pairingPassword = ""
+                root.pairingError = ""
+                root.pairingBusy = false
                 activityLog.addEntry(ts, "Keycard not detected", "error")
             }
         }
@@ -141,6 +150,38 @@ FocusScope {
             }
         } catch (e) {}
         root.checkPairingBusy = false
+    }
+
+    function doPairCard() {
+        if (root.pairingBusy) return
+        if (root.pairingPassword.length < 5 || root.pairingPassword.length > 25) {
+            root.pairingError = "Password must be 5-25 characters"
+            return
+        }
+        root.pairingBusy = true
+        root.pairingError = ""
+        var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
+        activityLog.addEntry(ts, "Pairing card...", "info")
+        var result = logos.callModule("keycard", "pairCard", [root.pairingPassword])
+        ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
+        try {
+            var r = callModuleParse(result)
+            if (r && r.paired === true) {
+                root.paired = true
+                root.pairingSlot = r.pairingIndex || -1
+                root.pairingStatus = "paired"
+                root.pairingPassword = ""
+                root.pairingError = ""
+                activityLog.addEntry(ts, "Keycard paired. Slot " + root.pairingSlot, "success")
+            } else {
+                root.pairingError = (r && r.error) ? r.error : "Pairing failed"
+                activityLog.addEntry(ts, "Pairing failed: " + root.pairingError, "error")
+            }
+        } catch (e) {
+            root.pairingError = "Pairing failed"
+            activityLog.addEntry(ts, "Pairing failed", "error")
+        }
+        root.pairingBusy = false
     }
 
     function checkPendingRequests() {
@@ -212,6 +253,8 @@ FocusScope {
         currentRequest = null
         pinValue = ""
         pendingChecked = false
+        pairingPassword = ""
+        pairingError = ""
     }
 
     // Hidden PIN input
@@ -284,7 +327,9 @@ FocusScope {
                 Text {
                     anchors.centerIn: parent
                     visible: root.currentRequest === null
-                    text: root.pendingChecked ? "No pending requests" : "Looking for pending requests..."
+                    text: root.pairingStatus === "not_paired"
+                          ? "Pair your Keycard to continue"
+                          : (root.pendingChecked ? "No pending requests" : "Looking for pending requests...")
                     color: DesignTokens.foregroundSecondary
                     font.pixelSize: 24
                     font.weight: Font.Medium
@@ -349,11 +394,126 @@ FocusScope {
                         }
                     }
 
-                    // PIN dots
+                    // Pairing form (when not paired)
+                    ColumnLayout {
+                        Layout.alignment: Qt.AlignHCenter
+                        spacing: DesignTokens.spacingM
+                        visible: !root.paired
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "Pair your Keycard to approve"
+                            color: DesignTokens.foregroundSecondary
+                            font.pixelSize: DesignTokens.fontSizeSmall
+                            font.family: DesignTokens.fontPrimary
+                        }
+
+                        Rectangle {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.preferredWidth: 345
+                            height: 44
+                            color: "#2a2a2a"
+                            radius: DesignTokens.radiusM
+                            border.color: pairingInput.activeFocus ? DesignTokens.primary : DesignTokens.border
+                            border.width: 1
+
+                            TextInput {
+                                id: pairingInput
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                verticalAlignment: TextInput.AlignVCenter
+                                color: DesignTokens.foreground
+                                font.pixelSize: DesignTokens.fontSizeBody
+                                font.family: DesignTokens.fontPrimary
+                                echoMode: TextInput.Normal
+                                text: root.pairingPassword
+                                onTextChanged: root.pairingPassword = text
+                                Keys.onReturnPressed: root.doPairCard()
+                            }
+                            Text {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                verticalAlignment: Text.AlignVCenter
+                                text: "Pairing password"
+                                color: DesignTokens.mutedForeground
+                                font.pixelSize: DesignTokens.fontSizeBody
+                                font.family: DesignTokens.fontPrimary
+                                visible: pairingInput.text.length === 0
+                            }
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: root.pairingError !== ""
+                            text: root.pairingError
+                            color: "#ff4444"
+                            font.pixelSize: DesignTokens.fontSizeSmall
+                            font.family: DesignTokens.fontPrimary
+                        }
+
+                        Row {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 12
+
+                            Rectangle {
+                                width: 120
+                                height: 32
+                                radius: 16
+                                color: pairArea.containsMouse ? "#e64a19" : DesignTokens.primary
+                                opacity: (root.pairingPassword.length >= 5 && !root.pairingBusy) ? 1.0 : 0.5
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: root.pairingBusy ? "Pairing..." : "Pair Keycard"
+                                    color: DesignTokens.foreground
+                                    font.pixelSize: 14
+                                    font.weight: Font.Medium
+                                    font.family: DesignTokens.fontPrimary
+                                }
+
+                                MouseArea {
+                                    id: pairArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    enabled: root.pairingPassword.length >= 5 && !root.pairingBusy
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.doPairCard()
+                                }
+                            }
+
+                            Rectangle {
+                                width: 85
+                                height: 32
+                                radius: 16
+                                color: pairDeclineArea.containsMouse ? "#3a3a3a" : "transparent"
+                                border.color: DesignTokens.border
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Decline"
+                                    color: DesignTokens.foreground
+                                    font.pixelSize: 14
+                                    font.weight: Font.Medium
+                                    font.family: DesignTokens.fontPrimary
+                                }
+
+                                MouseArea {
+                                    id: pairDeclineArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.declineRequest()
+                                }
+                            }
+                        }
+                    }
+
+                    // PIN dots (when paired)
                     Row {
                         Layout.alignment: Qt.AlignHCenter
                         spacing: DesignTokens.spacingM
-                        opacity: root.paired ? 1.0 : 0.3
+                        visible: root.paired
 
                         Repeater {
                             model: root.maxPinLength
@@ -392,10 +552,11 @@ FocusScope {
                         }
                     }
 
-                    // Buttons
+                    // Buttons (when paired)
                     Row {
                         Layout.alignment: Qt.AlignHCenter
                         spacing: 12
+                        visible: root.paired
 
                         Rectangle {
                             width: 85
