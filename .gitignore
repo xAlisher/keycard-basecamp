@@ -35,3 +35,11 @@ result-*
 
 # Logs
 *.log
+
+# Experimental / unreleased applets — do not commit CAP files
+inbox/
+*.cap
+
+# Downloaded tools
+scripts/gp.jar
+scripts/keycard-cli
