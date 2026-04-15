@@ -36,7 +36,9 @@ Same card, same domain, same key every time. Different domains produce different
 
 ## Private key generation is also available
 
-Beyond signing, modules can request a derived private key directly — for local encryption. The flow is the same: `requestAuth` queues a request, the user approves in keycard-ui, and the derived private key is returned once and wiped immediately after the caller reads it.
+Beyond signing, modules can request a derived private key directly — for local encryption. The flow is the same: `requestAuth` queues a request, the user approves in keycard-ui, and the derived private key is exported from the card, returned to the module once, and wiped immediately after the caller reads it.
+
+These keys come from EIP-1581 paths — and that matters: the Keycard applet only allows export of keys derived at EIP-1581 paths. This is enforced card-side. Signing deliberately uses a different path, so the key used to sign can never be exported, even if a module tried.
 
 This is useful when a module needs to encrypt local data without storing any key material. The key exists in host memory for the duration of a single read, then it's gone.
 
