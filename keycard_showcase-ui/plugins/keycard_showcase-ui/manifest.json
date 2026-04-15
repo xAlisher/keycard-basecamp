@@ -1,0 +1,14 @@
+{
+  "author": "alisher",
+  "capabilities": ["keycard-showcase-ui"],
+  "category": "demo",
+  "dependencies": ["keycard", "keycard_showcase"],
+  "description": "Keycard showcase UI - demonstrates auth and signing",
+  "icon": "",
+  "main": {},
+  "manifestVersion": "0.2.0",
+  "name": "keycard_showcase-ui",
+  "type": "ui_qml",
+  "version": "1.0.0",
+  "view": "Main.qml"
+}

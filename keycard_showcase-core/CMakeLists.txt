@@ -31,16 +31,16 @@ configure_file(
 )
 
 # Build MODULE library
-add_library(auth_showcase_plugin MODULE ${PLUGIN_SOURCES})
-set_target_properties(auth_showcase_plugin PROPERTIES
+add_library(keycard_showcase_plugin MODULE ${PLUGIN_SOURCES})
+set_target_properties(keycard_showcase_plugin PROPERTIES
     PREFIX ""
-    OUTPUT_NAME "auth_showcase_plugin"
+    OUTPUT_NAME "keycard_showcase_plugin"
     BUILD_RPATH "$ORIGIN"
     INSTALL_RPATH "$ORIGIN"
 )
 
 # Include Logos SDK headers
-target_include_directories(auth_showcase_plugin PRIVATE
+target_include_directories(keycard_showcase_plugin PRIVATE
     src
     "${LOGOS_MODULE_HEADERS}"
     "${LOGOS_LIBLOGOS_HEADERS}"
@@ -50,19 +50,28 @@ target_include_directories(auth_showcase_plugin PRIVATE
 )
 
 # Link Qt + Logos SDK
-target_link_libraries(auth_showcase_plugin PRIVATE
+target_link_libraries(keycard_showcase_plugin PRIVATE
     Qt6::Core
     "${LOGOS_CPP_SDK}/lib/liblogos_sdk.a"
 )
 
 # Install paths — relative to CMAKE_INSTALL_PREFIX
 # Default: cmake --install build --prefix ~/.local/share/Logos/LogosApp
-set(AUTH_SHOWCASE_MODULE_DIR "modules/auth_showcase")
+set(KEYCARD_SHOWCASE_MODULE_DIR "modules/keycard_showcase")
 
 # Install .so and manifest
-install(TARGETS auth_showcase_plugin
-    LIBRARY DESTINATION "${AUTH_SHOWCASE_MODULE_DIR}"
+install(TARGETS keycard_showcase_plugin
+    LIBRARY DESTINATION "${KEYCARD_SHOWCASE_MODULE_DIR}"
 )
-install(FILES modules/auth_showcase/manifest.json
-    DESTINATION "${AUTH_SHOWCASE_MODULE_DIR}"
+install(FILES modules/keycard_showcase/manifest.json
+    DESTINATION "${KEYCARD_SHOWCASE_MODULE_DIR}"
 )
+
+# Mirror to LogosBasecamp
+install(CODE "
+    set(SRC \"\${CMAKE_INSTALL_PREFIX}/modules/keycard_showcase\")
+    set(DST \"\$ENV{HOME}/.local/share/Logos/LogosBasecamp/modules/keycard_showcase\")
+    message(STATUS \"Mirroring keycard_showcase to LogosBasecamp: \${DST}\")
+    file(COPY \"\${SRC}/\" DESTINATION \"\${DST}\")
+    message(STATUS \"Mirror complete\")
+")

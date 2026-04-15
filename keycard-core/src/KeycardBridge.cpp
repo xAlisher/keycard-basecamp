@@ -7,8 +7,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <PCSC/winscard.h>  // For direct PC/SC reader detection
-#include <QFile>
-#include <QTextStream>
 #include <QDateTime>
 #include <QStandardPaths>
 
@@ -713,6 +711,7 @@ bool KeycardBridge::isCardPresent()
     LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
 
     if (rv != SCARD_S_SUCCESS) {
+        qDebug() << "KeycardBridge::isCardPresent: PC/SC not available, error:" << rv;
         return false;
     }
 
@@ -734,8 +733,12 @@ bool KeycardBridge::isCardPresent()
         readerState.szReader = reader;
         readerState.dwCurrentState = SCARD_STATE_UNAWARE;
 
-        rv = SCardGetStatusChange(hContext, 0, &readerState, 1);
+        // Use 2000ms timeout: pcscd may have just started via socket activation
+        // and needs time to enumerate the card before reporting SCARD_STATE_PRESENT.
+        rv = SCardGetStatusChange(hContext, 2000, &readerState, 1);
 
+        qDebug() << "KeycardBridge::isCardPresent: SCardGetStatusChange rv:" << rv
+                 << "eventState:" << Qt::hex << readerState.dwEventState;
         if (rv == SCARD_S_SUCCESS) {
             // Check if card is present
             if (readerState.dwEventState & SCARD_STATE_PRESENT) {
