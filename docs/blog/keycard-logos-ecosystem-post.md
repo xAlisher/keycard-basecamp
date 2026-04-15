@@ -28,7 +28,7 @@ Each signing request is discrete. It requires the card and the PIN. Nothing in t
 
 ## How the key stays on the card
 
-BIP32 derivation runs on the card's secure element. The module supplies a domain string — `requestSign` maps it to a deterministic BIP32 path. The card derives the key at that path on-chip and signs with it, using either ECDSA or Schnorr (BIP340). Both schemes are supported; the requesting module specifies which. No private key material is ever exported to the host.
+BIP32 derivation runs on the card's secure element. The module supplies a domain string — `requestSign` maps it to a deterministic BIP32 path, or the caller can supply an arbitrary path directly. The card derives the key at that path on-chip and signs with it, using either ECDSA or Schnorr (BIP340). Both schemes are supported; the requesting module specifies which. No private key material is ever exported to the host.
 
 Same card, same domain, same key every time. Different domains produce different keys. A messaging module and a governance module each sign with their own isolated keyspace, derived from the same card.
 
