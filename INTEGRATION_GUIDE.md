@@ -26,13 +26,19 @@ Add hardware-backed signing or key derivation to your Basecamp module in 5 minut
 
 Use signing when your module needs to commit to data — messages, transactions, votes — without managing keys. The private key never leaves the smartcard.
 
+There is no `KeycardSign.qml` drop-in component — signing uses the manual flow below.
+
 ```qml
 property string signId: ""
 
 // Step 1: Request a signature
 function requestSignature(payloadHash) {
-    var result = logos.callModule("keycard", "requestSign",
-                                  ["my_module_signing", payloadHash, "ecdsa"])
+    var result = logos.callModule("keycard", "requestSign", [JSON.stringify({
+        domain: "my_module_signing",
+        payloadHash: payloadHash,
+        caller: "my_module",
+        scheme: "ecdsa"
+    })])
     var response = JSON.parse(result)
     if (response.signId) {
         signId = response.signId
@@ -61,11 +67,12 @@ Timer {
 }
 ```
 
-**Parameters for `requestSign`:**
-| Name | Type | Description |
-|------|------|-------------|
+**`requestSign` JSON fields:**
+| Field | Type | Description |
+|-------|------|-------------|
 | `domain` | string | Determines the BIP32 derivation path — same domain, same signing key |
-| `hash` | string | Hex-encoded hash of your payload — the card signs this directly |
+| `payloadHash` | string | Hex-encoded hash of your payload — the card signs this directly |
+| `caller` | string | Your module name — shown to the user in the approval panel |
 | `scheme` | string | `"ecdsa"` or `"schnorr"` (BIP340) |
 
 **`checkSignStatus` response when complete:**
