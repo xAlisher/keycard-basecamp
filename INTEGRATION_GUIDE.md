@@ -1,6 +1,6 @@
 # Keycard Integration Guide
 
-Add hardware-backed signing or key derivation to your Basecamp module in 5 minutes.
+Add hardware-backed signing or key derivation to your Basecamp module.
 
 ---
 
@@ -26,54 +26,26 @@ Add hardware-backed signing or key derivation to your Basecamp module in 5 minut
 
 Use signing when your module needs to commit to data — messages, transactions, votes — without managing keys. The private key never leaves the smartcard.
 
-There is no `KeycardSign.qml` drop-in component — signing uses the manual flow below.
+The flow: call `requestSign` with your payload hash, domain, caller, and scheme → poll `checkSignStatus` until the user approves in keycard-ui → receive the signature once.
 
-```qml
-property string signId: ""
+No drop-in component yet — signing uses the manual flow. Signing showcase coming with [#98](https://github.com/xAlisher/keycard-basecamp/issues/98).
 
-// Step 1: Request a signature
-function requestSignature(payloadHash) {
-    var result = logos.callModule("keycard", "requestSign", [JSON.stringify({
-        domain: "my_module_signing",
-        payloadHash: payloadHash,
-        caller: "my_module",
-        scheme: "ecdsa"
-    })])
-    var response = JSON.parse(result)
-    if (response.signId) {
-        signId = response.signId
-        signPoller.start()
-    }
-}
-
-// Step 2: Poll for result (1 second interval)
-Timer {
-    id: signPoller
-    interval: 1000
-    repeat: true
-    onTriggered: {
-        var result = logos.callModule("keycard", "checkSignStatus", [signId])
-        var r = JSON.parse(result)
-
-        if (r.status === "complete" && r.signature) {
-            signPoller.stop()
-            useSignature(r.signature)   // r.scheme: "ecdsa" or "schnorr"
-        } else if (r.status === "rejected" || r.error) {
-            signPoller.stop()
-            showError(r.error || "Signing rejected")
-        }
-        // "pending" → keep polling
-    }
-}
-```
-
-**`requestSign` JSON fields:**
+**`requestSign` takes a single JSON string argument:**
 | Field | Type | Description |
 |-------|------|-------------|
 | `domain` | string | Determines the BIP32 derivation path — same domain, same signing key |
 | `payloadHash` | string | Hex-encoded hash of your payload — the card signs this directly |
 | `caller` | string | Your module name — shown to the user in the approval panel |
 | `scheme` | string | `"ecdsa"` or `"schnorr"` (BIP340) |
+
+```javascript
+logos.callModule("keycard", "requestSign", [JSON.stringify({
+    domain: "my_module_signing",
+    payloadHash: hash,
+    caller: "my_module",
+    scheme: "ecdsa"
+})])
+```
 
 **`checkSignStatus` response when complete:**
 ```json
@@ -85,86 +57,55 @@ Timer {
 }
 ```
 
-**Path note:** signing uses a non-EIP-1581 BIP32 path. This is intentional — it means the signing key can never be exported from the card, even by the keycard module itself. Keys that sign and keys that encrypt are derived at separate paths and cannot be confused.
+**Path note:** signing uses a non-EIP-1581 BIP32 path. This means the signing key can never be exported from the card — even by the keycard module itself. Keys that sign and keys that encrypt are derived at separate paths and cannot be confused.
 
 ---
 
-## Private key generation (for encryption)
+## Key derivation (for encryption)
 
-Use key derivation when your module needs to encrypt local data and needs a stable key it can reproduce later. The key is derived on-card, returned to your module once, and must be wiped from memory when done.
+Use key derivation when your module needs to encrypt local data and needs a stable key it can reproduce later. The key is derived on-card, returned once, and must be wiped from memory when done.
+
+The flow: call `requestAuth` with a domain and caller → poll `checkAuthStatus` → receive the derived key once → wipe it after use.
+
+**See it in action:** [`auth_showcase-ui/qml/Main.qml`](auth_showcase-ui/qml/Main.qml) is a complete, running integration. The three functions to read:
+- [`requestAuth()`](auth_showcase-ui/qml/Main.qml#L50) — queues the request
+- [`checkAuthStatus()`](auth_showcase-ui/qml/Main.qml#L79) — polls for the result
+- [`callModuleParse()`](auth_showcase-ui/qml/Main.qml#L30) — handles the double-JSON-wrap quirk ([#121](https://github.com/xAlisher/keycard-basecamp/issues/121))
 
 ### Drop-in component
 
-Copy `KeycardAuth.qml` from keycard-basecamp into your module's QML directory, then:
+For the common case, copy `KeycardAuth.qml` from keycard-basecamp into your module's QML directory:
 
 ```qml
-import QtQuick 2.15
+KeycardAuth {
+    domain: "my_module_encryption"   // Unique domain for your key
+    caller: "my_module"              // Your module name
 
-Item {
-    // Your module UI...
-
-    KeycardAuth {
-        id: keycardAuth
-        anchors.centerIn: parent
-        width: 320
-
-        domain: "my_module_encryption"   // Unique domain for your key
-        caller: "my_module"              // Your module name
-
-        onKeyReceived: function(hexKey) {
-            // hexKey is a 64-char hex string (32 bytes)
-            // Use it for encryption, then wipe — do not store it
-            myBackend.useKey(hexKey)
-            // Backend must wipe the key from memory after use
-        }
-
-        onError: function(message) {
-            errorText.text = message
-        }
+    onKeyReceived: function(hexKey) {
+        myBackend.useKey(hexKey)     // Wipe after use — do not store
     }
+    onError: function(message) { errorText.text = message }
 }
 ```
 
-The component handles the "Connect with Keycard" button, polling, status display, error handling, and auto-reset after key delivery.
+The component handles the button, polling, status display, error handling, and auto-reset.
 
-### Manual integration
+**`requestAuth` parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `domain` | string | Key derivation domain — same domain always produces the same key |
+| `caller` | string | Your module name — shown to the user in the approval panel |
 
-```qml
-property string authId: ""
-
-// Step 1: Request key derivation
-function requestKey() {
-    var result = logos.callModule("keycard", "requestAuth",
-                                  ["my_domain_encryption", "my_module"])
-    var response = JSON.parse(result)
-    if (response.authId) {
-        authId = response.authId
-        pollTimer.start()
-    }
-}
-
-// Step 2: Poll for result (1 second interval)
-Timer {
-    id: pollTimer
-    interval: 1000
-    repeat: true
-    onTriggered: {
-        var result = logos.callModule("keycard", "checkAuthStatus", [authId])
-        var r = JSON.parse(result)
-
-        if (r.status === "complete" && r.key) {
-            pollTimer.stop()
-            useKey(r.key)   // 64-char hex, 32 bytes — wipe after use
-        } else if (r.status === "rejected" || r.error) {
-            pollTimer.stop()
-            showError(r.error || "Authorization rejected")
-        }
-        // "pending" → keep polling (wrong PINs stay pending so the user can retry)
-    }
+**`checkAuthStatus` response when complete:**
+```json
+{
+  "authId": "...",
+  "status": "complete",
+  "key": "a1b2c3..."
 }
 ```
 
-**Path note:** `requestAuth` derives keys at EIP-1581 BIP32 paths — the only paths the Keycard applet allows for key export. This is enforced on-card. The key exists in host memory for a single read, then the request is wiped. Your module is responsible for wiping it from application memory after use.
+**Path note:** `requestAuth` derives keys at EIP-1581 BIP32 paths — the only paths the Keycard applet allows for export. This is enforced on-card. The key exists in host memory for a single read, then the request is wiped. Your module is responsible for wiping it from application memory after use.
 
 ---
 
@@ -177,7 +118,7 @@ When your module calls `requestSign` or `requestAuth`, a pending request appears
 3. Taps the card to the reader and enters their PIN
 4. Approves or declines
 
-On approval, your poller receives `status: "complete"` with the signature or key. On decline, it receives `status: "rejected"`. The session closes automatically after each approval — one approval, one result.
+On approval, your poller receives `status: "complete"` with the signature or key. On decline, it receives `status: "rejected"`. The session closes automatically — one approval, one result.
 
 ---
 
@@ -192,7 +133,7 @@ Examples:
 - `"wallet_signing"` — transaction signing
 - `"governance_vote"` — voting commitments
 
-**The domain is the identity of the key.** Use a stable, unique string — changing it produces a different key. The domain maps deterministically to a BIP32 path. Same domain + same card = same key, always. Different domains produce isolated keyspaces with no relation to each other.
+**The domain is the identity of the key.** Use a stable, unique string — changing it produces a different key. Same domain + same card = same key, always. Different domains produce isolated keyspaces with no relation to each other.
 
 ---
 
@@ -200,12 +141,12 @@ Examples:
 
 | Pitfall | Fix |
 |---------|-----|
-| `callModule` returns a string | Always `JSON.parse()` before accessing fields |
-| Poller loops forever | Handle all response types: `complete`, `rejected`, AND `{error: ...}` for expired IDs. There is no `failed` status — wrong PINs stay `pending` so the user can retry |
+| `callModule` returns a string | Always `JSON.parse()` — or use `callModuleParse()` from the showcase to handle the double-wrap quirk ([#121](https://github.com/xAlisher/keycard-basecamp/issues/121)) |
+| Poller loops forever | Handle all terminal states: `complete`, `rejected`, AND `{error: ...}` for expired IDs. There is no `failed` status — wrong PINs stay `pending` so the user can retry |
 | Key "changes" between sessions | It doesn't — same domain = same key. Session auto-closes, so each operation needs a new request |
 | "Auth request not found" | The ID expired or was already consumed. Start a new request |
-| Component doesn't render | `KeycardAuth.qml` must be in the same directory as your `Main.qml` |
-| Storing the derived key | Don't. Wipe it after use. Request again next time — same domain reproduces it |
+| `KeycardAuth.qml` doesn't render | Must be in the same directory as your `Main.qml` |
+| Storing the derived key | Don't. Wipe after use. Request again next time — same domain reproduces it |
 
 ---
 
