@@ -24,8 +24,6 @@ Add hardware-backed signing or key derivation to your Basecamp module.
 
 ## Signing (primary use case)
 
-> **Not on master yet.** `requestSign`/`checkSignStatus` are implemented on branch [`issue-98-request-sign`](https://github.com/xAlisher/keycard-basecamp/tree/issue-98-request-sign), pending merge. If you're integrating today against the current release, use [Key derivation](#key-derivation-for-encryption) instead. This section documents the API as it will ship.
-
 Use signing when your module needs to commit to data — messages, transactions, votes — without managing keys. The private key never leaves the smartcard.
 
 The flow: call `requestSign` with your payload hash, domain, caller, and scheme → poll `checkSignStatus` until the user approves in keycard-ui → receive the signature once.
