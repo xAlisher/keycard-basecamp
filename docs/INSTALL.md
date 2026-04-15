@@ -1,6 +1,6 @@
-# Try the Keycard Showcase
+# Try Keycard in Basecamp
 
-The quickest way to see Keycard working in Basecamp is to install the pre-built LGX packages and run the included showcase module.
+The quickest way to get Keycard running in Basecamp is to install the two pre-built LGX packages. Once installed, you can exercise the full approval flow from any module.
 
 ## Requirements
 
