@@ -1351,6 +1351,8 @@ QString KeycardPlugin::approveXPUB(const QString& jsonArgs)
         req->error  = m_bridge ? m_bridge->commandSet()->lastError() : "XPUB export failed";
         QString shortId = xpubId.left(8);
         logActivity(QString("[%1] XPUB export failed: %2").arg(shortId, req->error), "error");
+        m_sessionState = SessionState::NoSession;
+        logActivity("Session closed", "info");
         QJsonObject result;
         result["xpubId"] = xpubId;
         result["status"] = "failed";
@@ -1374,6 +1376,10 @@ QString KeycardPlugin::approveXPUB(const QString& jsonArgs)
         logActivity(QString("[%1] XPUB TLV parse failed: %2").arg(shortId, req->error), "error");
         sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
         sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+        sodium_memzero(inner.data(), inner.size());
+        sodium_memzero(tlvData.data(), tlvData.size());
+        m_sessionState = SessionState::NoSession;
+        logActivity("Session closed", "info");
         QJsonObject result;
         result["xpubId"] = xpubId;
         result["status"] = "failed";
@@ -1382,10 +1388,12 @@ QString KeycardPlugin::approveXPUB(const QString& jsonArgs)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // SECURITY: concatenate pubkey + chain code, move into SecureBuffer, wipe intermediates
+    // SECURITY: concatenate pubkey + chain code, move into SecureBuffer, wipe all intermediates
     QByteArray xpubRaw = pubkeyBytes + chainCodeBytes;
     sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
     sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+    sodium_memzero(inner.data(), inner.size());
+    sodium_memzero(tlvData.data(), tlvData.size());
 
     req->status = "complete";
     req->xpub   = SecureBuffer(std::move(xpubRaw));
