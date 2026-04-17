@@ -6,6 +6,9 @@ Think of it like a password manager — but there's no vault, no master password
 
 > **Experimental — not for production use.** This project builds against a pre-release, unstable version of Logos Basecamp. APIs will break, behavior will change without notice. If you're looking for a consumer-facing key management solution, this isn't it yet.
 
+| [Try the showcase →](docs/INSTALL.md) | [Integration guide →](INTEGRATION_GUIDE.md) |
+|---|---|
+
 **Status:** 🚧 Active development — [v1.0.0 LGX packages available](https://github.com/xAlisher/keycard-basecamp/releases/tag/v1.0.0) (dev use only)
 
 ## How It Works

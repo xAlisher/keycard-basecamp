@@ -65,3 +65,8 @@ The greatest expeditions start at Basecamp.
 If you want something that doesn't exist yet, you don't wait.
 
 **[Build it → build.logos.co](https://build.logos.co)**
+
+---
+
+| [Try the showcase →](https://github.com/xAlisher/keycard-basecamp/blob/master/docs/INSTALL.md) | [Integration guide →](https://github.com/xAlisher/keycard-basecamp/blob/master/INTEGRATION_GUIDE.md) |
+|---|---|
