@@ -2,6 +2,7 @@
 #include "KeycardBridge.h"
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/types.h>
+#include <keycard-qt/tlv_utils.h>
 #include <PCSC/winscard.h>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -23,9 +24,11 @@ KeycardPlugin::KeycardPlugin(QObject* parent)
 
 KeycardPlugin::~KeycardPlugin()
 {
-    // Wipe all auth requests on unload
+    // Wipe all pending requests on unload — SecureBuffer destructors wipe key material via RAII
     purgeCompletedRequests();
     m_authRequests.clear();
+    m_signRequests.clear();
+    m_xpubRequests.clear();
 
     if (m_bridge) {
         m_bridge->stop();
@@ -1178,6 +1181,257 @@ QString KeycardPlugin::rejectSign(const QString& jsonOrId)
     result["signId"]  = signId;
     result["status"]  = "rejected";
     result["message"] = "Sign request rejected by user";
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+// --- XPUB export API (#142) ---
+
+QString KeycardPlugin::requestXPUB(const QString& jsonArgs)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        QJsonObject err;
+        err["error"] = "Expected JSON object: {\"domain\",\"caller\"}";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    QJsonObject args = doc.object();
+    QString domain = args.value("domain").toString();
+    QString caller = args.value("caller").toString();
+
+    if (domain.isEmpty() || caller.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: domain, caller";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    QString xpubId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    XPUBRequest req;
+    req.id        = xpubId;
+    req.domain    = domain;
+    req.caller    = caller;
+    req.status    = "pending";
+    req.timestamp = QDateTime::currentMSecsSinceEpoch();
+    m_xpubRequests.push_back(std::move(req));
+
+    QString shortId = xpubId.left(8);
+    logActivity(QString("[%1] Module %2 requesting XPUB for domain %3")
+        .arg(shortId, caller, domain), "warning");
+
+    QJsonObject result;
+    result["xpubId"]  = xpubId;
+    result["status"]  = "pending";
+    result["message"] = "XPUB request created. Open Keycard UI to approve.";
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::checkXPUBStatus(const QString& jsonOrId)
+{
+    // Accept {"xpubId":"..."} or plain UUID string
+    QString xpubId = jsonOrId;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonOrId.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        xpubId = doc.object().value("xpubId").toString();
+
+    for (size_t i = 0; i < m_xpubRequests.size(); ++i) {
+        auto& req = m_xpubRequests[i];
+        if (req.id != xpubId) continue;
+
+        QJsonObject result;
+        result["xpubId"] = xpubId;
+        result["domain"] = req.domain;
+        result["caller"] = req.caller;
+
+        if (req.status == "complete") {
+            // SECURITY: One-read-and-drop — return xpub exactly once, then wipe.
+            result["status"] = "complete";
+            QByteArray xpubHex = req.xpub.ref().toHex();
+            result["xpub"] = QString::fromUtf8(xpubHex);
+            sodium_memzero(xpubHex.data(), xpubHex.size());
+            req.xpub.wipe();
+            m_loggedRequestIds.remove(xpubId);
+            m_xpubRequests.erase(m_xpubRequests.begin() + i);
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+
+        result["status"] = req.status;
+        if (!req.error.isEmpty()) result["error"] = req.error;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject result;
+    result["error"] = "XPUB request not found";
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::getPendingXPUBs()
+{
+    QJsonArray pending;
+    for (auto& req : m_xpubRequests) {
+        if (req.status != "pending") continue;
+        QJsonObject obj;
+        obj["xpubId"]    = req.id;
+        obj["domain"]    = req.domain;
+        obj["caller"]    = req.caller;
+        obj["timestamp"] = req.timestamp;
+        pending.append(obj);
+
+        if (!m_loggedRequestIds.contains(req.id)) {
+            QString shortId = req.id.left(8);
+            logActivity(QString("[%1] New XPUB request from %2 for domain %3")
+                .arg(shortId, req.caller, req.domain), "warning");
+            m_loggedRequestIds.insert(req.id);
+        }
+    }
+    QJsonObject result;
+    result["pending"] = pending;
+    result["count"]   = pending.size();
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::approveXPUB(const QString& jsonArgs)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        QJsonObject err;
+        err["error"] = "Expected JSON object: {\"xpubId\",\"pin\"}";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    QString xpubId = doc.object().value("xpubId").toString();
+    QString pin    = doc.object().value("pin").toString();
+
+    if (xpubId.isEmpty() || pin.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: xpubId, pin";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    qDebug() << "KeycardPlugin::approveXPUB() called for xpubId:" << xpubId;
+
+    XPUBRequest* req = nullptr;
+    for (auto& r : m_xpubRequests) {
+        if (r.id == xpubId && r.status == "pending") { req = &r; break; }
+    }
+    if (!req) {
+        QJsonObject result;
+        result["error"] = "XPUB request not found or already completed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    if (m_bridge) m_bridge->setOperationInProgress(true);
+
+    // Step 1: verify PIN (opens secure channel)
+    QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
+    if (!authResult.value("authorized").toBool()) {
+        if (m_bridge) m_bridge->setOperationInProgress(false);
+        QJsonObject result;
+        result["xpubId"] = xpubId;
+        if (authResult.contains("error")) {
+            result["status"] = "failed";
+            result["error"]  = authResult.value("error").toString();
+        } else {
+            result["status"]            = "retry";
+            result["remainingAttempts"] = authResult.value("remainingAttempts").toInt(-1);
+        }
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Step 2: export extended public key — private key never leaves card
+    QString path = domainToPath(req->domain);
+    QByteArray tlvData = m_bridge->commandSet()->exportKeyExtended(
+        true, false, path, Keycard::APDU::P2ExportKeyExtendedPublic);
+
+    if (m_bridge) m_bridge->setOperationInProgress(false);
+
+    if (tlvData.isEmpty()) {
+        req->status = "failed";
+        req->error  = m_bridge ? m_bridge->commandSet()->lastError() : "XPUB export failed";
+        QString shortId = xpubId.left(8);
+        logActivity(QString("[%1] XPUB export failed: %2").arg(shortId, req->error), "error");
+        QJsonObject result;
+        result["xpubId"] = xpubId;
+        result["status"] = "failed";
+        result["error"]  = req->error;
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Step 3: parse TLV — unwrap outer A1 template, find pubkey (0x81) and chain code (0x83)
+    QByteArray inner = Keycard::TLV::findTag(tlvData, 0xA1);
+    if (inner.isEmpty()) inner = tlvData;  // fallback: already at inner level
+
+    QByteArray pubkeyBytes    = Keycard::TLV::findTag(inner, 0x81);
+    QByteArray chainCodeBytes = Keycard::TLV::findTag(inner, 0x83);
+
+    if (pubkeyBytes.size() != 65 || chainCodeBytes.size() != 32) {
+        req->status = "failed";
+        req->error  = QString("TLV parse error: pubkey=%1B chain=%2B (expected 65+32)")
+                          .arg(pubkeyBytes.size()).arg(chainCodeBytes.size());
+        QString shortId = xpubId.left(8);
+        logActivity(QString("[%1] XPUB TLV parse failed: %2").arg(shortId, req->error), "error");
+        sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
+        sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+        QJsonObject result;
+        result["xpubId"] = xpubId;
+        result["status"] = "failed";
+        result["error"]  = req->error;
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // SECURITY: concatenate pubkey + chain code, move into SecureBuffer, wipe intermediates
+    QByteArray xpubRaw = pubkeyBytes + chainCodeBytes;
+    sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
+    sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+
+    req->status = "complete";
+    req->xpub   = SecureBuffer(std::move(xpubRaw));
+
+    QString shortId = xpubId.left(8);
+    logActivity(QString("[%1] XPUB exported for %2 domain %3")
+        .arg(shortId, req->caller, req->domain), "success");
+
+    m_sessionState = SessionState::NoSession;
+    logActivity("Session closed", "success");
+
+    QJsonObject result;
+    result["xpubId"]  = xpubId;
+    result["status"]  = "complete";
+    result["message"] = "XPUB export completed. Poll checkXPUBStatus to retrieve.";
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::rejectXPUB(const QString& jsonOrId)
+{
+    // Accept {"xpubId":"..."} or plain UUID string
+    QString xpubId = jsonOrId;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonOrId.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        xpubId = doc.object().value("xpubId").toString();
+
+    XPUBRequest* req = nullptr;
+    for (auto& r : m_xpubRequests) {
+        if (r.id == xpubId && r.status == "pending") { req = &r; break; }
+    }
+    if (!req) {
+        QJsonObject result;
+        result["error"] = "XPUB request not found or already completed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    req->status = "rejected";
+    QString shortId = xpubId.left(8);
+    logActivity(QString("[%1] XPUB request from %2 rejected").arg(shortId, req->caller), "warning");
+    m_loggedRequestIds.remove(xpubId);
+
+    QJsonObject result;
+    result["xpubId"]  = xpubId;
+    result["status"]  = "rejected";
+    result["message"] = "XPUB request rejected by user";
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
