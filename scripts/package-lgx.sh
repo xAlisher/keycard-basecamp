@@ -1,48 +1,65 @@
 #!/usr/bin/env bash
-# Canonical LGX packaging command - produces working artifacts in one step
+# Package keycard LGX artifacts using logos-module-builder.
+#
+# Usage:
+#   bash scripts/package-lgx.sh [OUTPUT_DIR]
+#
+# Produces:
+#   logos-keycard-module.lgx    (core, pcsclite stripped — portable rpath)
+#   logos-keycard-ui-module.lgx (UI plugin)
+#
+# pcsclite must NOT be bundled: keycard_plugin.so references libpcsclite.so.1
+# dynamically so it uses the system pcscd socket.  The portable bundler includes
+# it by default; this script strips it before sealing the archive.
 set -euo pipefail
 
-# Ensure nix is in PATH
 export PATH="/nix/var/nix/profiles/default/bin:$PATH"
 
 OUTPUT_DIR="${1:-.}"
+OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
 mkdir -p "$OUTPUT_DIR"
 
-# Convert to absolute path (needed for tar -czf inside subshell)
-OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
+# ── Core module ───────────────────────────────────────────────────────────────
+echo "==> Building core module (portable lgx)..."
+nix build .#packages.x86_64-linux.lgx-portable --no-link --print-out-paths \
+    > /tmp/_lgx_core_path.txt
+CORE_LGX_DIR=$(cat /tmp/_lgx_core_path.txt)
 
-echo "==> Building core module LGX with portable bundler..."
-nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib
-
-echo "==> Copying from nix store to output directory..."
-# The bundler outputs to nix store (read-only symlink)
-# Copy to writable location before applying fix
-cp -L keycard-core-lgx-1.0.0/keycard-core.lgx "$OUTPUT_DIR/keycard-core.lgx.tmp"
-
-echo "==> Removing bundled libpcsclite for pcscd compatibility..."
+echo "==> Stripping bundled pcsclite (must use system pcscd socket)..."
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
-tar -xzf "$OUTPUT_DIR/keycard-core.lgx.tmp" -C "$TEMP_DIR"
-find "$TEMP_DIR" -name "libpcsclite.so*" -delete
+CORE_LGX_NAME=$(ls "$CORE_LGX_DIR"/*.lgx | xargs -n1 basename)
+cp "$CORE_LGX_DIR/$CORE_LGX_NAME" "$TEMP_DIR/core.lgx.tmp"
 
-echo "==> Patching RUNPATH on keycard_plugin.so to use system pcsclite..."
-PLUGIN_SO=$(find "$TEMP_DIR" -name "keycard_plugin.so" -print -quit)
-if [ -n "$PLUGIN_SO" ] && command -v patchelf &>/dev/null; then
-    patchelf --set-rpath '$ORIGIN' "$PLUGIN_SO"
+EXTRACT_DIR=$(mktemp -d)
+tar -xzf "$TEMP_DIR/core.lgx.tmp" -C "$EXTRACT_DIR"
+find "$EXTRACT_DIR" -name "libpcsclite.so*" -delete
+
+(cd "$EXTRACT_DIR" && tar -czf "$OUTPUT_DIR/$CORE_LGX_NAME" .)
+rm -rf "$EXTRACT_DIR"
+echo "==> Core LGX: $OUTPUT_DIR/$CORE_LGX_NAME"
+
+# Verify pcsclite is absent
+if tar -tzf "$OUTPUT_DIR/$CORE_LGX_NAME" 2>/dev/null | grep -q pcsclite; then
+    echo "ERROR: libpcsclite still present in $CORE_LGX_NAME"
+    exit 1
 fi
+echo "==> Verified: pcsclite NOT bundled"
 
-(cd "$TEMP_DIR" && tar -czf "$OUTPUT_DIR/keycard-core.lgx" *)
-
-rm "$OUTPUT_DIR/keycard-core.lgx.tmp"
-
-echo "==> Building UI module LGX..."
-nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#ui
-
-echo "==> Copying UI LGX to output directory..."
-cp -L keycard-ui-lgx-1.0.0/keycard-ui.lgx "$OUTPUT_DIR/keycard-ui.lgx"
+# ── UI plugin ─────────────────────────────────────────────────────────────────
+echo ""
+echo "==> Building keycard-ui LGX..."
+(
+    cd keycard-ui
+    nix build .#packages.x86_64-linux.lgx --no-link --print-out-paths \
+        > /tmp/_lgx_ui_path.txt
+)
+UI_LGX_DIR=$(cat /tmp/_lgx_ui_path.txt)
+UI_LGX_NAME=$(ls "$UI_LGX_DIR"/*.lgx | xargs -n1 basename)
+cp "$UI_LGX_DIR/$UI_LGX_NAME" "$OUTPUT_DIR/$UI_LGX_NAME"
+echo "==> UI LGX: $OUTPUT_DIR/$UI_LGX_NAME"
 
 echo ""
-echo "✅ LGX packages ready in $OUTPUT_DIR:"
-echo "   - keycard-core.lgx (fixed, pcscd-compatible)"
-echo "   - keycard-ui.lgx"
+echo "LGX packages ready in $OUTPUT_DIR:"
+ls -lh "$OUTPUT_DIR"/*.lgx

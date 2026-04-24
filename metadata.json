@@ -1,10 +1,39 @@
 {
   "name": "keycard",
   "version": "1.0.0",
-  "description": "Keycard module for Basecamp app",
-  "author": "alisher",
   "type": "core",
   "category": "security",
+  "description": "Keycard smartcard authentication module for Logos Basecamp",
   "main": "keycard_plugin",
-  "dependencies": []
+  "dependencies": [],
+
+  "nix": {
+    "packages": {
+      "build": ["pkg-config"],
+      "runtime": ["pcsclite", "openssl", "libsodium"]
+    },
+    "external_libraries": [
+      {
+        "name": "keycard-qt"
+      }
+    ],
+    "cmake": {
+      "find_packages": [
+        "Qt6 COMPONENTS Core",
+        "OpenSSL REQUIRED",
+        "PkgConfig REQUIRED"
+      ],
+      "extra_sources": [
+        "keycard-core/src/plugin.cpp",
+        "keycard-core/src/KeycardBridge.cpp",
+        "keycard-core/src/FilePairingStorage.cpp"
+      ],
+      "extra_include_dirs": ["keycard-core/src"],
+      "extra_link_libraries": [
+        "OpenSSL::Crypto",
+        "PkgConfig::sodium",
+        "PkgConfig::pcsclite"
+      ]
+    }
+  }
 }
