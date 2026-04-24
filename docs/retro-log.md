@@ -181,6 +181,33 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 - **[review] The transport-vs-PIN collapse in approveSign was the right MEDIUM call.** Once requestSign was deliberately made card-agnostic, approveSign became the only gate — and collapsing two semantically different failures into one `retry` shape meant the caller could never distinguish "wrong PIN, try again" from "card was removed." The fix was one conditional but the principle applies broadly: async queued-request flows need explicit error taxonomy at the approval point.
 - **[review] hashMessage placement was an architecture issue, not a code quality issue.** The method itself was correct. The failure was module lifetime — putting a utility on a module that is not guaranteed to be running is a latent "always fails in production" bug. Worth checking module lifetime assumptions any time a new method is added.
 
+---
+
+## Issue #144 — logos-module-builder migration (2026-04-24)
+
+### Process wins
+- **[process] Skills index prevented re-deriving known patterns.** Reading `_index/60-release.md` immediately flagged that `#portable` bundler alone is rejected by lgpm — saved a second debugging cycle.
+- **[process] Plan with sign-off gates kept scope tight.** Chunk 0 defined a clear "done" criterion (logoscore status "loaded") before starting. Hit it cleanly without scope creep.
+- **[process] Submodule commit hash as the source of truth.** Checking `git submodule status` to find the pinned commit (`5cd0b0d`) was faster and more reliable than guessing from the repo history.
+
+### Process fails
+- **[process] Plan specified `lgx-portable` but skills said `#dual` — plan was stale.** The plan's note about `#lgx-portable` (written same day) conflicted with `builder-lgx-install-recipe.md` (last_used: 2026-04-22). Followed the skill; plan should have been updated before execution.
+  - **Root cause:** Plan was written before the skills entry was burned in, and never reconciled.
+  - **Fix:** When a plan step conflicts with a skill, update the plan before executing and note the discrepancy explicitly.
+
+- **[process] `nix build` background task lost because PATH was not sourced in the background shell.** First build attempt with `run_in_background=true` silently failed: "nix: command not found". Nix profile was not sourced in the non-interactive background shell.
+  - **Root cause:** Bash background tasks inherit env from shell spawn, which does not source `~/.bashrc` or nix-daemon.sh.
+  - **Fix:** Always prefix nix commands with `source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh &&` in Bash tool calls.
+
+### Project lessons
+- **`#include "interface.h"` (bare) required under logos-module-builder.** Path-qualified `<module_lib/interface.h>` breaks moc — "Undefined interface" at Q_INTERFACES(). Extracted to `builder-interface-h-include-pattern` skill.
+- **`externalLibInputs` with per-system derivation is the correct non-nixpkgs pattern.** Key: `{ "libname" = { packages = { "x86_64-linux" = { default = drv; }; }; }; }`. Also: `rm -rf $out/lib/cmake` in postInstall prevents cmake config file permission errors. Updated `builder-external-libs-open` skill.
+- **`mkLogosQmlModule` (not `mkLogosModule`) for QML-only UI plugins.** Using `mkLogosModule` for a pure-QML plugin fails at install: "No plugin library file found". QML plugins have no `.so` — they need `mkLogosQmlModule`.
+- **`#dual` bundler is required.** `lgx-portable` (`linux-amd64` only) is rejected by lgpm; `#default` (`linux-amd64-dev` only) is rejected by Basecamp. `#dual` gives both. Verified again on this migration.
+
+### Feedback for Alisher
+- (none)
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 
