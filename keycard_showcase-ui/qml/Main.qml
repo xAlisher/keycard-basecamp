@@ -20,6 +20,12 @@ Rectangle {
     property string signature: ""
     property string signError: ""
 
+    // XPUB state
+    property string xpubRequestId: ""
+    property string xpubStatus: "idle"  // "idle", "pending", "complete", "error"
+    property string xpub: ""
+    property string xpubError: ""
+
     // logos.callModule wraps C++ QString in an extra JSON layer — parse twice
     // See: https://github.com/xAlisher/keycard-basecamp/issues/121
     function callModuleParse(raw) {
@@ -43,6 +49,13 @@ Rectangle {
         root.signStatus = "idle"
     }
 
+    function resetXPUB() {
+        root.xpubRequestId = ""
+        root.xpub = ""
+        root.xpubError = ""
+        root.xpubStatus = "idle"
+    }
+
     Timer {
         id: authPoller
         interval: 1000
@@ -57,6 +70,14 @@ Rectangle {
         running: root.signStatus === "pending"
         repeat: true
         onTriggered: checkSignStatus()
+    }
+
+    Timer {
+        id: xpubPoller
+        interval: 1000
+        running: root.xpubStatus === "pending"
+        repeat: true
+        onTriggered: checkXPUBStatus()
     }
 
     function requestAuth() {
@@ -146,6 +167,48 @@ Rectangle {
         } else if (response.error) {
             root.signError = response.error
             root.signStatus = "error"
+        }
+    }
+
+    function requestXPUB() {
+        root.xpubError = ""
+        var args = JSON.stringify({
+            domain: "keycard_showcase",
+            caller: "keycard_showcase"
+        })
+        var result = logos.callModule("keycard", "requestXPUB", [args])
+        var response = callModuleParse(result)
+        if (!response) {
+            root.xpubError = "No response from keycard module"
+            root.xpubStatus = "error"
+            return
+        }
+        if (response.xpubId) {
+            root.xpubRequestId = response.xpubId
+            root.xpubStatus = "pending"
+        } else {
+            root.xpubError = response.error || "Unexpected response"
+            root.xpubStatus = "error"
+        }
+    }
+
+    function checkXPUBStatus() {
+        if (!root.xpubRequestId) return
+        var result = logos.callModule("keycard", "checkXPUBStatus", [root.xpubRequestId])
+        var response = callModuleParse(result)
+        if (!response) return
+        if (response.status === "complete" && response.xpub) {
+            root.xpub = response.xpub
+            root.xpubStatus = "complete"
+        } else if (response.status === "failed") {
+            root.xpubError = response.error || "XPUB export failed"
+            root.xpubStatus = "error"
+        } else if (response.status === "rejected") {
+            root.xpubError = "XPUB export rejected"
+            root.xpubStatus = "error"
+        } else if (response.error) {
+            root.xpubError = response.error
+            root.xpubStatus = "error"
         }
     }
 
@@ -477,6 +540,156 @@ Rectangle {
                     visible: root.signStatus === "pending"
                     Layout.preferredWidth: 360
                     text: "Open the Keycard panel in the sidebar — enter your PIN and press Sign"
+                    color: "#666666"
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            // ── Divider ───────────────────────────────────────────────────
+            Rectangle {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 360
+                height: 1
+                color: "#333333"
+                Layout.bottomMargin: 40
+            }
+
+            // ── XPUB section ──────────────────────────────────────────────
+            ColumnLayout {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.bottomMargin: 48
+                spacing: 16
+
+                Text {
+                    text: "XPUB Export"
+                    font.pixelSize: 18
+                    font.weight: Font.Medium
+                    color: "#cccccc"
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Text {
+                    Layout.preferredWidth: 360
+                    text: "Export the extended public key for offline child key derivation (BIP32)"
+                    color: "#666666"
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 360
+                    height: 44
+                    radius: 22
+                    visible: root.xpubStatus === "idle" || root.xpubStatus === "error"
+                    color: xpubArea.containsMouse ? "#1b5e20" : "#2e7d32"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Export XPUB"
+                        color: "#ffffff"
+                        font.pixelSize: 15
+                        font.weight: Font.Medium
+                    }
+                    MouseArea {
+                        id: xpubArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: requestXPUB()
+                    }
+                }
+
+                Rectangle {
+                    visible: root.xpubStatus === "pending"
+                    Layout.preferredWidth: 360
+                    height: 48
+                    radius: 8
+                    color: "#3a2a0a"
+                    border.color: "#ff9800"
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Waiting for XPUB approval in Keycard UI..."
+                        color: "#ff9800"
+                        font.pixelSize: 13
+                    }
+                }
+
+                Rectangle {
+                    visible: root.xpubStatus === "complete" && root.xpub.length > 0
+                    Layout.preferredWidth: 360
+                    implicitHeight: xpubCol.implicitHeight + 24
+                    radius: 8
+                    color: "#0d1f0d"
+                    border.color: "#2e7d32"
+                    border.width: 1
+
+                    Column {
+                        id: xpubCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 12
+                        spacing: 6
+
+                        Text {
+                            text: "Public key (65 bytes) + chain code (32 bytes)"
+                            color: "#81c784"
+                            font.pixelSize: 11
+                        }
+                        Text {
+                            text: root.xpub
+                            color: "#a5d6a7"
+                            font.pixelSize: 11
+                            font.family: "monospace"
+                            wrapMode: Text.WrapAnywhere
+                            width: parent.width
+                        }
+                    }
+                }
+
+                Text {
+                    visible: root.xpubStatus === "error"
+                    Layout.preferredWidth: 360
+                    text: "✗ " + root.xpubError
+                    color: "#f44336"
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 360
+                    height: 36
+                    radius: 18
+                    visible: root.xpubStatus === "complete" || root.xpubStatus === "error"
+                    color: xpubResetArea.containsMouse ? "#333333" : "#2a2a2a"
+                    border.color: "#555555"
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Export Again"
+                        color: "#aaaaaa"
+                        font.pixelSize: 13
+                    }
+                    MouseArea {
+                        id: xpubResetArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: resetXPUB()
+                    }
+                }
+
+                Text {
+                    visible: root.xpubStatus === "pending"
+                    Layout.preferredWidth: 360
+                    text: "Open the Keycard panel in the sidebar — enter your PIN and press Approve XPUB"
                     color: "#666666"
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter

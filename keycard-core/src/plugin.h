@@ -64,6 +64,16 @@ public:
     Q_INVOKABLE QString approveSign(const QString& jsonArgs); // {"signId":"...","pin":"..."}
     Q_INVOKABLE QString rejectSign(const QString& signId);
 
+    // XPUB export API (#142)
+    Q_INVOKABLE QString requestXPUB(const QString& jsonArgs);  // {"domain","caller"}
+    Q_INVOKABLE QString approveXPUB(const QString& jsonArgs);  // {"xpubId","pin"}
+    Q_INVOKABLE QString rejectXPUB(const QString& xpubId);
+    Q_INVOKABLE QString checkXPUBStatus(const QString& xpubId);
+    Q_INVOKABLE QString getPendingXPUBs();
+    Q_INVOKABLE QString testXPUBExport(const QString& jsonArgs); // Debug: {"domain","pin"} — direct export, bypasses request queue
+    Q_INVOKABLE QString testMasterExport(const QString& pin);   // Debug: authorize + export master (no derive) — chain code probe
+    Q_INVOKABLE QString testEip1581Export(const QString& pin);  // Debug: authorize + export at m/43'/60'/1581' — EIP-1581 root probe
+
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);
     void activityLogged(const QString& timestamp, const QString& message, const QString& level);
@@ -135,12 +145,12 @@ private:
         XPUBRequest& operator=(const XPUBRequest&) = delete;
     };
 
-
 private:
     KeycardBridge* m_bridge = nullptr;
     SessionState m_sessionState = SessionState::NoSession;
     std::vector<AuthRequest> m_authRequests;
     std::vector<SignRequest> m_signRequests;
+    std::vector<XPUBRequest> m_xpubRequests;
 
     // Activity log queue (for QML)
     struct ActivityEntry {
