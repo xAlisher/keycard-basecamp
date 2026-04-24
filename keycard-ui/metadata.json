@@ -4,8 +4,7 @@
   "type": "ui_qml",
   "category": "security",
   "description": "Keycard debug UI and test harness",
-  "author": "alisher",
-  "main": "Main.qml",
+  "view": "qml/Main.qml",
   "icon": "icons/keycard.png",
   "dependencies": ["keycard"],
 

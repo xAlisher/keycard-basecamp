@@ -8,7 +8,7 @@
 #include <QDateTime>
 #include <QSet>
 #include <vector>
-#include <module_lib/interface.h>
+#include "interface.h"
 
 class KeycardPlugin : public QObject, public PluginInterface
 {

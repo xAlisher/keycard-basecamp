@@ -1,22 +1,5 @@
 {
   "nodes": {
-    "keycard-qt-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1776197161,
-        "narHash": "sha256-dbp+Bt5Y+oiTOZzSDPS9Qf3l98hE8lGo123MWuaXIpE=",
-        "owner": "status-im",
-        "repo": "keycard-qt",
-        "rev": "5cd0b0d22659fd8564c749787fc86c1374b00223",
-        "type": "github"
-      },
-      "original": {
-        "owner": "status-im",
-        "repo": "keycard-qt",
-        "rev": "5cd0b0d22659fd8564c749787fc86c1374b00223",
-        "type": "github"
-      }
-    },
     "logos-capability-module": {
       "inputs": {
         "logos-cpp-sdk": [
@@ -2561,12 +2544,7 @@
     },
     "root": {
       "inputs": {
-        "keycard-qt-src": "keycard-qt-src",
-        "logos-module-builder": "logos-module-builder",
-        "nixpkgs": [
-          "logos-module-builder",
-          "nixpkgs"
-        ]
+        "logos-module-builder": "logos-module-builder"
       }
     }
   },
