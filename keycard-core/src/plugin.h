@@ -57,8 +57,8 @@ public:
     // Utility
     Q_INVOKABLE QString hashMessage(const QString& message);  // SHA-256 hex of UTF-8 message
 
-    // Signing request API (#98)
-    Q_INVOKABLE QString requestSign(const QString& jsonArgs); // {"domain","payloadHash","caller","scheme"}
+    // Signing request API (#98, #149, #150)
+    Q_INVOKABLE QString requestSign(const QString& jsonArgs); // {"domain","payloadHash","caller","scheme","bip32_path"?}
     Q_INVOKABLE QString checkSignStatus(const QString& signId);
     Q_INVOKABLE QString getPendingSigns();
     Q_INVOKABLE QString approveSign(const QString& jsonArgs); // {"signId":"...","pin":"..."}
@@ -89,7 +89,8 @@ private:
     void purgeCompletedRequests();
 
     QString mapBridgeStateToSpec(KeycardBridge::State state);
-    QString domainToPath(const QString& domain);
+    QString domainToPath(const QString& domain);      // m/43'/60'/1581' — auth/key-export subtree
+    QString domainToSignPath(const QString& domain);  // m/43'/60'/1582' — signing subtree (#150)
     void logActivity(const QString& message, const QString& level = "info");
     void addActivityToResponse(QJsonObject& response);
 
@@ -105,6 +106,7 @@ private:
         QString payloadHash;  // hex-encoded 32-byte digest
         QString caller;
         QString scheme;       // "ecdsa" or "schnorr"
+        QString bip32_path;   // explicit BIP32 path (#149); if set, overrides domain derivation
         QString status;       // "pending", "complete", "rejected", "failed"
         SecureBuffer signature; // Result — wiped after first read
         QString error;
