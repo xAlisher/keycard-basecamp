@@ -70,6 +70,9 @@ public:
     Q_INVOKABLE QString rejectXPUB(const QString& xpubId);
     Q_INVOKABLE QString checkXPUBStatus(const QString& xpubId);
     Q_INVOKABLE QString getPendingXPUBs();
+    Q_INVOKABLE QString testXPUBExport(const QString& jsonArgs); // Debug: {"domain","pin"} — direct export, bypasses request queue
+    Q_INVOKABLE QString testMasterExport(const QString& pin);   // Debug: authorize + export master (no derive) — chain code probe
+    Q_INVOKABLE QString testEip1581Export(const QString& pin);  // Debug: authorize + export at m/43'/60'/1581' — EIP-1581 root probe
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& data);

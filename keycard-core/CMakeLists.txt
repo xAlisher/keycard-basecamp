@@ -136,3 +136,40 @@ install(CODE "
 ")
 
 # Note: libkeycard.so removed - now using keycard-qt (native C++/Qt)
+
+# ── xpub_proof: standalone hardware proof (no logoscore IPC required) ─────────
+# Build:  cmake --build build --target xpub_proof
+# Run:    ./build/keycard-core/xpub_proof <pin>
+add_executable(xpub_proof
+    ../tests/xpub_proof.cpp
+    ../tests/logos_api_stub.cpp
+    src/plugin.h
+    src/plugin.cpp
+    src/KeycardBridge.h
+    src/KeycardBridge.cpp
+    src/FilePairingStorage.h
+    src/FilePairingStorage.cpp
+    "${LOGOS_CPP_SDK}/include/cpp/logos_api.h"
+)
+
+target_include_directories(xpub_proof PRIVATE
+    src
+    "${LOGOS_MODULE_HEADERS}"
+    "${LOGOS_LIBLOGOS_HEADERS}"
+    "${LOGOS_CPP_SDK}/include"
+    "${LOGOS_CPP_SDK}/include/cpp"
+    "${LOGOS_CPP_SDK}/include/core"
+    "${CMAKE_SOURCE_DIR}/external/keycard-qt/include"
+)
+
+target_link_libraries(xpub_proof PRIVATE
+    Qt6::Core
+    keycard-qt
+    OpenSSL::Crypto
+    PkgConfig::sodium
+    PkgConfig::pcsclite
+)
+
+if(KEYCARD_DEBUG)
+    target_compile_definitions(xpub_proof PRIVATE KEYCARD_DEBUG)
+endif()
