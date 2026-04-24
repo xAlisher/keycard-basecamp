@@ -448,6 +448,19 @@ FocusScope {
                                 Text { text: "scheme"; color: DesignTokens.mutedForeground; font.pixelSize: DesignTokens.fontSizeSmall; font.family: DesignTokens.fontPrimary }
                                 Text { text: root.currentRequest ? (root.currentRequest.scheme || "") : ""; color: DesignTokens.foreground; font.pixelSize: DesignTokens.fontSizeBody; font.family: DesignTokens.fontPrimary }
                             }
+                            Column {
+                                visible: root.currentRequest && !!root.currentRequest.signId
+                                spacing: 4
+                                Text { text: "signing path"; color: DesignTokens.mutedForeground; font.pixelSize: DesignTokens.fontSizeSmall; font.family: DesignTokens.fontPrimary }
+                                Text {
+                                    text: root.currentRequest ? (root.currentRequest.effective_path || "") : ""
+                                    color: DesignTokens.foreground
+                                    font.pixelSize: DesignTokens.fontSizeBody
+                                    font.family: "monospace"
+                                    wrapMode: Text.WrapAnywhere
+                                    width: parent.width
+                                }
+                            }
 
                             Column {
                                 spacing: 4
