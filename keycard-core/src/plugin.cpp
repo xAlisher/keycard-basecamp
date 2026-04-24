@@ -12,6 +12,7 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <algorithm>
+#include <array>
 #include <sodium.h>
 #include <vector>
 
@@ -260,60 +261,26 @@ QString KeycardPlugin::authorize(const QString& pin)
     return QJsonDocument(authResult).toJson(QJsonDocument::Compact);
 }
 
-QString KeycardPlugin::domainToPath(const QString& domain)
+// domainToIndices — SHA256("logos-"||domain), take first 16 bytes as four hardened BIP32 indices.
+// "logos-" prefix for namespace separation; 16 bytes of hash for collision resistance.
+static std::array<uint32_t, 4> domainToIndices(const QString& domain)
 {
-    // EIP-1581: m/43'/60'/1581'/<idx1>'/<idx2>'/<idx3>'/<idx4>'
-    // "logos-" prefix for namespace separation; 16 bytes of hash for collision resistance.
     QByteArray namespaced = ("logos-" + domain).toUtf8();
     unsigned char hash[32];
     crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(namespaced.constData()), namespaced.size());
 
-    uint32_t idx1 = (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 |
-                     uint32_t(hash[2])  << 8  | uint32_t(hash[3]))  & 0x7FFFFFFF;
-    uint32_t idx2 = (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 |
-                     uint32_t(hash[6])  << 8  | uint32_t(hash[7]))  & 0x7FFFFFFF;
-    uint32_t idx3 = (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 |
-                     uint32_t(hash[10]) << 8  | uint32_t(hash[11])) & 0x7FFFFFFF;
-    uint32_t idx4 = (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 |
-                     uint32_t(hash[14]) << 8  | uint32_t(hash[15])) & 0x7FFFFFFF;
-
-    return QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'").arg(idx1).arg(idx2).arg(idx3).arg(idx4);
+    return {{
+        (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 | uint32_t(hash[2])  << 8 | uint32_t(hash[3]))  & 0x7FFFFFFF,
+        (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 | uint32_t(hash[6])  << 8 | uint32_t(hash[7]))  & 0x7FFFFFFF,
+        (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 | uint32_t(hash[10]) << 8 | uint32_t(hash[11])) & 0x7FFFFFFF,
+        (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 | uint32_t(hash[14]) << 8 | uint32_t(hash[15])) & 0x7FFFFFFF,
+    }};
 }
 
-// validateBip32Path — validates format and bounds of a caller-supplied BIP32 path.
-// Rejects paths where any segment value exceeds 2^31-1 even without the hardened marker,
-// because the vendored signWithPath() parser uses toUInt() and writes the raw uint32 into
-// the APDU — so "2147485229" (= 0x8000062D = 1581') would reach the card unmarked in the
-// string but hardened in the wire encoding.  After bounding all segments we do a string-
-// level subtree block on m/43'/60'/1581' which is now safe (no numeric bypass possible).
-static bool validateBip32Path(const QString& path, QString& outError)
+QString KeycardPlugin::domainToPath(const QString& domain)
 {
-    static const QRegularExpression kSegRe(R"(^(0|[1-9]\d*)('?)$)");
-    if (!path.startsWith("m/")) {
-        outError = QStringLiteral("bip32_path must start with \"m/\"");
-        return false;
-    }
-    const QStringList parts = path.mid(2).split('/');
-    for (const QString& part : parts) {
-        const auto m = kSegRe.match(part);
-        if (!m.hasMatch()) {
-            outError = QStringLiteral("bip32_path format invalid — expected m(/N'?)* with decimal indices");
-            return false;
-        }
-        bool ok = false;
-        const quint64 val = m.captured(1).toULongLong(&ok);
-        if (!ok || val > 2147483647ULL) {  // max BIP32 index = 2^31-1
-            outError = QStringLiteral("bip32_path segment out of range (max 2147483647 per segment)");
-            return false;
-        }
-    }
-    // Block the XPUB/key-export subtree (1581').  Safe after bounds check above —
-    // numeric bypass via raw hardened value (2147485229) is already rejected.
-    if (path.startsWith(QLatin1String("m/43'/60'/1581'"))) {
-        outError = QStringLiteral("bip32_path may not use the key-export subtree (m/43'/60'/1581')");
-        return false;
-    }
-    return true;
+    auto idx = domainToIndices(domain);
+    return QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'").arg(idx[0]).arg(idx[1]).arg(idx[2]).arg(idx[3]);
 }
 
 // domainToSignPath — same hash → indices as domainToPath, but rooted at m/43'/60'/1582'.
@@ -321,20 +288,8 @@ static bool validateBip32Path(const QString& path, QString& outError)
 // keys derived here cannot be exfiltrated via the EXPORT_KEY APDU. (#150)
 QString KeycardPlugin::domainToSignPath(const QString& domain)
 {
-    QByteArray namespaced = ("logos-" + domain).toUtf8();
-    unsigned char hash[32];
-    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(namespaced.constData()), namespaced.size());
-
-    uint32_t idx1 = (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 |
-                     uint32_t(hash[2])  << 8  | uint32_t(hash[3]))  & 0x7FFFFFFF;
-    uint32_t idx2 = (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 |
-                     uint32_t(hash[6])  << 8  | uint32_t(hash[7]))  & 0x7FFFFFFF;
-    uint32_t idx3 = (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 |
-                     uint32_t(hash[10]) << 8  | uint32_t(hash[11])) & 0x7FFFFFFF;
-    uint32_t idx4 = (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 |
-                     uint32_t(hash[14]) << 8  | uint32_t(hash[15])) & 0x7FFFFFFF;
-
-    return QString("m/43'/60'/1582'/%1'/%2'/%3'/%4'").arg(idx1).arg(idx2).arg(idx3).arg(idx4);
+    auto idx = domainToIndices(domain);
+    return QString("m/43'/60'/1582'/%1'/%2'/%3'/%4'").arg(idx[0]).arg(idx[1]).arg(idx[2]).arg(idx[3]);
 }
 
 QString KeycardPlugin::deriveKey(const QString& domain)
@@ -1025,10 +980,11 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
     if (!bip32_path.isEmpty()) {
-        QString pathError;
-        if (!validateBip32Path(bip32_path, pathError)) {
+        // Format-only validation — card enforces all policy (0x6985 for restricted paths).
+        static const QRegularExpression kPathRe(R"(^m(/\d+'?){0,10}$)");
+        if (!kPathRe.match(bip32_path).hasMatch()) {
             QJsonObject err;
-            err["error"] = pathError;
+            err["error"] = QStringLiteral("bip32_path format invalid — expected m(/N'?){0,10}");
             return QJsonDocument(err).toJson(QJsonDocument::Compact);
         }
     }
