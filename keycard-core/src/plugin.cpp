@@ -10,6 +10,7 @@
 #include <QDateTime>
 #include <QCryptographicHash>
 #include <QDebug>
+#include <QRegularExpression>
 #include <algorithm>
 #include <sodium.h>
 #include <vector>
@@ -987,10 +988,23 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
         err["error"] = "payloadHash must be hex-encoded 32 bytes";
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
-    if (!bip32_path.isEmpty() && !bip32_path.startsWith("m/")) {
-        QJsonObject err;
-        err["error"] = "bip32_path must start with \"m/\"";
-        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    if (!bip32_path.isEmpty()) {
+        // Validate BIP32 path format: m followed by (/N or /N') segments, N ∈ [0, 2^31-1]
+        static const QRegularExpression kBip32PathRe(
+            R"(^m(/(?:0|[1-9]\d{0,9})'?)*$)"
+        );
+        if (!kBip32PathRe.match(bip32_path).hasMatch()) {
+            QJsonObject err;
+            err["error"] = "bip32_path format invalid — expected m(/N'?)* with decimal indices";
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
+        }
+        // Block signing with keys from the XPUB/key-export subtree (1581').
+        // Signing subtree is 1582' — keep these namespaces separate per #150.
+        if (bip32_path.startsWith("m/43'/60'/1581'")) {
+            QJsonObject err;
+            err["error"] = "bip32_path may not use the key-export subtree (m/43'/60'/1581')";
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
+        }
     }
 
     // No card-presence check here — requests are queued before the card is inserted.
@@ -1076,6 +1090,10 @@ QString KeycardPlugin::getPendingSigns()
         obj["timestamp"]   = req.timestamp;
         if (!req.bip32_path.isEmpty())
             obj["bip32_path"] = req.bip32_path;
+        // effective_path is what will actually be signed on-card — shown in approval UI.
+        obj["effective_path"] = req.bip32_path.isEmpty()
+                                ? domainToSignPath(req.domain)
+                                : req.bip32_path;
         pending.append(obj);
 
         if (!m_loggedRequestIds.contains(req.id)) {
