@@ -11,6 +11,7 @@
 #include <QDateTime>
 #include <QCryptographicHash>
 #include <QDebug>
+#include <QRegularExpression>
 #include <algorithm>
 #include <sodium.h>
 #include <vector>
@@ -1191,32 +1192,39 @@ QString KeycardPlugin::requestXPUB(const QString& jsonArgs)
     QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
     if (doc.isNull() || !doc.isObject()) {
         QJsonObject err;
-        err["error"] = "Expected JSON object: {\"domain\",\"caller\"}";
+        err["error"] = "Expected JSON object: {\"bip32_path\",\"caller\"}";
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
     QJsonObject args = doc.object();
-    QString domain = args.value("domain").toString();
-    QString caller = args.value("caller").toString();
+    QString bip32_path = args.value("bip32_path").toString();
+    QString caller     = args.value("caller").toString();
 
-    if (domain.isEmpty() || caller.isEmpty()) {
+    if (bip32_path.isEmpty() || caller.isEmpty()) {
         QJsonObject err;
-        err["error"] = "Missing required fields: domain, caller";
+        err["error"] = "Missing required fields: bip32_path, caller";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    // Format-only validation — card enforces all policy (0x6985 for restricted paths).
+    static const QRegularExpression kPathRe(R"(^m(/\d+'?){0,10}$)");
+    if (!kPathRe.match(bip32_path).hasMatch()) {
+        QJsonObject err;
+        err["error"] = QStringLiteral("bip32_path format invalid — expected m(/N'?){0,10}");
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
 
     QString xpubId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
     XPUBRequest req;
-    req.id        = xpubId;
-    req.domain    = domain;
-    req.caller    = caller;
-    req.status    = "pending";
-    req.timestamp = QDateTime::currentMSecsSinceEpoch();
+    req.id         = xpubId;
+    req.bip32_path = bip32_path;
+    req.caller     = caller;
+    req.status     = "pending";
+    req.timestamp  = QDateTime::currentMSecsSinceEpoch();
     m_xpubRequests.push_back(std::move(req));
 
     QString shortId = xpubId.left(8);
-    logActivity(QString("[%1] Module %2 requesting XPUB for domain %3")
-        .arg(shortId, caller, domain), "warning");
+    logActivity(QString("[%1] Module %2 requesting XPUB at path %3")
+        .arg(shortId, caller, bip32_path), "warning");
 
     QJsonObject result;
     result["xpubId"]  = xpubId;
@@ -1239,9 +1247,9 @@ QString KeycardPlugin::checkXPUBStatus(const QString& jsonOrId)
         if (req.id != xpubId) continue;
 
         QJsonObject result;
-        result["xpubId"] = xpubId;
-        result["domain"] = req.domain;
-        result["caller"] = req.caller;
+        result["xpubId"]     = xpubId;
+        result["bip32_path"] = req.bip32_path;
+        result["caller"]     = req.caller;
 
         if (req.status == "complete") {
             // SECURITY: One-read-and-drop — return xpub exactly once, then wipe.
@@ -1271,16 +1279,16 @@ QString KeycardPlugin::getPendingXPUBs()
     for (auto& req : m_xpubRequests) {
         if (req.status != "pending") continue;
         QJsonObject obj;
-        obj["xpubId"]    = req.id;
-        obj["domain"]    = req.domain;
-        obj["caller"]    = req.caller;
-        obj["timestamp"] = req.timestamp;
+        obj["xpubId"]     = req.id;
+        obj["bip32_path"] = req.bip32_path;
+        obj["caller"]     = req.caller;
+        obj["timestamp"]  = req.timestamp;
         pending.append(obj);
 
         if (!m_loggedRequestIds.contains(req.id)) {
             QString shortId = req.id.left(8);
-            logActivity(QString("[%1] New XPUB request from %2 for domain %3")
-                .arg(shortId, req.caller, req.domain), "warning");
+            logActivity(QString("[%1] New XPUB request from %2 at path %3")
+                .arg(shortId, req.caller, req.bip32_path), "warning");
             m_loggedRequestIds.insert(req.id);
         }
     }
@@ -1384,15 +1392,10 @@ QString KeycardPlugin::approveXPUB(const QString& jsonArgs)
         }
     }
 
-    // Step 2c: export XPUB at the EIP-1581 root path m/43'/60'/1581' (3 levels).
-    // This is the standard wallet XPUB — pubkey (65B) + chain code (32B).
-    // Callers use this to derive any child address offline via BIP32 public derivation.
-    // The domain is a label only; derivation always uses the fixed EIP-1581 root path.
-    // NOTE: firmware forbids chain code export at this root specifically (and master).
-    // No depth restriction — prior failures at deeper paths were implementation bugs.
-    static const QString kEip1581Path = QStringLiteral("m/43'/60'/1581'");
+    // Step 2c: export XPUB at the caller-supplied path.
+    // No host-side path policy — the card enforces all restrictions via 0x6985.
     QByteArray tlvData = m_bridge->commandSet()->exportKeyExtended(
-        true, false, kEip1581Path, Keycard::APDU::P2ExportKeyExtendedPublic);
+        true, false, req->bip32_path, Keycard::APDU::P2ExportKeyExtendedPublic);
 
     if (m_bridge) m_bridge->setOperationInProgress(false);
 
@@ -1449,8 +1452,8 @@ QString KeycardPlugin::approveXPUB(const QString& jsonArgs)
     req->xpub   = SecureBuffer(std::move(xpubRaw));
 
     QString shortId = xpubId.left(8);
-    logActivity(QString("[%1] XPUB exported for %2 domain %3")
-        .arg(shortId, req->caller, req->domain), "success");
+    logActivity(QString("[%1] XPUB exported for %2 at path %3")
+        .arg(shortId, req->caller, req->bip32_path), "success");
 
     m_sessionState = SessionState::NoSession;
     logActivity("Session closed", "success");

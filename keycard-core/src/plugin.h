@@ -129,7 +129,7 @@ private:
 
     struct XPUBRequest {
         QString id;
-        QString domain;
+        QString bip32_path;
         QString caller;
         QString status;   // "pending", "complete", "rejected", "failed"
         SecureBuffer xpub; // pubkey_hex + chaincode_hex — wiped after first read
