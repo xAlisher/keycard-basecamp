@@ -887,6 +887,10 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
     logActivity("Session closed", "success");
     logActivity(QString("Go back to %1 module to continue").arg(moduleName), "warning");
 
+    // Notify caller module — no key material in event, just authId + caller as signal.
+    // Receiver calls checkAuthStatus(authId) to retrieve the key (one-read-and-drop).
+    emit eventResponse("keycardAuthComplete", {authId, moduleName});
+
     // SECURITY: Do NOT return key here. The only path that hands out
     // the derived key is checkAuthStatus() — one-read-and-drop.
     QJsonObject result;
@@ -918,12 +922,16 @@ QString KeycardPlugin::rejectRequest(const QString& authId)
     }
 
     // Mark as rejected
+    QString caller = targetRequest->caller;
     targetRequest->status = "rejected";
     QString shortId = authId.left(8);
-    logActivity(QString("[%1] Request from %2 declined for domain %3").arg(shortId, targetRequest->caller, targetRequest->domain), "warning");
+    logActivity(QString("[%1] Request from %2 declined for domain %3").arg(shortId, caller, targetRequest->domain), "warning");
 
     // Remove from logged set (cleanup)
     m_loggedRequestIds.remove(authId);
+
+    // Notify caller module — event-driven, no polling needed.
+    emit eventResponse("keycardAuthRejected", {authId, caller});
 
     QJsonObject result;
     result["authId"] = authId;
