@@ -279,6 +279,27 @@ QString KeycardPlugin::domainToPath(const QString& domain)
     return QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'").arg(idx1).arg(idx2).arg(idx3).arg(idx4);
 }
 
+// domainToSignPath — same hash → indices as domainToPath, but rooted at m/43'/60'/1582'.
+// 1582' is a non-exportable subtree: chain code export is not permitted there, so signing
+// keys derived here cannot be exfiltrated via the EXPORT_KEY APDU. (#150)
+QString KeycardPlugin::domainToSignPath(const QString& domain)
+{
+    QByteArray namespaced = ("logos-" + domain).toUtf8();
+    unsigned char hash[32];
+    crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(namespaced.constData()), namespaced.size());
+
+    uint32_t idx1 = (uint32_t(hash[0])  << 24 | uint32_t(hash[1])  << 16 |
+                     uint32_t(hash[2])  << 8  | uint32_t(hash[3]))  & 0x7FFFFFFF;
+    uint32_t idx2 = (uint32_t(hash[4])  << 24 | uint32_t(hash[5])  << 16 |
+                     uint32_t(hash[6])  << 8  | uint32_t(hash[7]))  & 0x7FFFFFFF;
+    uint32_t idx3 = (uint32_t(hash[8])  << 24 | uint32_t(hash[9])  << 16 |
+                     uint32_t(hash[10]) << 8  | uint32_t(hash[11])) & 0x7FFFFFFF;
+    uint32_t idx4 = (uint32_t(hash[12]) << 24 | uint32_t(hash[13]) << 16 |
+                     uint32_t(hash[14]) << 8  | uint32_t(hash[15])) & 0x7FFFFFFF;
+
+    return QString("m/43'/60'/1582'/%1'/%2'/%3'/%4'").arg(idx1).arg(idx2).arg(idx3).arg(idx4);
+}
+
 QString KeycardPlugin::deriveKey(const QString& domain)
 {
     qDebug() << "KeycardPlugin::deriveKey() called, domain:" << domain;
@@ -943,10 +964,17 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
     QString payloadHash = args.value("payloadHash").toString();
     QString caller      = args.value("caller").toString();
     QString scheme      = args.value("scheme").toString().toLower();
+    QString bip32_path  = args.value("bip32_path").toString();  // optional (#149)
 
-    if (domain.isEmpty() || payloadHash.isEmpty() || caller.isEmpty()) {
+    // Either domain or bip32_path must be present (bip32_path takes precedence)
+    if (bip32_path.isEmpty() && domain.isEmpty()) {
         QJsonObject err;
-        err["error"] = "Missing required fields: domain, payloadHash, caller";
+        err["error"] = "Provide either domain or bip32_path";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    if (payloadHash.isEmpty() || caller.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: payloadHash, caller";
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
     if (scheme != "ecdsa" && scheme != "schnorr") {
@@ -957,6 +985,11 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
     if (QByteArray::fromHex(payloadHash.toUtf8()).size() != 32) {
         QJsonObject err;
         err["error"] = "payloadHash must be hex-encoded 32 bytes";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    if (!bip32_path.isEmpty() && !bip32_path.startsWith("m/")) {
+        QJsonObject err;
+        err["error"] = "bip32_path must start with \"m/\"";
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
 
@@ -972,6 +1005,7 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
     req.payloadHash = payloadHash;
     req.caller      = caller;
     req.scheme      = scheme;
+    req.bip32_path  = bip32_path;
     req.status      = "pending";
     req.timestamp   = QDateTime::currentMSecsSinceEpoch();
     m_signRequests.push_back(std::move(req));
@@ -1040,12 +1074,17 @@ QString KeycardPlugin::getPendingSigns()
         obj["scheme"]      = req.scheme;
         obj["payloadHash"] = req.payloadHash;
         obj["timestamp"]   = req.timestamp;
+        if (!req.bip32_path.isEmpty())
+            obj["bip32_path"] = req.bip32_path;
         pending.append(obj);
 
         if (!m_loggedRequestIds.contains(req.id)) {
             QString shortId = req.id.left(8);
-            logActivity(QString("[%1] New %2 sign request from %3 for domain %4")
-                .arg(shortId, req.scheme, req.caller, req.domain), "warning");
+            QString pathDesc = req.bip32_path.isEmpty()
+                ? QString("domain %1").arg(req.domain)
+                : QString("path %1").arg(req.bip32_path);
+            logActivity(QString("[%1] New %2 sign request from %3 for %4")
+                .arg(shortId, req.scheme, req.caller, pathDesc), "warning");
             m_loggedRequestIds.insert(req.id);
         }
     }
@@ -1107,8 +1146,12 @@ QString KeycardPlugin::approveSign(const QString& jsonArgs)
         return QJsonDocument(result).toJson(QJsonDocument::Compact);
     }
 
-    // Step 2: sign on-card — private key never leaves card
-    QString path = domainToPath(req->domain);
+    // Step 2: sign on-card — private key never leaves card.
+    // bip32_path takes precedence (wallet use case, #149).
+    // Domain-based signing uses 1582' subtree — non-exportable, separate from XPUB (#150).
+    QString path = req->bip32_path.isEmpty()
+                   ? domainToSignPath(req->domain)
+                   : req->bip32_path;
     QByteArray hashBytes = QByteArray::fromHex(req->payloadHash.toUtf8());
 
     uint8_t schemeP2 = (req->scheme == "schnorr") ? Keycard::APDU::P2SignSchnorr
