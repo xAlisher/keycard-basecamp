@@ -119,6 +119,23 @@ private:
         SignRequest& operator=(const SignRequest&) = delete;
     };
 
+    struct XPUBRequest {
+        QString id;
+        QString bip32_path;
+        QString caller;
+        QString status;   // "pending", "complete", "rejected", "failed"
+        SecureBuffer xpub; // pubkey_hex + chaincode_hex — wiped after first read
+        QString error;
+        qint64 timestamp;
+
+        XPUBRequest() = default;
+        XPUBRequest(XPUBRequest&&) = default;
+        XPUBRequest& operator=(XPUBRequest&&) = default;
+        XPUBRequest(const XPUBRequest&) = delete;
+        XPUBRequest& operator=(const XPUBRequest&) = delete;
+    };
+
+
 private:
     KeycardBridge* m_bridge = nullptr;
     SessionState m_sessionState = SessionState::NoSession;
