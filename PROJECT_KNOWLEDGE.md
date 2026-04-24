@@ -89,3 +89,59 @@
 | Ecosystem, cross-project refs, dependencies, tutorial adoption | `docs/skills/ecosystem.md` |
 | Security audit history | `SECURITY_REVIEW.md` |
 | Complete specification | `SPEC.md` |
+
+---
+
+## XPUB Export — Firmware Constraints (Discovered 2026-04-24)
+
+Hardware-proven on Status Keycard firmware v3.1 (caps=0x1f).
+
+### Root Cause: Two separate bugs fixed during proof
+
+**Bug 1 — Wrong TLV tags in plugin.cpp:**
+`EXPORT_KEY` response uses tags `0x80` (pubkey, 65B) and `0x82` (chain code, 32B) inside the `0xA1` template. Plugin was using `0x81` and `0x83` — found nothing, silently failed.
+
+**Bug 2 — Two-step derive+export doesn't preserve chain code:**
+`DERIVE_KEY` followed by `EXPORT_KEY P1=0x00 P2=0x02` returns `0x6985`. The firmware stores the derived private key but NOT the chain code in the "current key" state. Fix: use one-step `EXPORT_KEY P1=0x01 (derive+from_master)` for public-key-only exports.
+
+### Firmware chain code export restriction
+
+**Corrected (bitgamma, PR #145):** No depth restriction exists. The firmware forbids chain
+code export at the EIP-1581 subtree root and master key specifically — not at other depths.
+
+| Path | `P2=0x02` (extended, +chain code) | `P2=0x01` (pubkey only) |
+|------|-----------------------------------|------------------------|
+| master (`m/`) | Forbidden — chain code = zeros | SW=0x9000 ✓ |
+| `m/43'/60'/1581'` (EIP-1581 root) | SW=0x9000 ✓ real chain code | SW=0x9000 ✓ |
+| `m/43'/60'/1581'/A'/B'/C'/D'` (domain path) | Untested with correct impl¹ | SW=0x9000 ✓ |
+
+¹ Prior 0x6985 failures at 7-level paths were caused by wrong TLV tags (`0x81`/`0x83` →
+`0x80`/`0x82`) and two-step derive+export — not depth. With correct one-step export, deeper
+paths may work. Needs verification.
+
+### Correct XPUB Export Architecture
+
+**For domain-specific public key** (signing verification, key lookup):
+- Use `EXPORT_KEY P1=derive P2=0x01 (PUBLIC_ONLY)` at the domain path `m/43'/60'/1581'/<A>'/<B>'/<C>'/<D>'`
+- Returns 65-byte uncompressed public key, no chain code
+- This is what `approveXPUB` and `testXPUBExport` now do
+
+**For watch-only XPUB** (offline child key derivation, full BIP32 xpub):
+- Export at `m/43'/60'/1581'` (EIP-1581 root) → real pubkey + real chain code
+- `testEip1581Export(pin)` demonstrates this
+- Use `testEip1581Export` or implement `requestXPUBRoot` for this use case
+- Client can then derive child public keys offline using UNHARDENED BIP32 derivation
+
+**For domain-path derivation from the EIP-1581 XPUB:**
+- Change `domainToPath()` to return UNHARDENED indices (no `'`) for the 4 domain-specific components
+- Then client-side BIP32 public child derivation works
+- This is a future improvement; current API uses hardened (more secure, but no offline derivation)
+
+### Proof Binary
+
+`tests/xpub_proof.cpp` — full end-to-end hardware proof:
+1. `discoverReader` → `discoverCard` → `checkPairing` → `authorize`
+2. `removeKey` (clears old key) → `loadKey(bip39_seed)` (stores master + chain code)
+3. `testMasterExport` → proves BIP39 load works, chain code exported as zeros at master level
+4. `testEip1581Export` → proves real chain code `8d8a4740...` available at `m/43'/60'/1581'`
+5. `testXPUBExport("test-domain")` → proves domain pubkey export works at 7-level hardened path

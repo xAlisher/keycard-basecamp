@@ -2,6 +2,7 @@
 #include "KeycardBridge.h"
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/types.h>
+#include <keycard-qt/tlv_utils.h>
 #include <PCSC/winscard.h>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -25,9 +26,11 @@ KeycardPlugin::KeycardPlugin(QObject* parent)
 
 KeycardPlugin::~KeycardPlugin()
 {
-    // Wipe all auth requests on unload
+    // Wipe all pending requests on unload — SecureBuffer destructors wipe key material via RAII
     purgeCompletedRequests();
     m_authRequests.clear();
+    m_signRequests.clear();
+    m_xpubRequests.clear();
 
     if (m_bridge) {
         m_bridge->stop();
@@ -1224,6 +1227,388 @@ QString KeycardPlugin::rejectSign(const QString& jsonOrId)
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
+// --- XPUB export API (#142) ---
+
+QString KeycardPlugin::requestXPUB(const QString& jsonArgs)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        QJsonObject err;
+        err["error"] = "Expected JSON object: {\"bip32_path\",\"caller\"}";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    QJsonObject args = doc.object();
+    QString bip32_path = args.value("bip32_path").toString();
+    QString caller     = args.value("caller").toString();
+
+    if (bip32_path.isEmpty() || caller.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: bip32_path, caller";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    // Format-only validation — card enforces all policy (0x6985 for restricted paths).
+    static const QRegularExpression kPathRe(R"(^m(/\d+'?){0,10}$)");
+    if (!kPathRe.match(bip32_path).hasMatch()) {
+        QJsonObject err;
+        err["error"] = QStringLiteral("bip32_path format invalid — expected m(/N'?){0,10}");
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    QString xpubId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    XPUBRequest req;
+    req.id         = xpubId;
+    req.bip32_path = bip32_path;
+    req.caller     = caller;
+    req.status     = "pending";
+    req.timestamp  = QDateTime::currentMSecsSinceEpoch();
+    m_xpubRequests.push_back(std::move(req));
+
+    QString shortId = xpubId.left(8);
+    logActivity(QString("[%1] Module %2 requesting XPUB at path %3")
+        .arg(shortId, caller, bip32_path), "warning");
+
+    QJsonObject result;
+    result["xpubId"]  = xpubId;
+    result["status"]  = "pending";
+    result["message"] = "XPUB request created. Open Keycard UI to approve.";
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::checkXPUBStatus(const QString& jsonOrId)
+{
+    // Accept {"xpubId":"..."} or plain UUID string
+    QString xpubId = jsonOrId;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonOrId.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        xpubId = doc.object().value("xpubId").toString();
+
+    for (size_t i = 0; i < m_xpubRequests.size(); ++i) {
+        auto& req = m_xpubRequests[i];
+        if (req.id != xpubId) continue;
+
+        QJsonObject result;
+        result["xpubId"]     = xpubId;
+        result["bip32_path"] = req.bip32_path;
+        result["caller"]     = req.caller;
+
+        if (req.status == "complete") {
+            // SECURITY: One-read-and-drop — return xpub exactly once, then wipe.
+            result["status"] = "complete";
+            QByteArray xpubHex = req.xpub.ref().toHex();
+            result["xpub"] = QString::fromUtf8(xpubHex);
+            sodium_memzero(xpubHex.data(), xpubHex.size());
+            req.xpub.wipe();
+            m_loggedRequestIds.remove(xpubId);
+            m_xpubRequests.erase(m_xpubRequests.begin() + i);
+            return QJsonDocument(result).toJson(QJsonDocument::Compact);
+        }
+
+        result["status"] = req.status;
+        if (!req.error.isEmpty()) result["error"] = req.error;
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject result;
+    result["error"] = "XPUB request not found";
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::getPendingXPUBs()
+{
+    QJsonArray pending;
+    for (auto& req : m_xpubRequests) {
+        if (req.status != "pending") continue;
+        QJsonObject obj;
+        obj["xpubId"]     = req.id;
+        obj["bip32_path"] = req.bip32_path;
+        obj["caller"]     = req.caller;
+        obj["timestamp"]  = req.timestamp;
+        pending.append(obj);
+
+        if (!m_loggedRequestIds.contains(req.id)) {
+            QString shortId = req.id.left(8);
+            logActivity(QString("[%1] New XPUB request from %2 at path %3")
+                .arg(shortId, req.caller, req.bip32_path), "warning");
+            m_loggedRequestIds.insert(req.id);
+        }
+    }
+    QJsonObject result;
+    result["pending"] = pending;
+    result["count"]   = pending.size();
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::approveXPUB(const QString& jsonArgs)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        QJsonObject err;
+        err["error"] = "Expected JSON object: {\"xpubId\",\"pin\"}";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    QString xpubId = doc.object().value("xpubId").toString();
+    QString pin    = doc.object().value("pin").toString();
+
+    if (xpubId.isEmpty() || pin.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: xpubId, pin";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    qDebug() << "KeycardPlugin::approveXPUB() called for xpubId:" << xpubId;
+
+    XPUBRequest* req = nullptr;
+    for (auto& r : m_xpubRequests) {
+        if (r.id == xpubId && r.status == "pending") { req = &r; break; }
+    }
+    if (!req) {
+        QJsonObject result;
+        result["error"] = "XPUB request not found or already completed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    if (m_bridge) m_bridge->setOperationInProgress(true);
+
+    // Step 1: verify PIN (opens secure channel)
+    QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
+    if (!authResult.value("authorized").toBool()) {
+        if (m_bridge) m_bridge->setOperationInProgress(false);
+        QJsonObject result;
+        result["xpubId"] = xpubId;
+        if (authResult.contains("error")) {
+            result["status"] = "failed";
+            result["error"]  = authResult.value("error").toString();
+        } else {
+            result["status"]            = "retry";
+            result["remainingAttempts"] = authResult.value("remainingAttempts").toInt(-1);
+        }
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Step 2a: log applet version + keyUID for diagnostics
+    {
+        auto info = m_bridge->commandSet()->applicationInfo();
+        qDebug() << "KeycardPlugin::approveXPUB() applet version:"
+                 << info.appVersion << "." << info.appVersionMinor
+                 << "keyUID:" << info.keyUID.toHex()
+                 << "capabilities:" << QString("0x%1").arg(info.capabilities, 2, 16, QChar('0'));
+        logActivity(QString("[%1] Applet v%2.%3 keyUID=%4 caps=0x%5")
+                        .arg(xpubId.left(8))
+                        .arg(info.appVersion).arg(info.appVersionMinor)
+                        .arg(QString::fromUtf8(info.keyUID.toHex()))
+                        .arg(info.capabilities, 2, 16, QChar('0')), "info");
+    }
+
+    // Step 2b: probe master-key extended export to verify card has BIP32 chain code.
+    // SW 0x6985 here means the card was loaded without a BIP32 seed (raw keypair only)
+    // and XPUB export is not possible regardless of path.
+    {
+        QByteArray probe = m_bridge->commandSet()->exportKeyExtended(
+            false, false, QString(), Keycard::APDU::P2ExportKeyExtendedPublic);
+        if (probe.isEmpty()) {
+            QString probeErr = m_bridge->commandSet()->lastError();
+            qDebug() << "KeycardPlugin::approveXPUB() master probe failed:" << probeErr;
+            if (probeErr.contains("6985", Qt::CaseInsensitive)) {
+                if (m_bridge) m_bridge->setOperationInProgress(false);
+                req->status = "failed";
+                req->error  = "Card has no BIP32 seed — XPUB export requires BIP39 initialisation. "
+                              "Re-initialise card with generateMnemonic or loadKey with chain code.";
+                logActivity(QString("[%1] XPUB probe: no chain code on card").arg(xpubId.left(8)), "error");
+                m_sessionState = SessionState::NoSession;
+                logActivity("Session closed", "info");
+                QJsonObject result;
+                result["xpubId"] = xpubId;
+                result["status"] = "failed";
+                result["error"]  = req->error;
+                addActivityToResponse(result);
+                return QJsonDocument(result).toJson(QJsonDocument::Compact);
+            }
+            // Other error — log but proceed; derive+export may still work
+            qDebug() << "KeycardPlugin::approveXPUB() master probe non-6985 error (proceeding):" << probeErr;
+        } else {
+            qDebug() << "KeycardPlugin::approveXPUB() master probe succeeded (" << probe.size() << " bytes) — card has BIP32 seed";
+        }
+    }
+
+    // Step 2c: export XPUB at the caller-supplied path.
+    // No host-side path policy — the card enforces all restrictions via 0x6985.
+    QByteArray tlvData = m_bridge->commandSet()->exportKeyExtended(
+        true, false, req->bip32_path, Keycard::APDU::P2ExportKeyExtendedPublic);
+
+    if (m_bridge) m_bridge->setOperationInProgress(false);
+
+    if (tlvData.isEmpty()) {
+        req->status = "failed";
+        req->error  = m_bridge ? m_bridge->commandSet()->lastError() : "XPUB export failed";
+        QString shortId = xpubId.left(8);
+        logActivity(QString("[%1] XPUB export failed: %2").arg(shortId, req->error), "error");
+        m_sessionState = SessionState::NoSession;
+        logActivity("Session closed", "info");
+        QJsonObject result;
+        result["xpubId"] = xpubId;
+        result["status"] = "failed";
+        result["error"]  = req->error;
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Step 3: parse TLV — outer 0xA1, pubkey 0x80 (65B), chain code 0x82 (32B)
+    QByteArray inner = Keycard::TLV::findTag(tlvData, 0xA1);
+    if (inner.isEmpty()) inner = tlvData;
+
+    QByteArray pubkeyBytes    = Keycard::TLV::findTag(inner, 0x80);
+    QByteArray chainCodeBytes = Keycard::TLV::findTag(inner, 0x82);
+
+    if (pubkeyBytes.size() != 65 || chainCodeBytes.size() != 32) {
+        req->status = "failed";
+        req->error  = QString("TLV parse error: pubkey=%1B chain=%2B (expected 65+32)")
+                          .arg(pubkeyBytes.size()).arg(chainCodeBytes.size());
+        QString shortId = xpubId.left(8);
+        logActivity(QString("[%1] XPUB TLV parse failed: %2").arg(shortId, req->error), "error");
+        sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
+        sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+        sodium_memzero(inner.data(), inner.size());
+        sodium_memzero(tlvData.data(), tlvData.size());
+        m_sessionState = SessionState::NoSession;
+        logActivity("Session closed", "info");
+        QJsonObject result;
+        result["xpubId"] = xpubId;
+        result["status"] = "failed";
+        result["error"]  = req->error;
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // SECURITY: concatenate pubkey + chain code, move into SecureBuffer, wipe all intermediates
+    QByteArray xpubRaw = pubkeyBytes + chainCodeBytes;
+    sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
+    sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+    sodium_memzero(inner.data(), inner.size());
+    sodium_memzero(tlvData.data(), tlvData.size());
+
+    req->status = "complete";
+    req->xpub   = SecureBuffer(std::move(xpubRaw));
+
+    QString shortId = xpubId.left(8);
+    logActivity(QString("[%1] XPUB exported for %2 at path %3")
+        .arg(shortId, req->caller, req->bip32_path), "success");
+
+    m_sessionState = SessionState::NoSession;
+    logActivity("Session closed", "success");
+
+    QJsonObject result;
+    result["xpubId"]  = xpubId;
+    result["status"]  = "complete";
+    result["message"] = "XPUB export completed. Poll checkXPUBStatus to retrieve.";
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::rejectXPUB(const QString& jsonOrId)
+{
+    // Accept {"xpubId":"..."} or plain UUID string
+    QString xpubId = jsonOrId;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonOrId.toUtf8());
+    if (!doc.isNull() && doc.isObject())
+        xpubId = doc.object().value("xpubId").toString();
+
+    XPUBRequest* req = nullptr;
+    for (auto& r : m_xpubRequests) {
+        if (r.id == xpubId && r.status == "pending") { req = &r; break; }
+    }
+    if (!req) {
+        QJsonObject result;
+        result["error"] = "XPUB request not found or already completed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    req->status = "rejected";
+    QString shortId = xpubId.left(8);
+    logActivity(QString("[%1] XPUB request from %2 rejected").arg(shortId, req->caller), "warning");
+    m_loggedRequestIds.remove(xpubId);
+
+    QJsonObject result;
+    result["xpubId"]  = xpubId;
+    result["status"]  = "rejected";
+    result["message"] = "XPUB request rejected by user";
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+QString KeycardPlugin::testXPUBExport(const QString& jsonArgs)
+{
+    // Debug method: authorize + derive + exportKeyExtended in one call.
+    // Used for headless testing where the request/approve queue can't be chained.
+    // NOT exposed in production API — for logoscore testing only.
+    QJsonDocument doc = QJsonDocument::fromJson(jsonArgs.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        QJsonObject err;
+        err["error"] = "Expected JSON object: {\"domain\",\"pin\"}";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+    QString domain = doc.object().value("domain").toString();
+    QString pin    = doc.object().value("pin").toString();
+    if (domain.isEmpty() || pin.isEmpty()) {
+        QJsonObject err;
+        err["error"] = "Missing required fields: domain, pin";
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    qDebug() << "KeycardPlugin::testXPUBExport() domain:" << domain;
+
+    // Step 1: verify PIN
+    QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
+    if (!authResult.value("authorized").toBool()) {
+        QJsonObject result;
+        result["error"] = authResult.contains("error")
+            ? authResult.value("error").toString()
+            : QString("PIN rejected, remaining=%1").arg(authResult.value("remainingAttempts").toInt(-1));
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Step 2+3: export standard wallet XPUB at the EIP-1581 root m/43'/60'/1581'.
+    // The domain is a label only — derivation always uses this fixed path.
+    // Returns pubkey (65B) + chain code (32B). Wallet derives child keys from this offline.
+    static const QString kEip1581Path = QStringLiteral("m/43'/60'/1581'");
+    logActivity(QString("Exporting wallet XPUB at %1 (domain label: %2)").arg(kEip1581Path, domain), "info");
+    QByteArray tlvData = m_bridge->commandSet()->exportKeyExtended(
+        true, false, kEip1581Path, Keycard::APDU::P2ExportKeyExtendedPublic);
+
+    if (tlvData.isEmpty()) {
+        QJsonObject result;
+        result["error"] = m_bridge ? m_bridge->commandSet()->lastError() : "exportKeyExtended failed";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Step 4: parse TLV — outer 0xA1, pubkey 0x80 (65B), chain code 0x82 (32B)
+    QByteArray inner         = Keycard::TLV::findTag(tlvData, 0xA1);
+    if (inner.isEmpty()) inner = tlvData;
+    QByteArray pubkeyBytes    = Keycard::TLV::findTag(inner, 0x80);
+    QByteArray chainCodeBytes = Keycard::TLV::findTag(inner, 0x82);
+
+    QJsonObject result;
+    result["domain"]       = domain;
+    result["path"]         = kEip1581Path;
+    result["pubkeyBytes"]  = pubkeyBytes.size();
+    result["chainBytes"]   = chainCodeBytes.size();
+    result["pubkeyHex"]    = QString::fromLatin1(pubkeyBytes.toHex());
+    result["chainCodeHex"] = QString::fromLatin1(chainCodeBytes.toHex());
+    result["xpubHex"]      = QString::fromLatin1((pubkeyBytes + chainCodeBytes).toHex());
+    result["ok"]           = (pubkeyBytes.size() == 65 && chainCodeBytes.size() == 32);
+
+    sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
+    sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+    sodium_memzero(inner.data(), inner.size());
+    sodium_memzero(tlvData.data(), tlvData.size());
+
+    m_sessionState = SessionState::NoSession;
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
 void KeycardPlugin::purgeCompletedRequests()
 {
     // SECURITY: Wipe key material and remove completed/consumed requests.
@@ -1277,4 +1662,113 @@ void KeycardPlugin::addActivityToResponse(QJsonObject& response)
 
     // Clear queue after adding to response
     m_recentActivity.clear();
+}
+
+// testMasterExport — diagnostic: authorize + export master key (no derivation)
+// This probes whether the loaded key has chain code at root level.
+// 0x6985 here → BIP39 load didn't store chain code
+// OK here but testXPUBExport fails → derivation issue
+QString KeycardPlugin::testMasterExport(const QString& pin)
+{
+    QJsonObject result;
+    if (!m_bridge || !m_bridge->commandSet()) {
+        result["error"] = "Not connected";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
+    if (!authResult.value("authorized").toBool()) {
+        result["error"] = authResult.contains("error")
+            ? authResult.value("error").toString()
+            : QString("PIN rejected");
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Export current key (master, no derivation) as extended public key
+    QByteArray tlvData = m_bridge->commandSet()->exportKeyExtended(
+        false, false, QString(), Keycard::APDU::P2ExportKeyExtendedPublic);
+
+    if (tlvData.isEmpty()) {
+        result["masterExport"] = "FAILED";
+        result["error"] = m_bridge->commandSet()->lastError();
+        m_sessionState = SessionState::NoSession;
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QByteArray inner = Keycard::TLV::findTag(tlvData, 0xA1);
+    if (inner.isEmpty()) inner = tlvData;
+    QByteArray pubkeyBytes    = Keycard::TLV::findTag(inner, 0x80);
+    QByteArray chainCodeBytes = Keycard::TLV::findTag(inner, 0x82);
+
+    result["masterExport"] = "OK";
+    result["pubkeyBytes"]  = pubkeyBytes.size();
+    result["chainBytes"]   = chainCodeBytes.size();
+    result["pubkeyHex"]    = QString::fromLatin1(pubkeyBytes.toHex());
+    result["chainCodeHex"] = QString::fromLatin1(chainCodeBytes.toHex());
+
+    sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
+    sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+    sodium_memzero(inner.data(), inner.size());
+    sodium_memzero(tlvData.data(), tlvData.size());
+
+    m_sessionState = SessionState::NoSession;
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+// testEip1581Export — diagnostic: export XPUB at m/43'/60'/1581' (EIP-1581 root).
+// Firmware forbids chain code export at this root and at master. No depth restriction.
+// Prior 0x6985 at deeper paths was due to wrong TLV tags + two-step export (fixed).
+QString KeycardPlugin::testEip1581Export(const QString& pin)
+{
+    QJsonObject result;
+    if (!m_bridge || !m_bridge->commandSet()) {
+        result["error"] = "Not connected";
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject authResult = QJsonDocument::fromJson(authorize(pin).toUtf8()).object();
+    if (!authResult.value("authorized").toBool()) {
+        result["error"] = authResult.contains("error")
+            ? authResult.value("error").toString()
+            : QString("PIN rejected");
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    // Export with one-step derive at exactly m/43'/60'/1581' (EIP-1581 root)
+    const QString eip1581Path = QStringLiteral("m/43'/60'/1581'");
+    logActivity(QString("Testing EIP-1581 root export at %1").arg(eip1581Path), "info");
+
+    QByteArray tlvData = m_bridge->commandSet()->exportKeyExtended(
+        true, false, eip1581Path, Keycard::APDU::P2ExportKeyExtendedPublic);
+
+    if (tlvData.isEmpty()) {
+        result["error"] = m_bridge->commandSet()->lastError();
+        result["path"]  = eip1581Path;
+        m_sessionState = SessionState::NoSession;
+        addActivityToResponse(result);
+        return QJsonDocument(result).toJson(QJsonDocument::Compact);
+    }
+
+    QByteArray inner = Keycard::TLV::findTag(tlvData, 0xA1);
+    if (inner.isEmpty()) inner = tlvData;
+    QByteArray pubkeyBytes    = Keycard::TLV::findTag(inner, 0x80);
+    QByteArray chainCodeBytes = Keycard::TLV::findTag(inner, 0x82);
+
+    result["path"]         = eip1581Path;
+    result["pubkeyBytes"]  = pubkeyBytes.size();
+    result["chainBytes"]   = chainCodeBytes.size();
+    result["pubkeyHex"]    = QString::fromLatin1(pubkeyBytes.toHex());
+    result["chainCodeHex"] = QString::fromLatin1(chainCodeBytes.toHex());
+    result["ok"]           = (pubkeyBytes.size() == 65 && chainCodeBytes.size() == 32);
+
+    sodium_memzero(pubkeyBytes.data(), pubkeyBytes.size());
+    sodium_memzero(chainCodeBytes.data(), chainCodeBytes.size());
+    sodium_memzero(inner.data(), inner.size());
+    sodium_memzero(tlvData.data(), tlvData.size());
+
+    m_sessionState = SessionState::NoSession;
+    addActivityToResponse(result);
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
