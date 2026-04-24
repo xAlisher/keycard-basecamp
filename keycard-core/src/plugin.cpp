@@ -280,6 +280,42 @@ QString KeycardPlugin::domainToPath(const QString& domain)
     return QString("m/43'/60'/1581'/%1'/%2'/%3'/%4'").arg(idx1).arg(idx2).arg(idx3).arg(idx4);
 }
 
+// validateBip32Path — validates format and bounds of a caller-supplied BIP32 path.
+// Rejects paths where any segment value exceeds 2^31-1 even without the hardened marker,
+// because the vendored signWithPath() parser uses toUInt() and writes the raw uint32 into
+// the APDU — so "2147485229" (= 0x8000062D = 1581') would reach the card unmarked in the
+// string but hardened in the wire encoding.  After bounding all segments we do a string-
+// level subtree block on m/43'/60'/1581' which is now safe (no numeric bypass possible).
+static bool validateBip32Path(const QString& path, QString& outError)
+{
+    static const QRegularExpression kSegRe(R"(^(0|[1-9]\d*)('?)$)");
+    if (!path.startsWith("m/")) {
+        outError = QStringLiteral("bip32_path must start with \"m/\"");
+        return false;
+    }
+    const QStringList parts = path.mid(2).split('/');
+    for (const QString& part : parts) {
+        const auto m = kSegRe.match(part);
+        if (!m.hasMatch()) {
+            outError = QStringLiteral("bip32_path format invalid — expected m(/N'?)* with decimal indices");
+            return false;
+        }
+        bool ok = false;
+        const quint64 val = m.captured(1).toULongLong(&ok);
+        if (!ok || val > 2147483647ULL) {  // max BIP32 index = 2^31-1
+            outError = QStringLiteral("bip32_path segment out of range (max 2147483647 per segment)");
+            return false;
+        }
+    }
+    // Block the XPUB/key-export subtree (1581').  Safe after bounds check above —
+    // numeric bypass via raw hardened value (2147485229) is already rejected.
+    if (path.startsWith(QLatin1String("m/43'/60'/1581'"))) {
+        outError = QStringLiteral("bip32_path may not use the key-export subtree (m/43'/60'/1581')");
+        return false;
+    }
+    return true;
+}
+
 // domainToSignPath — same hash → indices as domainToPath, but rooted at m/43'/60'/1582'.
 // 1582' is a non-exportable subtree: chain code export is not permitted there, so signing
 // keys derived here cannot be exfiltrated via the EXPORT_KEY APDU. (#150)
@@ -989,20 +1025,10 @@ QString KeycardPlugin::requestSign(const QString& jsonArgs)
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
     if (!bip32_path.isEmpty()) {
-        // Validate BIP32 path format: m followed by (/N or /N') segments, N ∈ [0, 2^31-1]
-        static const QRegularExpression kBip32PathRe(
-            R"(^m(/(?:0|[1-9]\d{0,9})'?)*$)"
-        );
-        if (!kBip32PathRe.match(bip32_path).hasMatch()) {
+        QString pathError;
+        if (!validateBip32Path(bip32_path, pathError)) {
             QJsonObject err;
-            err["error"] = "bip32_path format invalid — expected m(/N'?)* with decimal indices";
-            return QJsonDocument(err).toJson(QJsonDocument::Compact);
-        }
-        // Block signing with keys from the XPUB/key-export subtree (1581').
-        // Signing subtree is 1582' — keep these namespaces separate per #150.
-        if (bip32_path.startsWith("m/43'/60'/1581'")) {
-            QJsonObject err;
-            err["error"] = "bip32_path may not use the key-export subtree (m/43'/60'/1581')";
+            err["error"] = pathError;
             return QJsonDocument(err).toJson(QJsonDocument::Compact);
         }
     }
