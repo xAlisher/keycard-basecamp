@@ -1388,7 +1388,8 @@ QString KeycardPlugin::approveXPUB(const QString& jsonArgs)
     // This is the standard wallet XPUB — pubkey (65B) + chain code (32B).
     // Callers use this to derive any child address offline via BIP32 public derivation.
     // The domain is a label only; derivation always uses the fixed EIP-1581 root path.
-    // FIRMWARE NOTE: P2=0x02 (extended, with chain code) ONLY works at this 3-level depth.
+    // NOTE: firmware forbids chain code export at this root specifically (and master).
+    // No depth restriction — prior failures at deeper paths were implementation bugs.
     static const QString kEip1581Path = QStringLiteral("m/43'/60'/1581'");
     QByteArray tlvData = m_bridge->commandSet()->exportKeyExtended(
         true, false, kEip1581Path, Keycard::APDU::P2ExportKeyExtendedPublic);
@@ -1671,8 +1672,9 @@ QString KeycardPlugin::testMasterExport(const QString& pin)
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
 
-// testEip1581Export — diagnostic: export XPUB at m/43'/60'/1581' (EIP-1581 root, 3 levels)
-// Tests whether firmware restricts chain code export to exactly the EIP-1581 root path.
+// testEip1581Export — diagnostic: export XPUB at m/43'/60'/1581' (EIP-1581 root).
+// Firmware forbids chain code export at this root and at master. No depth restriction.
+// Prior 0x6985 at deeper paths was due to wrong TLV tags + two-step export (fixed).
 QString KeycardPlugin::testEip1581Export(const QString& pin)
 {
     QJsonObject result;

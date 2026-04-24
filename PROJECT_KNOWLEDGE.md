@@ -106,13 +106,18 @@ Hardware-proven on Status Keycard firmware v3.1 (caps=0x1f).
 
 ### Firmware chain code export restriction
 
+**Corrected (bitgamma, PR #145):** No depth restriction exists. The firmware forbids chain
+code export at the EIP-1581 subtree root and master key specifically — not at other depths.
+
 | Path | `P2=0x02` (extended, +chain code) | `P2=0x01` (pubkey only) |
 |------|-----------------------------------|------------------------|
-| master (`m/`) | SW=0x9000, **but chain code = all zeros** | SW=0x9000 ✓ |
-| `m/43'/60'/1581'` (EIP-1581 root, 3 levels) | SW=0x9000 ✓ **real chain code** | SW=0x9000 ✓ |
-| `m/43'/60'/1581'/A'/B'/C'/D'` (7 levels hardened) | SW=0x6985 ✗ | SW=0x9000 ✓ |
+| master (`m/`) | Forbidden — chain code = zeros | SW=0x9000 ✓ |
+| `m/43'/60'/1581'` (EIP-1581 root) | SW=0x9000 ✓ real chain code | SW=0x9000 ✓ |
+| `m/43'/60'/1581'/A'/B'/C'/D'` (domain path) | Untested with correct impl¹ | SW=0x9000 ✓ |
 
-**Firmware only allows chain code export at the EIP-1581 root depth (3 levels).**
+¹ Prior 0x6985 failures at 7-level paths were caused by wrong TLV tags (`0x81`/`0x83` →
+`0x80`/`0x82`) and two-step derive+export — not depth. With correct one-step export, deeper
+paths may work. Needs verification.
 
 ### Correct XPUB Export Architecture
 
