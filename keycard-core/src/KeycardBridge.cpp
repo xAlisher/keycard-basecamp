@@ -568,6 +568,10 @@ void KeycardBridge::onCardReady(const QString& uid)
     // Defer heavy PC/SC work (select + getStatus) to next event loop iteration.
     // This keeps the slot non-blocking so QRemoteObjects heartbeat is not stalled.
     QTimer::singleShot(0, this, [this, uid]() {
+        // Guard: stop() may have reset m_commandSet, or onCardLost() may have fired
+        // between the synchronous m_cardReady=true and this deferred body.
+        if (!m_running || !m_commandSet) return;
+
         // Select applet and get status to get the REAL instance UID
         // (The uid parameter from the signal is often truncated - it's the ATR/physical serial)
         try {
@@ -607,6 +611,10 @@ void KeycardBridge::onCardReady(const QString& uid)
         } catch (const std::exception& e) {
             qWarning() << "KeycardBridge: Failed to select/getStatus:" << e.what();
         }
+
+        // Guard: re-check after blocking APDUs — onCardLost() may have fired during them.
+        // If card is gone, WaitingForCard is already set; do not overwrite it.
+        if (!m_cardReady) return;
 
         // Determine state based on card status
         if (m_remainingPIN == 0) {
