@@ -45,8 +45,9 @@ inbox/
 scripts/gp.jar
 scripts/keycard-cli
 
-# Dev card credentials — never commit
+# Dev card credentials and session state — never commit
 dev-card.md
+halt.md
 
 # Claude Code runtime files
 .claude/scheduled_tasks.lock
