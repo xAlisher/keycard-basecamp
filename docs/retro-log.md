@@ -262,3 +262,9 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 ## fail 2026-04-27
 Paused after receiving Senty findings on PR #156 instead of immediately triaging and fixing per builder-auditor protocol. Findings should be addressed in the same session without prompting.
 
+
+## fail 2026-04-27
+Asked user whether to invoke Senty R2 instead of doing it immediately per builder-auditor protocol. After pushing fixes, trigger the next review round autonomously.
+
+## fail 2026-04-27
+Fixing symptoms instead of root cause — spent multiple cycles adding workarounds (CARD_READY daemon-restart, || true in kc()) to regression.sh instead of identifying that Senty's requested changes were themselves the root cause of the regression.

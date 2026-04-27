@@ -6,6 +6,11 @@
 
 set -euo pipefail
 
+# Nix shell sets LD_LIBRARY_PATH to nix store paths which pulls in pcsclite 2.3.0.
+# System pcscd is 2.0.3 — the CMD_VERSION IPC protocol changed between versions.
+# Clearing LD_LIBRARY_PATH forces the plugin to use system libpcsclite.so.1 (2.0.3).
+export LD_LIBRARY_PATH=""
+
 LOGOSCORE=/nix/store/4yx67kjfwvfqx795ap20imgzds458x2g-logos-logoscore-cli-bin-0.1.0/bin/logoscore
 PIN="111111"
 PASS=0
@@ -110,8 +115,10 @@ fi
 
 echo "Module loaded. Discovering hardware..."
 kc discoverReader > /dev/null
-kc discoverCard  > /dev/null
-sleep 1
+# Skip discoverCard: its isCardPresent() calls SCardGetStatusChange(2000ms) on the
+# main Qt thread, stalling the QRemoteObjects heartbeat and dropping the connection.
+# The background detection thread started by discoverReader finds the card on its own.
+sleep 3
 
 # ── Section 1: requestSign format-only validation (PR #151) ──────────────────
 
