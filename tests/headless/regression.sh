@@ -3,8 +3,9 @@
 # Tests PRs #145 (XPUB bip32_path), #151 (format-only validation)
 # Note: PR #153 (eventResponse signal) is not tested here — emitted signals require a live
 # QRemoteObjects event listener and are covered by QML integration tests, not headless logoscore.
-# Requires: real card in reader, PIN 111111
-# Usage: bash tests/headless/regression.sh
+# Requires: real card in reader
+# Usage: KEYCARD_PIN=<pin> bash tests/headless/regression.sh
+#        or run without env var to be prompted interactively
 
 set -euo pipefail
 
@@ -31,7 +32,14 @@ else
     red "ERROR: logoscore not found on PATH and fallback store path missing (after GC?)"
     exit 1
 fi
-PIN="111111"
+# PIN is never hardcoded. Supply via KEYCARD_PIN env var (CI secret) or interactive prompt.
+if [ -n "${KEYCARD_PIN:-}" ]; then
+    PIN="$KEYCARD_PIN"
+else
+    printf 'Keycard PIN: ' >&2
+    read -rs PIN </dev/tty
+    printf '\n' >&2
+fi
 PASS=0
 FAIL=0
 SKIP=0
@@ -95,7 +103,7 @@ PAYLOAD32="a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1"
 # ── setup ────────────────────────────────────────────────────────────────────
 
 bold "=== Keycard Regression Suite ==="
-echo "Card PIN: $PIN"
+echo "Card PIN: (supplied)"
 echo ""
 
 # Build current branch and sync the .so into the lgpm-structured dir so the test
@@ -451,7 +459,7 @@ bold ""
 bold "--- XPUB approval (real card) ---"
 
 if [ -n "$XPUB_ID" ]; then
-    echo "  Approving xpubId: ${XPUB_ID:0:8}... with PIN $PIN"
+    echo "  Approving xpubId: ${XPUB_ID:0:8}..."
     R=$(kc approveXPUB "{\"xpubId\":\"$XPUB_ID\",\"pin\":\"$PIN\"}")
     if echo "$R" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('status')=='complete' else 1)" 2>/dev/null; then
         pass "approveXPUB returns status:complete"
@@ -496,7 +504,7 @@ AUTH_ID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin).ge
 if [ -n "$AUTH_ID" ]; then
     pass "requestAuth returns authId"
 
-    echo "  Authorizing authId: ${AUTH_ID:0:8}... with PIN $PIN"
+    echo "  Authorizing authId: ${AUTH_ID:0:8}..."
     R=$(kc authorizeRequest "$AUTH_ID" "{\"pin\":\"$PIN\"}")
     if echo "$R" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('status')=='complete' else 1)" 2>/dev/null; then
         pass "authorizeRequest returns status:complete"

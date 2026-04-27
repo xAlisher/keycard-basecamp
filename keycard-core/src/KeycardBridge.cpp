@@ -610,6 +610,10 @@ void KeycardBridge::onCardReady(const QString& uid)
             }
         } catch (const std::exception& e) {
             qWarning() << "KeycardBridge: Failed to select/getStatus:" << e.what();
+            // Do not fall through — member values (remainingPIN/PUK/keyInitialized) are stale.
+            // Transition to ConnectionError so the UI shows a recoverable error state.
+            setState(State::ConnectionError);
+            return;
         }
 
         // Guard: re-check after blocking APDUs — onCardLost() may have fired during them.
