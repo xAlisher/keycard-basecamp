@@ -211,6 +211,17 @@ FocusScope {
             }
         } catch (e) {}
 
+        // Check XPUB requests
+        var xpubResult = logos.callModule("keycard", "getPendingXPUBs", [])
+        try {
+            var xpubResponse = callModuleParse(xpubResult)
+            if (xpubResponse && xpubResponse.pending && xpubResponse.pending.length > 0 && !root.currentRequest) {
+                root.currentRequest = xpubResponse.pending[0]
+                activityLog.addEntry(ts, "New XPUB request from " + root.currentRequest.caller, "warning")
+                return
+            }
+        } catch (e) {}
+
         if (!wasPendingChecked) {
             activityLog.addEntry(ts, "No pending requests", "success")
         }
@@ -220,18 +231,26 @@ FocusScope {
         if (!currentRequest) return
         verifyingPin = true
         var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
-        var isSign = !!currentRequest.signId
+        var isXPUB = !!currentRequest.xpubId
+        var isSign = !isXPUB && !!currentRequest.signId
 
-        if (isSign) {
+        if (isXPUB) {
+            activityLog.addEntry(ts, "Exporting XPUB for " + currentRequest.caller + "...", "info")
+        } else if (isSign) {
             activityLog.addEntry(ts, "Signing for " + currentRequest.caller + "...", "info")
         } else {
             activityLog.addEntry(ts, "Authorizing request from " + currentRequest.caller + "...", "info")
         }
 
         hwTimer.stop()
-        var result = isSign
-            ? logos.callModule("keycard", "approveSign", [JSON.stringify({signId: currentRequest.signId, pin: pinValue})])
-            : logos.callModule("keycard", "authorizeRequest", [currentRequest.authId, pinValue])
+        var result
+        if (isXPUB) {
+            result = logos.callModule("keycard", "approveXPUB", [JSON.stringify({xpubId: currentRequest.xpubId, pin: pinValue})])
+        } else if (isSign) {
+            result = logos.callModule("keycard", "approveSign", [JSON.stringify({signId: currentRequest.signId, pin: pinValue})])
+        } else {
+            result = logos.callModule("keycard", "authorizeRequest", [currentRequest.authId, pinValue])
+        }
         hwTimer.start()
         verifyingPin = false
 
@@ -249,7 +268,9 @@ FocusScope {
                 currentRequest = null
                 pinValue = ""
                 pendingChecked = false
-                if (isSign) {
+                if (isXPUB) {
+                    activityLog.addEntry(ts2, "XPUB exported — return to " + caller, "success")
+                } else if (isSign) {
                     activityLog.addEntry(ts2, "Signed — return to " + caller, "success")
                 }
             } else {
@@ -274,8 +295,11 @@ FocusScope {
 
     function declineRequest() {
         if (!currentRequest) return
-        var isSign = !!currentRequest.signId
-        if (isSign) {
+        var isXPUB = !!currentRequest.xpubId
+        var isSign = !isXPUB && !!currentRequest.signId
+        if (isXPUB) {
+            logos.callModule("keycard", "rejectXPUB", [currentRequest.xpubId])
+        } else if (isSign) {
             logos.callModule("keycard", "rejectSign", [currentRequest.signId])
         } else {
             logos.callModule("keycard", "rejectRequest", [currentRequest.authId])
@@ -355,13 +379,48 @@ FocusScope {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                // Empty state
+                // Welcome screen — shown until card is paired (#147)
+                Column {
+                    anchors.centerIn: parent
+                    visible: root.currentRequest === null && !root.paired
+                    spacing: 20
+
+                    Image {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        source: Qt.resolvedUrl("../icons/keycard.png")
+                        width: 72
+                        height: 72
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
+
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "Welcome to Keycard"
+                        color: DesignTokens.foreground
+                        font.pixelSize: 28
+                        font.weight: Font.Bold
+                        font.family: DesignTokens.fontPrimary
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 320
+                        text: "Your hardware key for Basecamp. Pair your card to authorize requests, sign messages, and protect your identity."
+                        color: DesignTokens.foregroundSecondary
+                        font.pixelSize: DesignTokens.fontSizeSmall
+                        font.family: DesignTokens.fontPrimary
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                // Idle state — paired, no pending request
                 Text {
                     anchors.centerIn: parent
-                    visible: root.currentRequest === null
-                    text: root.pairingStatus === "not_paired"
-                          ? "Pair your Keycard to continue"
-                          : (root.pendingChecked ? "No pending requests" : "Looking for pending requests...")
+                    visible: root.currentRequest === null && root.paired
+                    text: root.pendingChecked ? "No pending requests" : "Looking for pending requests..."
                     color: DesignTokens.foregroundSecondary
                     font.pixelSize: 24
                     font.weight: Font.Medium
@@ -383,6 +442,8 @@ FocusScope {
                             Layout.alignment: Qt.AlignHCenter
                             text: {
                                 if (!root.currentRequest) return ""
+                                if (root.currentRequest.xpubId)
+                                    return root.currentRequest.caller + " requesting XPUB export"
                                 return root.currentRequest.signId
                                     ? root.currentRequest.caller + " requesting signature"
                                     : root.currentRequest.caller + " requesting access"
@@ -396,9 +457,11 @@ FocusScope {
                         Text {
                             Layout.alignment: Qt.AlignHCenter
                             Layout.preferredWidth: 345
-                            text: root.currentRequest && root.currentRequest.signId
-                                  ? "Sign will produce a Schnorr signature with your Keycard key"
-                                  : "Approve will allow the module to derive an encryption key only for approved path"
+                            text: root.currentRequest && root.currentRequest.xpubId
+                                  ? "Export will return the extended public key (pubkey + chain code) for BIP32 derivation"
+                                  : root.currentRequest && root.currentRequest.signId
+                                    ? "Sign will produce a Schnorr signature with your Keycard key"
+                                    : "Approve will allow the module to derive an encryption key only for approved path"
                             color: DesignTokens.foregroundSecondary
                             font.pixelSize: DesignTokens.fontSizeSmall
                             font.family: DesignTokens.fontPrimary
@@ -645,7 +708,7 @@ FocusScope {
                             Text {
                                 anchors.centerIn: parent
                                 visible: !root.verifyingPin
-                                text: root.currentRequest && root.currentRequest.signId ? "Sign" : "Approve"
+                                text: root.currentRequest && root.currentRequest.xpubId ? "Export" : (root.currentRequest && root.currentRequest.signId ? "Sign" : "Approve")
                                 color: DesignTokens.foreground
                                 font.pixelSize: 14
                                 font.weight: Font.Medium
