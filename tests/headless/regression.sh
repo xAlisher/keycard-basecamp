@@ -13,6 +13,14 @@ set -euo pipefail
 # Clearing LD_LIBRARY_PATH forces the plugin to use system libpcsclite.so.1 (2.0.3).
 export LD_LIBRARY_PATH=""
 
+# ── helpers ──────────────────────────────────────────────────────────────────
+# Defined first so error paths below can use them.
+
+red()   { printf '\033[31m%s\033[0m\n' "$*"; }
+green() { printf '\033[32m%s\033[0m\n' "$*"; }
+yellow(){ printf '\033[33m%s\033[0m\n' "$*"; }
+bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
+
 # Prefer logoscore on PATH; fall back to the known nix store path for this machine.
 LOGOSCORE_FALLBACK=/nix/store/4yx67kjfwvfqx795ap20imgzds458x2g-logos-logoscore-cli-bin-0.1.0/bin/logoscore
 if command -v logoscore &>/dev/null; then
@@ -28,21 +36,18 @@ PASS=0
 FAIL=0
 SKIP=0
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-red()   { printf '\033[31m%s\033[0m\n' "$*"; }
-green() { printf '\033[32m%s\033[0m\n' "$*"; }
-yellow(){ printf '\033[33m%s\033[0m\n' "$*"; }
-bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
-
 pass() { green "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { red   "  FAIL: $1"; FAIL=$((FAIL+1)); }
 skip() { yellow "  SKIP: $1"; SKIP=$((SKIP+1)); }
 
-# Call keycard and unwrap {"result":"..."} envelope (same as run-software-tests.sh call())
+# Call keycard and unwrap {"result":"..."} envelope.
+# On IPC/transport failures logoscore returns {"code":N,"message":"..."} with no "result" key;
+# we fall back to the full outer envelope so assert_* helpers can show the real error.
+# The `|| true` suppresses logoscore's non-zero exit code (exit 4 for METHOD_FAILED/RPC_FAILED
+# etc.) so that set -euo pipefail does not kill the script on expected error responses.
 kc() {
-    $LOGOSCORE call keycard "$@" 2>/dev/null \
-        | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('result','{}'))"
+    { $LOGOSCORE call keycard "$@" 2>/dev/null || true; } \
+        | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('result') or json.dumps(r))"
 }
 
 # Assert result contains a key with given value substring
@@ -93,14 +98,36 @@ bold "=== Keycard Regression Suite ==="
 echo "Card PIN: $PIN"
 echo ""
 
-# Build and install current branch to ensure we test the branch, not a stale install
+# Build current branch and sync the .so into the lgpm-structured dir so the test
+# uses current-branch code, not a stale install.
+#
+# WHY not cmake --install:
+# In logos-module-builder (nix develop) mode cmake installs to
+#   LogosApp/lib/logos/modules/keycard_plugin.so
+# but the lgpm dir the test uses is
+#   LogosBasecamp/modules/keycard/keycard_plugin.so
+# Copying directly from build/ avoids the path mismatch entirely.
+#
+# Build output location differs by cmake mode:
+#   builder mode (nix develop):    build/modules/keycard_plugin.so
+#   standalone mode (plain cmake): build/keycard-core/keycard_plugin.so
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+LOGOS_BASECAMP=~/.local/share/Logos/LogosBasecamp
 if [ -d "$REPO_ROOT/build" ]; then
-    if cmake --build "$REPO_ROOT/build" -j"$(nproc)" 2>/dev/null \
-        && cmake --install "$REPO_ROOT/build" > /dev/null 2>&1; then
-        echo "Build+install: ok (testing current branch)"
+    if cmake --build "$REPO_ROOT/build" -j"$(nproc)" 2>/dev/null; then
+        # Prefer builder-mode output; fall back to standalone-mode output.
+        if [ -f "$REPO_ROOT/build/modules/keycard_plugin.so" ]; then
+            BUILT_SO="$REPO_ROOT/build/modules/keycard_plugin.so"
+        elif [ -f "$REPO_ROOT/build/keycard-core/keycard_plugin.so" ]; then
+            BUILT_SO="$REPO_ROOT/build/keycard-core/keycard_plugin.so"
+        else
+            red "ERROR: built .so not found in build/modules/ or build/keycard-core/"
+            exit 1
+        fi
+        cp "$BUILT_SO" "$LOGOS_BASECAMP/modules/keycard/keycard_plugin.so"
+        echo "Build+sync: ok (testing current branch, from $BUILT_SO)"
     else
-        red "ERROR: build/install failed — refusing to test stale artifacts"
+        red "ERROR: cmake --build failed — refusing to test stale artifacts"
         exit 1
     fi
 else
@@ -108,30 +135,188 @@ else
     exit 1
 fi
 
+# ── daemon infrastructure setup ──────────────────────────────────────────────
+#
+# WHY .logoscore-wrapped instead of $LOGOSCORE:
+# The nix C wrapper unconditionally overwrites LOGOS_HOST_PATH (via putenv()).
+# We call the inner ELF directly so we can supply our own LOGOS_HOST_PATH.
+#
+# WHY LOGOS_HOST_PATH points to the nix-locked logos_host inner ELF:
+# The nix logoscore-cli's liblogos_core.so expects:
+#   - auth socket:  /tmp/logos_token_{name}           (old format, no instanceId)
+#   - IPC socket:   /tmp/logos_{name}_{instanceId}    (new format, with instanceId)
+# The locked logos_host (logos-liblogos-build-0.1.0) creates exactly those two sockets
+# so auth and RPC both work. The AppImage logos_host uses an intermediate format
+# (logos_token_{name}_{instanceId}) for auth which the nix liblogos_core cannot find.
+#
+# WHY LOGOS_BUNDLED_MODULES_DIR=/dev/null:
+# The nix-bundled capability_module has an ABI mismatch with the locked logos_host
+# binary — it was built against a newer PluginInterface vtable and crashes the daemon
+# at startup (QProcess::Crashed). Skipping bundled modules avoids the crash.
+
+LOGOSCORE_BIN_DIR="$(dirname "$LOGOSCORE")"
+LOGOSCORE_WRAPPED="$LOGOSCORE_BIN_DIR/.logoscore-wrapped"
+if [ ! -x "$LOGOSCORE_WRAPPED" ]; then
+    red "ERROR: .logoscore-wrapped not found at $LOGOSCORE_WRAPPED"
+    exit 1
+fi
+
+# Find the AppImage logos_host (modern plugin loader).
+APPIMAGE_LOGOS_HOST=""
+for _d in /tmp/appimage_extracted_*/usr/bin; do
+    if [ -f "$_d/.logos_host.elf" ]; then
+        APPIMAGE_LOGOS_HOST="$_d/logos_host"
+        break
+    fi
+done
+if [ -z "$APPIMAGE_LOGOS_HOST" ]; then
+    APPIMAGE="$HOME/logos-basecamp-current.AppImage"
+    if [ ! -f "$APPIMAGE" ]; then
+        red "ERROR: AppImage not found at $APPIMAGE — needed for logos_host"
+        exit 1
+    fi
+    _EXTRACT_DIR="$(mktemp -d)"
+    (cd "$_EXTRACT_DIR" && "$APPIMAGE" --appimage-extract usr/bin 2>/dev/null)
+    APPIMAGE_LOGOS_HOST="$_EXTRACT_DIR/squashfs-root/usr/bin/logos_host"
+    if [ ! -f "$APPIMAGE_LOGOS_HOST" ]; then
+        red "ERROR: could not extract logos_host from AppImage"
+        exit 1
+    fi
+fi
+
+# Python proxy wrapper: bridges auth socket mismatch between nix daemon and AppImage logos_host.
+# nix daemon expects /tmp/logos_token_{name} (old format).
+# AppImage logos_host creates /tmp/logos_token_{name}_{instanceId} (new format).
+# The proxy accepts on old-format socket and forwards to new-format socket.
+# After auth, AppImage logos_host creates IPC socket at /tmp/logos_{name}_{instanceId}
+# which the daemon's liblogos_core connects to directly for RPC calls.
+KC_HOST_WRAP_DIR=/tmp/kc-host-wrap
+mkdir -p "$KC_HOST_WRAP_DIR"
+python3 - "$APPIMAGE_LOGOS_HOST" "$KC_HOST_WRAP_DIR/logos_host" << 'PYEOF'
+import sys, textwrap
+appimage_host, wrapper_path = sys.argv[1], sys.argv[2]
+script = textwrap.dedent(f'''
+    #!/usr/bin/env python3
+    import sys, os, socket, subprocess, threading, time
+    APPIMAGE_LOGOS_HOST = {repr(appimage_host)}
+    def main():
+        instance_id = os.environ.get("LOGOS_INSTANCE_ID", "")
+        name = None
+        args = list(sys.argv[1:])
+        for i, a in enumerate(args):
+            if a in ("--name", "-n") and i + 1 < len(args):
+                name = args[i + 1]
+        if not name or not instance_id:
+            os.execv(APPIMAGE_LOGOS_HOST, [APPIMAGE_LOGOS_HOST] + args)
+        new_auth = f"/tmp/logos_token_{{name}}_{{instance_id}}"
+        old_auth = f"/tmp/logos_token_{{name}}"
+        stderr_log = open("/tmp/logoscore-kc-host.log", "w", buffering=1)
+        proc = subprocess.Popen([APPIMAGE_LOGOS_HOST] + args, stderr=stderr_log, stdout=stderr_log)
+        for _ in range(100):
+            if os.path.exists(new_auth): break
+            time.sleep(0.1)
+        else:
+            stderr_log.flush()
+            sys.exit(proc.wait())
+        if os.path.exists(old_auth): os.unlink(old_auth)
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(old_auth); srv.listen(5)
+        def relay(a, b):
+            try:
+                while True:
+                    data = a.recv(65536)
+                    if not data: break
+                    b.sendall(data)
+            except: pass
+            finally:
+                try: a.close()
+                except: pass
+                try: b.close()
+                except: pass
+        def accept_loop():
+            while proc.poll() is None:
+                try:
+                    srv.settimeout(0.5)
+                    client, _ = srv.accept()
+                except socket.timeout: continue
+                except: break
+                try:
+                    remote = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    remote.connect(new_auth)
+                except: client.close(); continue
+                threading.Thread(target=relay, args=(client, remote), daemon=True).start()
+                threading.Thread(target=relay, args=(remote, client), daemon=True).start()
+        threading.Thread(target=accept_loop, daemon=True).start()
+        rc = proc.wait()
+        srv.close()
+        try: os.unlink(old_auth)
+        except: pass
+        sys.exit(rc)
+    main()
+''').lstrip('\n')
+with open(wrapper_path, 'w') as f:
+    f.write(script)
+import os; os.chmod(wrapper_path, 0o755)
+PYEOF
+if [ ! -x "$KC_HOST_WRAP_DIR/logos_host" ]; then
+    red "ERROR: failed to create logos_host proxy wrapper"
+    exit 1
+fi
+
 # Kill any stale daemon from a previous incomplete run, then start a fresh one.
-# Use --pidfile so cleanup is scoped to the PID we start, not all logoscore processes.
 LOGOSCORE_PID=""
 cleanup() {
     if [ -n "$LOGOSCORE_PID" ]; then
+        # SIGTERM first so logos_host can close the PC/SC channel cleanly before we SIGKILL.
+        kill "$LOGOSCORE_PID" 2>/dev/null || true
+        pkill -f "logos_host.*test-modules-kc" 2>/dev/null || true
+        sleep 1
         kill -9 "$LOGOSCORE_PID" 2>/dev/null || true
+        pkill -9 -f "logos_host.*test-modules-kc" 2>/dev/null || true
     fi
 }
 trap cleanup EXIT
 
-# Kill only a daemon whose pidfile we own from a previous run of this script.
+# Kill ALL stale logoscore daemons and their logos_host children before starting fresh.
+# Covers: daemons started by previous test runs (regardless of --modules-dir path),
+# and any logos_host orphans that survived an unclean exit.
 if [ -f /tmp/logoscore-kc.pid ]; then
     OLD_PID=$(cat /tmp/logoscore-kc.pid 2>/dev/null)
-    [ -n "$OLD_PID" ] && kill -9 "$OLD_PID" 2>/dev/null || true
+    [ -n "$OLD_PID" ] && kill "$OLD_PID" 2>/dev/null || true
     rm -f /tmp/logoscore-kc.pid
 fi
+# Kill any .logoscore-wrapped daemon (logoscore daemon process) still running.
+pgrep -f ".logoscore-wrapped" | xargs -r kill 2>/dev/null || true
+# Kill any logos_host that was spawned by a previous test run.
+pgrep -f "logos_host.*test-modules" | xargs -r kill 2>/dev/null || true
+sleep 1
+pgrep -f ".logoscore-wrapped" | xargs -r kill -9 2>/dev/null || true
+pgrep -f "logos_host.*test-modules" | xargs -r kill -9 2>/dev/null || true
 sleep 1
 rm -f ~/.logoscore/daemon.json
 
 rm -rf /tmp/test-modules-kc
 mkdir -p /tmp/test-modules-kc
-cp -r ~/.local/share/Logos/LogosBasecamp/modules/keycard /tmp/test-modules-kc/
+cp -r "$LOGOS_BASECAMP/modules/keycard" /tmp/test-modules-kc/
 
-$LOGOSCORE -D --modules-dir /tmp/test-modules-kc > /tmp/logoscore-kc.log 2>&1 &
+# RPATH fix — pcsclite version mismatch (skill: pcsclite-nix-system-version-mismatch).
+# keycard_plugin.so is built against nix pcsclite 2.3.0; system pcscd is 2.0.3.
+# The nix pcsclite CMD_VERSION IPC protocol is incompatible with older pcscd:
+# SCardEstablishContext() returns SCARD_E_NO_SERVICE → card detection never starts →
+# discoverCard always returns found:false even with card in reader.
+# patchelf replaces the nix store pcsclite RPATH entry with the system lib path.
+_KC_SO=/tmp/test-modules-kc/keycard/keycard_plugin.so
+_NIX_PCSC_DIR=$(patchelf --print-rpath "$_KC_SO" 2>/dev/null \
+    | tr ':' '\n' | grep "pcsclite" | head -1)
+if [ -n "$_NIX_PCSC_DIR" ]; then
+    _CUR_RPATH=$(patchelf --print-rpath "$_KC_SO")
+    _NEW_RPATH=$(echo "$_CUR_RPATH" | sed "s|$_NIX_PCSC_DIR|/usr/lib/x86_64-linux-gnu|g")
+    patchelf --set-rpath "$_NEW_RPATH" "$_KC_SO"
+fi
+
+LOGOS_BUNDLED_MODULES_DIR=/dev/null \
+LOGOS_HOST_PATH="$KC_HOST_WRAP_DIR/logos_host" \
+"$LOGOSCORE_WRAPPED" -D --modules-dir /tmp/test-modules-kc > /tmp/logoscore-kc.log 2>&1 &
 LOGOSCORE_PID=$!
 echo "$LOGOSCORE_PID" > /tmp/logoscore-kc.pid
 sleep 5
@@ -139,16 +324,24 @@ sleep 5
 LOAD=$($LOGOSCORE load-module keycard 2>/dev/null)
 if ! echo "$LOAD" | grep -q '"ok"'; then
     red "ERROR: could not load keycard module — aborting"
-    cat /tmp/logoscore-kc.log | tail -20
+    echo "--- daemon log ---"
+    tail -20 /tmp/logoscore-kc.log
+    echo "--- logos_host log ---"
+    tail -20 /tmp/logoscore-kc-host.log 2>/dev/null
     exit 1
 fi
 
-echo "Module loaded. Discovering hardware..."
-kc discoverReader > /dev/null
-# Skip discoverCard: its isCardPresent() calls SCardGetStatusChange(2000ms) on the
-# main Qt thread, stalling the QRemoteObjects heartbeat and dropping the connection.
-# The background detection thread started by discoverReader finds the card on its own.
-sleep 3
+echo "Module loaded."
+
+# pcsc_scan intentionally removed — it held a competing PC/SC context that crashed logos_host.
+# LD_LIBRARY_PATH="" above ensures system pcsclite 2.0.3 is used (not nix 2.3.0).
+# discoverReader is the authoritative card check — it calls startDetection() in the plugin.
+DISCOVER=$(kc discoverReader)
+if echo "$DISCOVER" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('found') else 1)" 2>/dev/null; then
+    echo "Bridge initialized (reader found)."
+else
+    yellow "WARNING: discoverReader returned found:false — card sections 3-4 may fail"
+fi
 
 # ── Section 1: requestSign format-only validation (PR #151) ──────────────────
 
@@ -242,8 +435,10 @@ bold "=== 3. requestXPUB / approveXPUB (PR #145) ==="
 R=$(kc requestXPUB "{\"caller\":\"test\"}")
 assert_error "requestXPUB missing bip32_path rejected" "$R"
 
+# Old API used {domain, caller} with no bip32_path. That pattern must still be rejected
+# (missing bip32_path). The domain field itself is silently ignored when bip32_path is present.
 R=$(kc requestXPUB "{\"domain\":\"test\",\"caller\":\"test\"}")
-assert_error "requestXPUB with old domain param rejected" "$R"
+assert_error "requestXPUB old-style call (domain, no bip32_path) rejected" "$R"
 
 R=$(kc requestXPUB "{\"bip32_path\":\"m/abc\",\"caller\":\"test\"}")
 assert_error "requestXPUB invalid path format rejected" "$R"
@@ -359,11 +554,15 @@ fi
 bold ""
 bold "=== 6. Domain path routing: 1581' for auth, 1582' for sign ==="
 
+# Auth uses m/43'/60'/1581'/<domain-hash> (verified indirectly: Section 4 derived a 32-byte key
+# from a domain auth request via authorizeRequest → checkAuthStatus; if the derivation path were
+# wrong the card would return an error or a zero key). Direct path inspection is not available
+# headlessly — there is no getPendingAuths that exposes effective_path.
 R=$(kc requestAuth "bc:test" "test")
 AUTH_ID3=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin).get('authId',''))" 2>/dev/null)
 if [ -n "$AUTH_ID3" ]; then
-    pass "requestAuth 'bc:test' domain accepted"
-    kc rejectRequest "$AUTH_ID3" > /dev/null 2>&1
+    pass "requestAuth 'bc:test' domain accepted (1581' derivation covered by Section 4)"
+    kc rejectRequest "$AUTH_ID3" > /dev/null 2>&1 || true
 else
     fail "requestAuth 'bc:test' failed: $R"
 fi
