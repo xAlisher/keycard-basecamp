@@ -257,3 +257,8 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 
 **Pattern:** Any logoscore CLI call that passes a pure-numeric argument to a `QString` method will fail. Always pass numeric values as part of a JSON object string, or use non-numeric test values. Document this in logoscore-headless-testing skill.
 
+---
+
+## fail 2026-04-27
+Paused after receiving Senty findings on PR #156 instead of immediately triaging and fixing per builder-auditor protocol. Findings should be addressed in the same session without prompting.
+

@@ -49,6 +49,16 @@ assert_error() {
     fi
 }
 
+# Assert result contains a non-empty value for the given key
+assert_key_exists() {
+    local desc="$1" key="$2" got="$3"
+    if echo "$got" | python3 -c "import sys,json; d=json.load(sys.stdin); v=d.get('$key',''); exit(0 if v != '' else 1)" 2>/dev/null; then
+        pass "$desc"
+    else
+        fail "$desc  [got: $got]"
+    fi
+}
+
 # Assert result has NO "error" field
 assert_ok() {
     local desc="$1" got="$2"
@@ -66,6 +76,19 @@ PAYLOAD32="a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1"
 bold "=== Keycard Regression Suite ==="
 echo "Card PIN: $PIN"
 echo ""
+
+# Build and install current branch to ensure we test the branch, not a stale install
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [ -d "$REPO_ROOT/build" ]; then
+    if cmake --build "$REPO_ROOT/build" -j"$(nproc)" 2>/dev/null \
+        && cmake --install "$REPO_ROOT/build" > /dev/null 2>&1; then
+        echo "Build+install: ok (testing current branch)"
+    else
+        yellow "WARNING: build/install failed — testing currently installed module (may not reflect branch)"
+    fi
+else
+    yellow "WARNING: no build/ dir found — testing whatever is currently installed"
+fi
 
 # Kill stale daemon
 pkill -9 -f "logoscore" 2>/dev/null || true
@@ -96,16 +119,16 @@ bold ""
 bold "=== 1. requestSign bip32_path format validation (PR #151) ==="
 
 R=$(kc requestSign "{\"payloadHash\":\"$PAYLOAD32\",\"caller\":\"test\",\"scheme\":\"schnorr\",\"bip32_path\":\"m\"}")
-assert_has "bare 'm' is valid" "signId" "" "$R"
+assert_key_exists "bare 'm' is valid" "signId" "$R"
 
 R=$(kc requestSign "{\"payloadHash\":\"$PAYLOAD32\",\"caller\":\"test\",\"scheme\":\"schnorr\",\"bip32_path\":\"m/43'/60'/1582'\"}")
-assert_has "standard signing path" "signId" "" "$R"
+assert_key_exists "standard signing path" "signId" "$R"
 
 R=$(kc requestSign "{\"payloadHash\":\"$PAYLOAD32\",\"caller\":\"test\",\"scheme\":\"ecdsa\",\"bip32_path\":\"m/44'/0'/0'/0/0\"}")
-assert_has "wallet path mixed hardened/normal" "signId" "" "$R"
+assert_key_exists "wallet path mixed hardened/normal" "signId" "$R"
 
 R=$(kc requestSign "{\"payloadHash\":\"$PAYLOAD32\",\"caller\":\"test\",\"scheme\":\"schnorr\",\"bip32_path\":\"m/43'/60'/1581'\"}")
-assert_has "1581' path no longer blocked host-side" "signId" "" "$R"
+assert_key_exists "1581' path no longer blocked host-side" "signId" "$R"
 
 R=$(kc requestSign "{\"payloadHash\":\"$PAYLOAD32\",\"caller\":\"test\",\"scheme\":\"schnorr\",\"bip32_path\":\"m/abc\"}")
 assert_error "non-decimal segment rejected" "$R"
@@ -123,7 +146,7 @@ R=$(kc requestSign "{\"payloadHash\":\"tooshort\",\"caller\":\"test\",\"scheme\"
 assert_error "wrong-length payloadHash rejected" "$R"
 
 R=$(kc requestSign "{\"domain\":\"bc:test\",\"payloadHash\":\"$PAYLOAD32\",\"caller\":\"test\",\"scheme\":\"schnorr\"}")
-assert_has "domain-only (no bip32_path) still accepted" "signId" "" "$R"
+assert_key_exists "domain-only (no bip32_path) still accepted" "signId" "$R"
 
 # ── Section 2: getPendingSigns effective_path ─────────────────────────────────
 
