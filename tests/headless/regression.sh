@@ -13,7 +13,16 @@ set -euo pipefail
 # Clearing LD_LIBRARY_PATH forces the plugin to use system libpcsclite.so.1 (2.0.3).
 export LD_LIBRARY_PATH=""
 
-LOGOSCORE=/nix/store/4yx67kjfwvfqx795ap20imgzds458x2g-logos-logoscore-cli-bin-0.1.0/bin/logoscore
+# Prefer logoscore on PATH; fall back to the known nix store path for this machine.
+LOGOSCORE_FALLBACK=/nix/store/4yx67kjfwvfqx795ap20imgzds458x2g-logos-logoscore-cli-bin-0.1.0/bin/logoscore
+if command -v logoscore &>/dev/null; then
+    LOGOSCORE=$(command -v logoscore)
+elif [ -x "$LOGOSCORE_FALLBACK" ]; then
+    LOGOSCORE="$LOGOSCORE_FALLBACK"
+else
+    red "ERROR: logoscore not found on PATH and fallback store path missing (after GC?)"
+    exit 1
+fi
 PIN="111111"
 PASS=0
 FAIL=0
@@ -99,8 +108,22 @@ else
     exit 1
 fi
 
-# Kill stale daemon
-pkill -9 -f "logoscore" 2>/dev/null || true
+# Kill any stale daemon from a previous incomplete run, then start a fresh one.
+# Use --pidfile so cleanup is scoped to the PID we start, not all logoscore processes.
+LOGOSCORE_PID=""
+cleanup() {
+    if [ -n "$LOGOSCORE_PID" ]; then
+        kill -9 "$LOGOSCORE_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
+# Kill only a daemon whose pidfile we own from a previous run of this script.
+if [ -f /tmp/logoscore-kc.pid ]; then
+    OLD_PID=$(cat /tmp/logoscore-kc.pid 2>/dev/null)
+    [ -n "$OLD_PID" ] && kill -9 "$OLD_PID" 2>/dev/null || true
+    rm -f /tmp/logoscore-kc.pid
+fi
 sleep 1
 rm -f ~/.logoscore/daemon.json
 
@@ -109,6 +132,8 @@ mkdir -p /tmp/test-modules-kc
 cp -r ~/.local/share/Logos/LogosBasecamp/modules/keycard /tmp/test-modules-kc/
 
 $LOGOSCORE -D --modules-dir /tmp/test-modules-kc > /tmp/logoscore-kc.log 2>&1 &
+LOGOSCORE_PID=$!
+echo "$LOGOSCORE_PID" > /tmp/logoscore-kc.pid
 sleep 5
 
 LOAD=$($LOGOSCORE load-module keycard 2>/dev/null)
@@ -384,8 +409,6 @@ else
 fi
 yellow "  SKIP: $SKIP"
 echo ""
-
-pkill -9 -f "logoscore" 2>/dev/null || true
 
 if [ "$FAIL" -gt 0 ]; then
     exit 1
