@@ -89,10 +89,12 @@ if [ -d "$REPO_ROOT/build" ]; then
         && cmake --install "$REPO_ROOT/build" > /dev/null 2>&1; then
         echo "Build+install: ok (testing current branch)"
     else
-        yellow "WARNING: build/install failed — testing currently installed module (may not reflect branch)"
+        red "ERROR: build/install failed — refusing to test stale artifacts"
+        exit 1
     fi
 else
-    yellow "WARNING: no build/ dir found — testing whatever is currently installed"
+    red "ERROR: no build/ dir found — run: cmake -B build -G Ninja && cmake --build build"
+    exit 1
 fi
 
 # Kill stale daemon
@@ -100,6 +102,7 @@ pkill -9 -f "logoscore" 2>/dev/null || true
 sleep 1
 rm -f ~/.logoscore/daemon.json
 
+rm -rf /tmp/test-modules-kc
 mkdir -p /tmp/test-modules-kc
 cp -r ~/.local/share/Logos/LogosBasecamp/modules/keycard /tmp/test-modules-kc/
 
@@ -166,16 +169,18 @@ SIGN_ID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin).ge
 
 if [ -n "$SIGN_ID" ]; then
     PEND=$(kc getPendingSigns)
+    # Check specifically for the bc:beacon request we just created (by signId),
+    # not just any entry that happens to have a 1582' path (Section 1 already queued some).
     if echo "$PEND" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 reqs=d.get('pending',[])
-found=[r for r in reqs if r.get('effective_path','').startswith(\"m/43'/60'/1582'\")]
+found=[r for r in reqs if r.get('signId','')=='$SIGN_ID' and r.get('effective_path','').startswith(\"m/43'/60'/1582'\")]
 exit(0 if found else 1)
 " 2>/dev/null; then
         pass "domain-based sign uses 1582' signing subtree in effective_path"
     else
-        fail "effective_path not starting with m/43'/60'/1582' — got: $PEND"
+        fail "effective_path not starting with m/43'/60'/1582' for signId $SIGN_ID — got: $PEND"
     fi
 else
     skip "could not queue domain sign request"
