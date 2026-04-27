@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Keycard headless regression suite
-# Tests PRs #145 (XPUB bip32_path), #151 (format-only validation), #153 (eventResponse)
+# Tests PRs #145 (XPUB bip32_path), #151 (format-only validation)
+# Note: PR #153 (eventResponse signal) is not tested here — emitted signals require a live
+# QRemoteObjects event listener and are covered by QML integration tests, not headless logoscore.
 # Requires: real card in reader, PIN 111111
 # Usage: bash tests/headless/regression.sh
 

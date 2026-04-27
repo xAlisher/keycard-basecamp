@@ -10,7 +10,7 @@
   "nix": {
     "packages": {
       "build": ["pkg-config", "pcsclite.dev"],
-      "runtime": ["pcsclite.lib", "openssl", "libsodium"]
+      "runtime": ["openssl", "libsodium"]
     },
     "external_libraries": [
       {
