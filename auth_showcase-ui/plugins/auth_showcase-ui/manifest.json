@@ -2,7 +2,7 @@
   "author": "alisher",
   "capabilities": ["auth-showcase-debug-ui"],
   "category": "demo",
-  "dependencies": ["keycard", "auth_showcase"],
+  "dependencies": ["keycard"],
   "description": "Auth showcase UI - demonstrates Keycard integration",
   "icon": "",
   "main": {},
