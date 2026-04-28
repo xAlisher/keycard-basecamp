@@ -173,7 +173,7 @@ Rectangle {
     function requestXPUB() {
         root.xpubError = ""
         var args = JSON.stringify({
-            domain: "keycard_showcase",
+            bip32_path: "m/44'/60'/0'/0",
             caller: "keycard_showcase"
         })
         var result = logos.callModule("keycard", "requestXPUB", [args])
