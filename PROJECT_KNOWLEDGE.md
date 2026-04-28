@@ -11,6 +11,55 @@
 
 ---
 
+## Headless Test Gotchas (discovered Chunk 1, 2026-04-24)
+
+Two blockers hit during the first headless regression run with a real card.
+
+### 1. nix pcsclite 2.3.0 vs system pcscd 2.0.3 version mismatch
+
+**Symptom:** `discoverCard` returns `{"found":false}` persistently even with card confirmed
+present via `pcsc_scan -n`. No error logged.
+
+**Root cause:** `SCardEstablishContext(SCARD_SCOPE_SYSTEM)` returns `SCARD_E_NO_SERVICE` when
+nix pcsclite 2.3.0 (IPC CMD_VERSION changed) talks to system pcscd 2.0.3. Background detection
+thread never starts — logos_host shows only 1 thread instead of ≥ 2.
+
+**Fix:** patchelf the installed SO to replace nix pcsclite path with `/usr/lib/x86_64-linux-gnu`:
+```bash
+PLUGIN=~/.local/share/Logos/LogosApp/modules/keycard/keycard_plugin.so
+NIX_PCSC=$(ldd "$PLUGIN" | grep pcsclite | awk '{print $3}' | xargs dirname)
+RPATH=$(patchelf --print-rpath "$PLUGIN")
+patchelf --set-rpath "$(echo "$RPATH" | sed "s|$NIX_PCSC|/usr/lib/x86_64-linux-gnu|g")" "$PLUGIN"
+```
+Apply to the temp copy too when using `cp -r` for logoscore isolation.
+
+**Skill:** `pcsclite-nix-system-version-mismatch` in basecamp-skills.
+
+**Process note:** Do NOT conclude "no card hardware" from `discoverCard found:false` alone.
+Always verify at the OS layer (`pcsc_scan -n`, `systemctl status pcscd`) before diagnosing
+software. Card was present the whole time — the error was the pcsclite version mismatch.
+
+### 2. logoscore daemon mode converts pure-numeric strings to integers
+
+**Symptom:** `authorizeRequest "$AUTH_ID" "$PIN"` where `PIN=111111` returns `{}` (empty) via
+the kc() helper — appears as METHOD_FAILED at the IPC level.
+
+**Root cause:** logoscore daemon mode (`logoscore call keycard method arg`) JSON-parses each
+argument. `"111111"` is valid JSON for the integer 111111. The C++ method receives `QVariant(int)`
+where it expects `QString` → type mismatch → `METHOD_FAILED`.
+
+**Fix:** Always wrap numeric values in a JSON object in regression scripts:
+```bash
+# WRONG
+kc authorizeRequest "$AUTH_ID" "$PIN"
+# RIGHT
+kc authorizeRequest "$AUTH_ID" "{\"pin\":\"$PIN\"}"
+```
+
+**Skill:** documented in `logoscore-headless-testing` under "Daemon mode" argument passing rules.
+
+---
+
 ## Completed Phases
 
 | Phase | Issue/PR | What shipped | Date |
@@ -38,6 +87,8 @@
 | Dev Card Setup | #107 / ff95f6f | LEE applet (v3.2) installed, card initialized, ISD key identified | 2026-04-14 |
 | Pending Requests Gate | #125 / PR #126 / cf62780 | Qt.callLater deferral + checkPairingBusy guard, gate fix root.cardDetected | 2026-04-14 |
 | Pairing Flow UI | Epic #127 / PR #130 / bdd943c | Inline pairing form, QML auto-mirror to LogosBasecamp, declineRequest reset | 2026-04-14 |
+| Signing path fixes | PR #151 (issue-149-150) + PR #145 (issue-142) | bip32_path format validation, 1581'/1582' routing, requestXPUB mandatory path, effective_path in getPendingSigns | 2026-04-24 |
+| eventResponse | feat/#153 | emit eventResponse("keycardAuthComplete"/"keycardAuthRejected") after authorizeRequest/rejectRequest | 2026-04-24 |
 
 ---
 

@@ -9,6 +9,7 @@
 #include <PCSC/winscard.h>  // For direct PC/SC reader detection
 #include <QDateTime>
 #include <QStandardPaths>
+#include <QTimer>
 
 // Debug logging - only enabled with KEYCARD_DEBUG build flag
 // No file logging to /tmp - qDebug() output only
@@ -564,56 +565,72 @@ void KeycardBridge::onCardReady(const QString& uid)
 
     m_cardReady = true;
 
-    // Select applet and get status to get the REAL instance UID
-    // (The uid parameter from the signal is often truncated - it's the ATR/physical serial)
-    try {
-        auto appInfo = m_commandSet->select();
-        qDebug() << "KeycardBridge: Applet selected, getting status...";
+    // Defer heavy PC/SC work (select + getStatus) to next event loop iteration.
+    // This keeps the slot non-blocking so QRemoteObjects heartbeat is not stalled.
+    QTimer::singleShot(0, this, [this, uid]() {
+        // Guard: stop() may have reset m_commandSet, or onCardLost() may have fired
+        // between the synchronous m_cardReady=true and this deferred body.
+        if (!m_running || !m_commandSet) return;
 
-        // Get instance UID from appInfo (full 16 bytes)
-        QString instanceUID = QString::fromUtf8(appInfo.instanceUID.toHex());
-        qDebug() << "KeycardBridge::onCardReady() - instanceUID length:" << instanceUID.length();
+        // Select applet and get status to get the REAL instance UID
+        // (The uid parameter from the signal is often truncated - it's the ATR/physical serial)
+        try {
+            auto appInfo = m_commandSet->select();
+            qDebug() << "KeycardBridge: Applet selected, getting status...";
 
-        if (!instanceUID.isEmpty() && instanceUID.length() == 32) {
-            m_keyUID = instanceUID;
-        } else {
-            qWarning() << "KeycardBridge::onCardReady() - Invalid instanceUID, using signal UID as fallback";
-            m_keyUID = uid;
+            // Get instance UID from appInfo (full 16 bytes)
+            QString instanceUID = QString::fromUtf8(appInfo.instanceUID.toHex());
+            qDebug() << "KeycardBridge::onCardReady() - instanceUID length:" << instanceUID.length();
+
+            if (!instanceUID.isEmpty() && instanceUID.length() == 32) {
+                m_keyUID = instanceUID;
+            } else {
+                qWarning() << "KeycardBridge::onCardReady() - Invalid instanceUID, using signal UID as fallback";
+                m_keyUID = uid;
+            }
+
+            // Detect key mode from SELECT response (tag 0x8D bit 5 + keyUID presence)
+            // Note: LEE capability bit persists after removeKey; keyUID presence is the
+            // authoritative "key loaded" indicator.
+            m_keyMode = appInfo.keyUID.isEmpty() ? KeyMode::None
+                      : appInfo.isLEEKey() ? KeyMode::LEE
+                      : KeyMode::BIP39;
+            qDebug() << "KeycardBridge: KeyMode:" << static_cast<int>(m_keyMode);
+
+            auto status = m_commandSet->getStatus();
+            if (status.valid) {
+                m_remainingPIN = status.pinRetryCount;
+                m_remainingPUK = status.pukRetryCount;
+                m_keyInitialized = status.keyInitialized;
+                qDebug() << "KeycardBridge: Status - PIN:" << m_remainingPIN
+                         << "PUK:" << m_remainingPUK
+                         << "Initialized:" << m_keyInitialized;
+            } else {
+                qWarning() << "KeycardBridge: Invalid status returned";
+            }
+        } catch (const std::exception& e) {
+            qWarning() << "KeycardBridge: Failed to select/getStatus:" << e.what();
+            // Do not fall through — member values (remainingPIN/PUK/keyInitialized) are stale.
+            // Transition to ConnectionError so the UI shows a recoverable error state.
+            setState(State::ConnectionError);
+            return;
         }
 
-        // Detect key mode from SELECT response (tag 0x8D bit 5 + keyUID presence)
-        // Note: LEE capability bit persists after removeKey; keyUID presence is the
-        // authoritative "key loaded" indicator.
-        m_keyMode = appInfo.keyUID.isEmpty() ? KeyMode::None
-                  : appInfo.isLEEKey() ? KeyMode::LEE
-                  : KeyMode::BIP39;
-        qDebug() << "KeycardBridge: KeyMode:" << static_cast<int>(m_keyMode);
+        // Guard: re-check after blocking APDUs — onCardLost() may have fired during them.
+        // If card is gone, WaitingForCard is already set; do not overwrite it.
+        if (!m_cardReady) return;
 
-        auto status = m_commandSet->getStatus();
-        if (status.valid) {
-            m_remainingPIN = status.pinRetryCount;
-            m_remainingPUK = status.pukRetryCount;
-            m_keyInitialized = status.keyInitialized;
-            qDebug() << "KeycardBridge: Status - PIN:" << m_remainingPIN
-                     << "PUK:" << m_remainingPUK
-                     << "Initialized:" << m_keyInitialized;
+        // Determine state based on card status
+        if (m_remainingPIN == 0) {
+            setState(State::BlockedPIN);
+        } else if (m_remainingPUK == 0) {
+            setState(State::BlockedPUK);
+        } else if (!m_keyInitialized) {
+            setState(State::EmptyKeycard);
         } else {
-            qWarning() << "KeycardBridge: Invalid status returned";
+            setState(State::Ready);
         }
-    } catch (const std::exception& e) {
-        qWarning() << "KeycardBridge: Failed to select/getStatus:" << e.what();
-    }
-
-    // Determine state based on card status
-    if (m_remainingPIN == 0) {
-        setState(State::BlockedPIN);
-    } else if (m_remainingPUK == 0) {
-        setState(State::BlockedPUK);
-    } else if (!m_keyInitialized) {
-        setState(State::EmptyKeycard);
-    } else {
-        setState(State::Ready);
-    }
+    });
 }
 
 void KeycardBridge::onCardLost()

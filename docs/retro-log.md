@@ -208,6 +208,18 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 ### Feedback for Alisher
 - (none)
 
+## Chunk 1 — regression test run (2026-04-24, in-session)
+
+### Process fails
+- **[process] Concluded "no card present" from module error without checking hardware layer.** Saw `{"error":"Card not ready"}` from `approveXPUB` + `systemctl status pcscd` showing `inactive (dead)`, and immediately stopped investigating hardware. Did not check `/var/run/pcscd/pcscd.pid` or run a direct `SCardConnect`. Card was physically present the entire time — pcscd was live (PID from pid file was running), systemctl status was just stale.
+  - **Root cause:** Trusted the module-level error string and a stale systemctl output as definitive evidence of hardware absence. Did not apply the "verify at the layer below" rule.
+  - **Fix:** When a module says "Card not ready", always verify at the pcsclite layer directly: `python3 -c "import ctypes; lib=ctypes.CDLL('libpcsclite.so.1'); ... SCardConnect(...)"` or `pcsc_scan -n`. Only conclude hardware absent after a failed `SCardConnect`. Do NOT rely on systemctl for pcscd — check the pid file and the socket.
+
+### Technical wins
+- **[technical] Diagnosed pcsclite RPATH bug via strace.** `pkgs.pcsclite` in `nix_packages.runtime` resolved to the systemd-only output (no `.so`). logos_host tried every RPATH entry and failed to find `libpcsclite.so.1` → `exit_group(1)`. Strace with `-f` (follow forks) on the daemon caught the exact openat chain. Fix: `"pcsclite.lib"` (runtime) + `"pcsclite.dev"` (build) in metadata.json.
+
+---
+
 <!-- Template:
 ## Epic #NN — Title (YYYY-MM-DD)
 
@@ -216,3 +228,43 @@ Post-merge retrospectives per `~/fieldcraft/protocols/wins-and-fails.md`.
 ### Project lessons (added to docs/skills/lessons.md)
 ### Feedback for Alisher
 -->
+
+---
+
+## Chunk 1 regression run — root cause investigation (2026-04-24)
+
+### Find 1: nix pcsclite 2.3.0 vs system pcscd 2.0.3 version mismatch
+
+**Symptom:** `discoverCard` returned `found:false` consistently despite card being physically present. Background detection thread never started (logos_host had only 1 thread).
+
+**Root cause:** `metadata.json` `nix.packages.runtime` had `"pcsclite.lib"` which resolves to `pkgs.pcsclite.lib` — nix pcsclite 2.3.0. System pcscd is 2.0.3. The IPC protocol between client library and daemon changed between versions: pcsclite 2.3.0 sends CMD_VERSION that pcscd 2.0.3 rejects → `SCARD_E_NO_SERVICE (0x8010001e)`.
+
+**Evidence:** `SCardEstablishContext` fails with nix pcsclite, succeeds with system pcsclite (`/usr/lib/x86_64-linux-gnu/libpcsclite.so.1`). `strace` shows connect to `/run/pcscd/pcscd.comm` succeeds but server returns failure.
+
+**Fix:** Replace nix pcsclite path in plugin SO RPATH with `/usr/lib/x86_64-linux-gnu` (system pcsclite 2.0.3 that matches the running pcscd). Pending: metadata.json build fix to use system pcsclite path or exclude pcsclite from RPATH entirely (already stripped in LGX by package-lgx.sh).
+
+**Pattern:** pcsclite is a system-daemon-coupled library. Never bundle a nix-built pcsclite if the system pcscd version differs. For headless dev testing: use system pcsclite; for LGX distribution: strip pcsclite (package-lgx.sh already does this).
+
+---
+
+### Find 2: logoscore CLI converts pure-numeric strings to integers
+
+**Symptom:** `authorizeRequest(AUTH_ID, "111111")` returned `METHOD_FAILED`. Same method with non-numeric arg "abc123" worked. `approveXPUB("{...,\"pin\":\"111111\",...}")` worked.
+
+**Root cause:** When logoscore CLI receives a pure-numeric string as an argument (`"111111"`), it parses it as integer and passes `QVariant(int)` to the `Q_INVOKABLE QString authorize(const QString& pin)` method. Qt's meta-object invocation fails (type mismatch) → `METHOD_FAILED`.
+
+**Fix:** Wrap numeric PINs in JSON when calling via logoscore CLI: `'{"pin":"111111"}'`. The plugin's `authorize()` already handles both formats (bare string AND `{"pin":"..."}` JSON object). Updated regression.sh to use `"{\"pin\":\"$PIN\"}"` for the authorizeRequest pin argument.
+
+**Pattern:** Any logoscore CLI call that passes a pure-numeric argument to a `QString` method will fail. Always pass numeric values as part of a JSON object string, or use non-numeric test values. Document this in logoscore-headless-testing skill.
+
+---
+
+## fail 2026-04-27
+Paused after receiving Senty findings on PR #156 instead of immediately triaging and fixing per builder-auditor protocol. Findings should be addressed in the same session without prompting.
+
+
+## fail 2026-04-27
+Asked user whether to invoke Senty R2 instead of doing it immediately per builder-auditor protocol. After pushing fixes, trigger the next review round autonomously.
+
+## fail 2026-04-27
+Fixing symptoms instead of root cause — spent multiple cycles adding workarounds (CARD_READY daemon-restart, || true in kc()) to regression.sh instead of identifying that Senty's requested changes were themselves the root cause of the regression.
