@@ -108,27 +108,29 @@ sodium_memzero(cardKey.data(), cardKey.size());  // Wipe intermediate
 
 ## Build & Test Workflow
 
+**Use the install script — never copy files manually:**
 ```bash
-# Development build (Nix)
-source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-nix develop --command bash -c "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build"
+# Full C++ + QML install (builds, patches pcsclite RPATH, installs QML to correct subdir)
+bash scripts/install-dev.sh
 
-# Install to LogosApp (NOT LogosBasecamp or LogosBasecampDev)
-cmake --install build --prefix ~/.local/share/Logos/LogosApp
-
-# Kill Basecamp + clear cache
-pkill -9 -f "Logos"
-rm -rf ~/.cache/Logos/LogosApp/qmlcache/*
-
-# Launch (NO --dev-mode for plugin development)
-~/logos-app/logos-app.AppImage
-
-# Package LGX
-nix run .#package-lgx
-tar -tzf keycard-core.lgx | grep -i pcsclite  # must return nothing
+# QML-only (skip C++ rebuild — fast iteration on UI changes)
+bash scripts/install-dev.sh --qml-only
 ```
 
-**Why LogosApp?** `LogosApp/` discovers new plugins. `LogosBasecamp/` freezes plugin discovery.
+The script prevents two known recurring pitfalls:
+- **pcsclite RPATH mismatch** — nix builds against pcsclite 2.3.0, system pcscd is 2.0.3; script verifies and patches after install
+- **QML in wrong path** — UI plugin loads from `plugins/keycard-ui/qml/` not the plugin root; script always copies there
+
+```bash
+# Kill + clear cache + relaunch (use /run skill or manually)
+pkill -9 -f "\.LogosBasecamp\.elf"; pkill -9 -f "\.logos_host\.elf"
+rm -rf ~/.cache/Logos/LogosBasecamp/qmlcache/*
+~/logos-basecamp-current.AppImage > /tmp/basecamp.log 2>&1 &
+
+# Package LGX
+bash scripts/package-lgx.sh
+tar -tzf logos-keycard-module-lib.lgx | grep -i pcsclite  # must return nothing
+```
 
 ---
 

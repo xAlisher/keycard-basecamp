@@ -835,6 +835,9 @@ QString KeycardPlugin::authorizeRequest(const QString& authId, const QString& pi
         result["authId"] = authId;
         result["status"] = "retry";
         result["remainingAttempts"] = remaining;
+        // Propagate error from authorize() so UI shows real failure reason
+        if (authResult.contains("error"))
+            result["error"] = authResult["error"];
 
         addActivityToResponse(result);
         return QJsonDocument(result).toJson(QJsonDocument::Compact);

@@ -7,7 +7,8 @@ FocusScope {
     focus: true
 
     property alias activityLog: activityLog
-    property var coreReachable: null  // null = unknown, true/false after first poll
+    property bool coreReachable: false
+    property bool coreEverReachable: false   // true once first successful poll seen
     property bool readerDetected: false
     property bool cardDetected: false
     property bool paired: false
@@ -55,8 +56,9 @@ FocusScope {
         root.coreReachable = coreNowReachable
         if (coreWasReachable !== coreNowReachable) {
             if (coreNowReachable) {
+                root.coreEverReachable = true
                 activityLog.addEntry(ts, "Keycard module connected", "success")
-            } else {
+            } else if (root.coreEverReachable) {
                 activityLog.addEntry(ts, "Keycard module not reachable", "error")
                 root.readerDetected = false
                 root.cardDetected = false
