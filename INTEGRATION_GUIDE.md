@@ -157,6 +157,7 @@ See [KEYCARD_API.md](KEYCARD_API.md#getcardpresence) for full response shape.
 
 ---
 
+
 ## Domain naming
 
 ```
