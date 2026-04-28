@@ -561,6 +561,25 @@ CMake's `INSTALL_RPATH "$ORIGIN"` is ignored when building inside `nix develop` 
 ### One-read-and-drop for derived key material
 Security-sensitive keys should be returned exactly once via the polling API (`checkAuthStatus`), then immediately wiped from memory. Store keys in SecureBuffer (RAII + sodium_memzero), not QString. Convert to hex only at serialization time, wipe the hex intermediate, erase the request from the vector. This matches the "no persistent key storage" claim in docs.
 
+---
+
+## 2026-04-28 Controlled Master Merge (multi-branch absorption)
+
+### discoverReader must call pollStatus() when bridge already running
+`discoverReader()` returned cached state when the bridge was already started. If a reader was removed and reinserted, the host returned the old `CARD_PRESENT` state without re-polling. Fix: at the top of `discoverReader()`, when `m_bridge->isRunning()`, call `m_bridge->pollStatus()` before reading `m_bridge->state()`. Symptom: reader removal not detected until next init cycle.
+
+### keycard_showcase .so — logos-module-builder only builds keycard target
+`logos-module-builder` only compiles the `keycard` target defined in `flake.nix`. The `keycard_showcase` module has no nix target and cannot be built with `nix bundle`. Workaround: copy the existing `.so` from `~/.local/share/Logos/LogosApp/modules/keycard_showcase/` into `~/.local/share/Logos/LogosBasecamp/modules/`. Long-term fix: add a `keycard_showcase` nix package target.
+
+### Branch absorption check before cherry-pick
+Before cherry-picking old feature branches onto master, check if changes are already present:
+```bash
+git log --oneline master..origin/branch-name
+```
+If the log is empty, the branch is fully absorbed — skip all cherry-picks. If commits appear, diff them: many will be context-only changes already in master. Only cherry-pick commits with genuinely new code. Empty cherry-picks (`cherry-pick --skip`) are expected and not a problem.
+
+---
+
 ## Planning Phase
 
 ### Communication protocol established

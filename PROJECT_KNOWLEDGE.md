@@ -1,5 +1,5 @@
 # Project Knowledge: keycard-basecamp
-*Last updated: 2026-04-14 (epic #127 retro)*
+*Last updated: 2026-04-28 (master consolidation retro)*
 
 > **Architecture change (2026-04-02):** KeycardBridge, libkeycard.so, and direct PC/SC code
 > have been removed from logos-notes. Keycard support now uses the external keycard-basecamp
@@ -89,6 +89,7 @@ kc authorizeRequest "$AUTH_ID" "{\"pin\":\"$PIN\"}"
 | Pairing Flow UI | Epic #127 / PR #130 / bdd943c | Inline pairing form, QML auto-mirror to LogosBasecamp, declineRequest reset | 2026-04-14 |
 | Signing path fixes | PR #151 (issue-149-150) + PR #145 (issue-142) | bip32_path format validation, 1581'/1582' routing, requestXPUB mandatory path, effective_path in getPendingSigns | 2026-04-24 |
 | eventResponse | feat/#153 | emit eventResponse("keycardAuthComplete"/"keycardAuthRejected") after authorizeRequest/rejectRequest | 2026-04-24 |
+| Master consolidation | multi-branch absorption | discoverReader pollStatus fix, getCardPresence API, watchCardPresence+cardRemoved in KeycardAuth.qml, coreEverReachable QML guard, welcome screen, auth_showcase, keycard_showcase XPUB fix (bip32_path), headless regression tests, security hardening, docs polish | 2026-04-28 |
 
 ---
 
