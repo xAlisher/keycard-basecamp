@@ -21,9 +21,10 @@ install(FILES
 )
 
 install(FILES
-    icons/keycard.png
-    icons/lock.svg
-    icons/bolt.svg
+    "icons/keycard.png"
+    "icons/lock.svg"
+    "icons/bolt.svg"
+    "icons/Keycard  logo big.png"
     DESTINATION "${KEYCARD_UI_DIR}/icons"
 )
 

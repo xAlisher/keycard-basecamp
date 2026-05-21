@@ -56,7 +56,9 @@ FocusScope {
         var r = callModuleParse(readerResult)
 
         var coreWasReachable = root.coreReachable
-        var coreNowReachable = r !== null && !r.error
+        // r !== null means the IPC call succeeded (module is reachable).
+        // r.error means PC/SC is unavailable — module is reachable but has no reader.
+        var coreNowReachable = r !== null
         root.coreReachable = coreNowReachable
         if (isFirstCheck || coreWasReachable !== coreNowReachable) {
             if (coreNowReachable) {
