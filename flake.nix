@@ -7,9 +7,12 @@
     # Follow the builder's nixpkgs to avoid Qt ABI mismatches
     nixpkgs.follows = "logos-module-builder/nixpkgs";
 
-    # keycard-qt source (non-flake) — pinned commit
+    # keycard-qt source (non-flake) — pinned to our fork (xAlisher/keycard-qt)
+    # This commit adds Schnorr/BIP340 TLV-unwrap + ECDSA DER fix (not merged upstream).
+    # URL uses xAlisher fork explicitly; do NOT switch to status-im/keycard-qt until
+    # both fixes land upstream (track: status-im/keycard-qt#96, #132 equivalents).
     keycard-qt-src = {
-      url = "github:status-im/keycard-qt/5cd0b0d22659fd8564c749787fc86c1374b00223";
+      url = "github:xAlisher/keycard-qt/5cd0b0d22659fd8564c749787fc86c1374b00223";
       flake = false;
     };
   };
