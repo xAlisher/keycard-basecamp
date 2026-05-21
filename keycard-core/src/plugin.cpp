@@ -89,7 +89,12 @@ QString KeycardPlugin::discoverReader()
         result["name"] = "Smart card reader";
         logActivity("Smart card reader detected", "success");
     } else {
-        logActivity("Smart card reader not found", "error");
+        KeycardBridge::State finalState = m_bridge ? m_bridge->state() : KeycardBridge::State::Unknown;
+        if (finalState == KeycardBridge::State::ConnectionError) {
+            logActivity("Can't connect to the reader, check if it's blocked by another process", "error");
+        } else {
+            logActivity("Smart card reader not found", "error");
+        }
     }
 
     addActivityToResponse(result);

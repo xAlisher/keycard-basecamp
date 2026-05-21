@@ -268,3 +268,9 @@ Asked user whether to invoke Senty R2 instead of doing it immediately per builde
 
 ## fail 2026-04-27
 Fixing symptoms instead of root cause — spent multiple cycles adding workarounds (CARD_READY daemon-restart, || true in kc()) to regression.sh instead of identifying that Senty's requested changes were themselves the root cause of the regression.
+
+## [fail] 2026-04-28
+App freeze when opening Notes then Stash — "Logos Basecamp is not responding" dialog. Likely platform/module-loading contention, not keycard. Pre-existing risk: checkPairing() in QML calls 3 sequential synchronous callModule ops; if PC/SC is slow after an auth session, this can block the UI thread for ~6s. Needs isolation test (open each module alone before combining).
+
+## [win] 2026-04-28
+Controlled merge of all unmerged keycard-basecamp branches to master. 5 phases absorbed: reinsertion/EDEADLK fix, headless tests, reader detection, security hardening, signing API, welcome screen, auth_showcase, docs polish. keycard_showcase restored with XPUB bip32_path fix. All tested and pushed.

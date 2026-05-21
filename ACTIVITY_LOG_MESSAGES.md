@@ -9,6 +9,7 @@ Reference for all activity log messages displayed in the UI.
 | gray | Looking for smart card reader... | Searching for reader (animated dots) |
 | green | Smart card reader detected | Reader found |
 | red | Smart card reader not found | No reader available |
+| red | Can't connect to the reader, check if it's blocked by another process | Reader present but context establishment failed (SCARD_E_NO_SERVICE / LIBUSB_ERROR_BUSY) |
 
 ## Keycard Detection
 

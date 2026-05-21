@@ -33,6 +33,7 @@ FocusScope {
     property string pairingPassword: "KeycardDefaultPairing"
     property string pairingError: ""
     property bool pairingBusy: false
+    property bool firstCheckDone: false
 
     // logos.callModule wraps the C++ QString return in an extra JSON layer — parse twice
     function callModuleParse(raw) {
@@ -46,6 +47,9 @@ FocusScope {
         if (root.checkHardwareBusy) return  // callModule blocks ~20s; guard prevents re-entrant stack buildup
         root.checkHardwareBusy = true
 
+        var isFirstCheck = !root.firstCheckDone
+        root.firstCheckDone = true
+
         var ts = Qt.formatTime(new Date(), "[HH:mm:ss]")
 
         var readerResult = logos.callModule("keycard", "checkReaderPresent", [])
@@ -54,30 +58,32 @@ FocusScope {
         var coreWasReachable = root.coreReachable
         var coreNowReachable = r !== null && !r.error
         root.coreReachable = coreNowReachable
-        if (coreWasReachable !== coreNowReachable) {
+        if (isFirstCheck || coreWasReachable !== coreNowReachable) {
             if (coreNowReachable) {
                 root.coreEverReachable = true
                 activityLog.addEntry(ts, "Keycard module connected", "success")
-            } else if (root.coreEverReachable) {
-                activityLog.addEntry(ts, "Keycard module not reachable", "error")
-                root.readerDetected = false
-                root.cardDetected = false
-                root.paired = false
-                root.pairingSlot = -1
-                root.pairingStatus = ""
-                root.currentRequest = null
-                root.pendingChecked = false
+            } else {
+                activityLog.addEntry(ts, "Keycard module not reachable", isFirstCheck ? "warning" : "error")
+                if (root.coreEverReachable) {
+                    root.readerDetected = false
+                    root.cardDetected = false
+                    root.paired = false
+                    root.pairingSlot = -1
+                    root.pairingStatus = ""
+                    root.currentRequest = null
+                    root.pendingChecked = false
+                }
             }
         }
         if (!coreNowReachable) { root.checkHardwareBusy = false; return }
 
         var wasReader = root.readerDetected
         root.readerDetected = r.found || false
-        if (wasReader !== root.readerDetected) {
+        if (isFirstCheck || wasReader !== root.readerDetected) {
             if (root.readerDetected)
                 activityLog.addEntry(ts, "Smart card reader detected", "success")
             else
-                activityLog.addEntry(ts, "Smart card reader not detected", "error")
+                activityLog.addEntry(ts, "No smart card reader found", isFirstCheck ? "warning" : "error")
         }
 
         if (root.readerDetected) {
@@ -389,9 +395,9 @@ FocusScope {
 
                     Image {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        source: Qt.resolvedUrl("../icons/keycard.png")
-                        width: 72
-                        height: 72
+                        source: Qt.resolvedUrl("../icons/Keycard  logo big.png")
+                        width: 180
+                        height: 180
                         fillMode: Image.PreserveAspectFit
                         smooth: true
                     }
@@ -408,7 +414,7 @@ FocusScope {
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: 320
+                        width: 460
                         text: "Your hardware key for Basecamp. Pair your card to authorize requests, sign messages, and protect your identity."
                         color: DesignTokens.foregroundSecondary
                         font.pixelSize: DesignTokens.fontSizeSmall
