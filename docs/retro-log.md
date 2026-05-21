@@ -274,3 +274,29 @@ App freeze when opening Notes then Stash — "Logos Basecamp is not responding" 
 
 ## [win] 2026-04-28
 Controlled merge of all unmerged keycard-basecamp branches to master. 5 phases absorbed: reinsertion/EDEADLK fix, headless tests, reader detection, security hardening, signing API, welcome screen, auth_showcase, docs polish. keycard_showcase restored with XPUB bip32_path fix. All tested and pushed.
+
+---
+
+## Session 2026-05-21 — logos-module-builder migration + smoke test
+
+### Process wins
+- **[process] Skills index navigation worked.** `_index/60-release.md` found `builder-lgx-install-recipe` immediately — no re-deriving lgpm install flow.
+- **[process] fork URL fixed proactively.** Alisher caught that `status-im` URL was in flake.nix instead of `xAlisher`. Fixed and documented before shipping. GitHub's fork-network SHA resolution made it silently work, which would have been a confusing gap in the record.
+
+### Process fails
+- **[process] `postInstall` hook approach trusted before verifying against nix closure behavior.** Added `rm -rf $out/lib/libpcsclite.so*` to postInstall, tested, assumed it worked — but lgx tarball still contained pcsclite because Phase 2 of bundle.sh re-adds from closure. Took a second investigation pass to find the Qt transitive dependency chain as root cause.
+  - **Fix:** Always check whether a nix bundler has a closure-scan phase before relying on postInstall removals.
+
+- **[process] Wrong tarball format caused misleading lgpm error.** After stripping pcsclite, repacked with `tar -C tmpdir .` → `./manifest.json` → lgpm reported "wrong variant" not "missing manifest". Lost time debugging variant name vs tarball structure.
+  - **Fix:** Always verify tarball path format with `tar -tzf` before installing. Bare paths required.
+
+### Technical wins
+- **[technical] pcsclite bundling root cause fully traced.** Qt's transitive closure (`qtbase → pcsclite`) is why postInstall removal is overridden by the bundler's closure scanner. Confirmed with nix `nix-store -q --references` on the qtbase drv.
+- **[technical] `stripPcscliteFromLgx` nix wrapper works.** Wrapping `lgx-portable` in a `runCommand` that extracts → strips → repacks is the reliable fix. Verified with `tar -tzf | grep pcsclite` returning empty.
+- **[technical] `coreNowReachable` fix stopped false "module not reachable" state.** Correcting `r !== null && !r.error` → `r !== null` means PC/SC errors (pcscd down) no longer mask the module as unreachable from the UI perspective.
+- **[technical] keycard-qt fork identity verified.** Commit `5cd0b0d` confirmed as our fork (xAlisher/keycard-qt) with Schnorr/BIP340 TLV-unwrap + ECDSA DER fix. Not in status-im main. Flake.nix corrected to use explicit fork URL.
+
+### Skills extracted
+- `lgx-tarball-bare-paths` — new pitfall recipe (HIGH): bare path requirement in LGX tarballs
+- `pcsclite-nix-system-version-mismatch` — updated: added Qt transitive closure root cause + `stripPcscliteFromLgx` nix wrapper solution
+- `builder-lgx-install-recipe` — updated: last_used + lgpm binary name note + tarball format warning
