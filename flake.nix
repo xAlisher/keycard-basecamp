@@ -58,16 +58,48 @@
         in { name = system; value = { default = drv; }; }
       ) systems);
 
-    in logos-module-builder.lib.mkLogosModule {
-      src = ./.;
-      configFile = ./metadata.json;
-      flakeInputs = inputs;
+      # Strip pcsclite from the lgx-portable output. Qt's transitive closure
+      # includes pcsclite-2.3.0 so the bundler always copies it in; but system
+      # pcscd is typically 2.0.3 and the version mismatch breaks the IPC socket
+      # handshake. After stripping, the bundler sets RPATH to $ORIGIN only, so
+      # libpcsclite.so.1 is looked up via standard system paths (2.0.3) at runtime.
+      stripPcscliteFromLgx = system: lgxDrv:
+        let pkgs = import nixpkgs { inherit system; };
+        in pkgs.runCommand lgxDrv.name {} ''
+          mkdir -p $out
+          LGX=$(ls ${lgxDrv}/*.lgx)
+          BNAME=$(basename "$LGX")
+          tmpdir=$(mktemp -d)
+          tar -xzf "$LGX" -C "$tmpdir"
+          find "$tmpdir" -name "libpcsclite.so*" -delete
+          # Verify
+          if find "$tmpdir" -name "libpcsclite.so*" | grep -q .; then
+            echo "ERROR: libpcsclite still present" >&2; exit 1
+          fi
+          # Repack without leading ./ — lgpm requires bare paths (manifest.json, not ./manifest.json)
+          (cd "$tmpdir" && tar -czf "$out/$BNAME" manifest.json variants)
+          rm -rf "$tmpdir"
+        '';
 
-      # keycard-qt resolved per-system above.
-      # The builder copies $drv/lib/* into lib/ and $drv/include/* into lib/
-      # so that LogosModule.cmake EXTERNAL_LIBS finds libkeycard-qt.a + headers.
-      externalLibInputs = {
-        "keycard-qt" = { packages = keycardQtPackages; };
+      baseModule = logos-module-builder.lib.mkLogosModule {
+        src = ./.;
+        configFile = ./metadata.json;
+        flakeInputs = inputs;
+
+        # keycard-qt resolved per-system above.
+        # The builder copies $drv/lib/* into lib/ and $drv/include/* into lib/
+        # so that LogosModule.cmake EXTERNAL_LIBS finds libkeycard-qt.a + headers.
+        externalLibInputs = {
+          "keycard-qt" = { packages = keycardQtPackages; };
+        };
       };
+
+    in baseModule // {
+      # Override lgx-portable to strip pcsclite from the final LGX tarball
+      packages = builtins.mapAttrs (system: sysPkgs:
+        sysPkgs // {
+          lgx-portable = stripPcscliteFromLgx system sysPkgs.lgx-portable;
+        }
+      ) baseModule.packages;
     };
 }
