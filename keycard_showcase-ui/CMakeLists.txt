@@ -5,6 +5,8 @@ set(KEYCARD_SHOWCASE_UI_DIR "plugins/keycard_showcase-ui")
 install(FILES
     plugins/keycard_showcase-ui/manifest.json
     plugins/keycard_showcase-ui/metadata.json
+    plugins/keycard_showcase-ui/variant
+    plugins/keycard_showcase-ui/showcase.png
     DESTINATION "${KEYCARD_SHOWCASE_UI_DIR}"
 )
 

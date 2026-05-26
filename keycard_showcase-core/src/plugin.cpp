@@ -10,6 +10,7 @@ KeycardShowcasePlugin::KeycardShowcasePlugin(QObject* parent)
 
 void KeycardShowcasePlugin::initLogos(LogosAPI* api)
 {
+    if (logosAPI) return;
     logosAPI = api;
 }
 

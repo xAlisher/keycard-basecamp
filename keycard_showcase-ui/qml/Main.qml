@@ -121,7 +121,7 @@ Rectangle {
     function requestSign() {
         root.signError = ""
         // Hash the message via keycard_showcase core plugin
-        var hashResult = logos.callModule("keycard", "hashMessage", [messageInput.text])
+        var hashResult = logos.callModule("keycard_showcase", "hashMessage", [messageInput.text])
         var hashResponse = callModuleParse(hashResult)
         if (!hashResponse || !hashResponse.hash) {
             root.signError = "Failed to hash message"

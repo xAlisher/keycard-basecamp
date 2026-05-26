@@ -2,7 +2,8 @@
 
 #include <QObject>
 #include <QString>
-#include <module_lib/interface.h>
+#include <QVariantList>
+#include "interface.h"
 
 class KeycardShowcasePlugin : public QObject, public PluginInterface
 {
@@ -20,6 +21,6 @@ public:
     Q_INVOKABLE QString initialize();
     Q_INVOKABLE QString hashMessage(const QString& message);
 
-private:
-    LogosAPI* logosAPI = nullptr;
+signals:
+    void eventResponse(const QString& eventName, const QVariantList& data);
 };

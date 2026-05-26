@@ -2,19 +2,13 @@
 if(DEFINED ENV{LOGOS_CPP_SDK_ROOT})
     set(LOGOS_CPP_SDK "$ENV{LOGOS_CPP_SDK_ROOT}")
 else()
-    set(LOGOS_CPP_SDK "/nix/store/047dmhc4gi7yib02i1fbwidxpksqvcc2-logos-cpp-sdk")
+    set(LOGOS_CPP_SDK "/nix/store/c23ijr4km1wc2jixw4siqmbw3yaqf4z2-logos-cpp-sdk")
 endif()
 
 if(DEFINED ENV{LOGOS_LIBLOGOS_HEADERS})
     set(LOGOS_LIBLOGOS_HEADERS "$ENV{LOGOS_LIBLOGOS_HEADERS}")
 else()
-    set(LOGOS_LIBLOGOS_HEADERS "/nix/store/092zxk8qbm9zxqigq1z0a5l901a068cz-logos-liblogos-headers-0.1.0/include")
-endif()
-
-if(DEFINED ENV{LOGOS_MODULE_HEADERS})
-    set(LOGOS_MODULE_HEADERS "$ENV{LOGOS_MODULE_HEADERS}")
-else()
-    set(LOGOS_MODULE_HEADERS "/nix/store/fjgzpcmqv6sczf8gxpz6zf42igjxsgak-logos-module-0.1.0/include")
+    set(LOGOS_LIBLOGOS_HEADERS "/nix/store/lkr4jwcdh7k1yw5lisvpvaya4pq8qiv4-logos-liblogos-headers-0.1.0/include")
 endif()
 
 # Plugin sources
@@ -42,7 +36,6 @@ set_target_properties(keycard_showcase_plugin PROPERTIES
 # Include Logos SDK headers
 target_include_directories(keycard_showcase_plugin PRIVATE
     src
-    "${LOGOS_MODULE_HEADERS}"
     "${LOGOS_LIBLOGOS_HEADERS}"
     "${LOGOS_CPP_SDK}/include"
     "${LOGOS_CPP_SDK}/include/cpp"
@@ -64,6 +57,7 @@ install(TARGETS keycard_showcase_plugin
     LIBRARY DESTINATION "${KEYCARD_SHOWCASE_MODULE_DIR}"
 )
 install(FILES modules/keycard_showcase/manifest.json
+              modules/keycard_showcase/variant
     DESTINATION "${KEYCARD_SHOWCASE_MODULE_DIR}"
 )
 
