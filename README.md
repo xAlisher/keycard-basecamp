@@ -1,5 +1,8 @@
 # keycard-basecamp
 
+> This is a personal, experimental hobby project. It is not an official Logos product. Not audited.
+
+
 Hardware deterministic key generator for Logos Basecamp.
 
 Think of it like a password manager — but there's no vault, no master password, no cloud. One smartcard derives infinite unique keys, one per domain, always reproducible, never stored anywhere. It's sovereign — you hold the card, you hold the keys. And it's crypto-ready — BIP32 derivation, the same standard used by hardware wallets.
