@@ -3,25 +3,26 @@
 
 pragma Singleton
 import QtQuick 2.15
+import Logos.Theme  // logos-design-system (native on RC3+ Basecamp) — skill: logos-design-system-adoption
 
 QtObject {
     // Colors
-    readonly property color background: "#1a1a1a"
-    readonly property color foreground: "#ffffff"
-    readonly property color foregroundSecondary: "#a0a0a0"
-    readonly property color foregroundTertiary: "#707070"
-    readonly property color mutedForeground: "#888888"
-    readonly property color border: "#333333"
+    readonly property color background: Theme.palette.background
+    readonly property color foreground: Theme.palette.text
+    readonly property color foregroundSecondary: Theme.palette.textSecondary
+    readonly property color foregroundTertiary: Theme.palette.textTertiary
+    readonly property color mutedForeground: Theme.palette.textMuted
+    readonly property color border: Theme.palette.border
 
-    readonly property color primary: "#ff5722"        // Orange accent
-    readonly property color primaryHover: "#ff6e40"
-    readonly property color secondary: "#424242"
-    readonly property color secondaryHover: "#525252"
+    readonly property color primary: Theme.palette.primary        // Orange accent
+    readonly property color primaryHover: Theme.palette.primaryHover
+    readonly property color secondary: Theme.palette.surface
+    readonly property color secondaryHover: Theme.palette.hover
 
-    readonly property color success: "#4caf50"        // Green
-    readonly property color warning: "#ffc107"        // Yellow
-    readonly property color error: "#f44336"          // Red
-    readonly property color info: "#888888"           // Gray
+    readonly property color success: Theme.palette.success        // Green
+    readonly property color warning: Theme.palette.warning        // Yellow
+    readonly property color error: Theme.palette.error          // Red
+    readonly property color info: Theme.palette.info           // Gray
 
     // Typography
     readonly property string fontPrimary: "Public Sans"
